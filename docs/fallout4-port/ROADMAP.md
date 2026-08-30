@@ -45,7 +45,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | A   | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab       | **abgeschlossen** |
 | B1  | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                     | **abgeschlossen** |
 | B2  | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle | **abgeschlossen** |
-| C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt   | offen             |
+| C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt   | **abgeschlossen** |
 | D   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz, Ini-Versionierung          | Zwei Dummy-Features unabhängig an-/abschaltbar                             | offen             |
 | E   | **Menü** — ImGui-Overlay, Input-Handling, Einstellungs-UI                                                              | Overlay im Spiel bedienbar, Einstellungen überleben Neustart               | offen             |
 | F+  | **Features einzeln** — je ein Zyklus pro portiertem CS-Feature                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
@@ -153,10 +153,51 @@ B2 ist am 2026-08-30 abgenommen worden. Die vollständige Tabelle steht in
 
 Die beiden mittleren Erkenntnisse ließen sich an commonlibf4 zurückgeben.
 
+## Aus Teilprojekt C bestätigt
+
+C ist am 2026-08-30 abgenommen worden. Das Befunddokument ist
+`docs/fallout4-port/imagespace-passes.md`.
+
+| Sachverhalt             | Bestätigter Wert                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Einschleusweg           | Zeiger-Tausch in der Technikkarte **trägt**. Kein Engine-Hook, kein Trampolin, keine Änderung an commonlibf4        |
+| Klassen-Identifikation  | über die MSVC-RTTI des Objekts, ohne jeden Adressbibliothek-Zugriff. 226 von 226 Objekten benannt                   |
+| `BSImagespaceShader`    | erbt von `BSShader` **und** `ImageSpaceEffect`; der zweite Anteil liegt bei `+0x190`, bei allen 160 Objekten gleich |
+| Pässe mit Pixel-Technik | 121, jeder mit genau einer Technik der ID `0`, jeder mit engine-eigenem `fxp`-Namen                                 |
+| Sicherheitsnetz         | 0 Ablehnungen im Endstand                                                                                           |
+| Ersetzter Pass          | `BSImagespaceShaderCopy` (`ISCopy`), Technik `0`, Quervergleich der Zeiger bestanden                                |
+| Hot-Reload              | wirkt binnen einer Sekunde, ohne Spielneustart                                                                      |
+| Übersetzungsfehler      | Bild behält den letzten guten Shader, Spiel läuft weiter, Compilerfehler mit echter Datei und Zeile im Log          |
+| `REX::W32::D3DCompile`  | nutzbar, `d3dcompiler.lib` wird von `commonlib-shared` bereits `PUBLIC` gelinkt                                     |
+
+**Korrekturen an Annahmen, die diese Roadmap über C getroffen hatte:**
+
+-   C schaltet das Trampolin **nicht** ein und braucht `REL::THook` nicht. `InitInfo::trampoline`
+    und `hook` stehen weiterhin auf `false`.
+-   `BSRenderPass` wird für C **nicht** gebraucht. Die Lücke bleibt bestehen, sie wird später
+    fällig als angenommen.
+
+**Fallstricke, die spätere Teilprojekte kennen sollten:**
+
+-   `REL::ID::offset()` ruft bei unbekannter ID `REX::FAIL` und beendet den Prozess
+    (`IDDB.cpp:442`). Eine Tabelle vieler IDs blind aufzulösen ist ein Absturzrisiko.
+-   `REX::W32` deklariert weder `ReadDirectoryChangesW` noch `FindFirstChangeNotification`.
+    Dateiüberwachung geht über `std::filesystem::last_write_time`, nicht über `<Windows.h>`.
+-   `effectList.size()` meldet 225, die Iteration findet 226 gefüllte Plätze. Der Iteration
+    trauen, nicht `size()`.
+
 ## Bekannte Lücken in CommonLibF4
 
 Diese fehlen in **allen** geprüften Forks und müssen selbst reverse-engineert werden:
 
+-   `RE::BSShader` beschreibt **nicht** das Laufzeitobjekt: jeder Offset nach `shaderType` liegt
+    `0x78` zu niedrig, `sizeof` ist `0x190` statt `0x118`, `fxpFilename` sitzt bei `0x188`.
+    Gemessen in C, Einzelheiten in `imagespace-passes.md`. Wir lesen über eigene Offsets in
+    `src/Shader/BSShaderLayout.h`.
+-   `REX::W32::ID3DInclude` erbt fälschlich von `IUnknown`; das SDK deklariert die Schnittstelle
+    ohne Basis und mit zwei vtable-Einträgen. Die REX-Fassung ist unbrauchbar.
+-   `BSImagespaceShader` und seine 161 Geschwister fehlen als Header, obwohl RTTI- und
+    vtable-IDs vorhanden sind.
 -   `BSRenderPass` — überall nur vorwärtsdeklariert, nie definiert.
 -   Ein benanntes `RENDER_TARGET`-Enum — FO4s Targets liegen als anonymes `renderTargets[101]`
     in `BSGraphics::RendererData`. Der geerbte Code referenziert `RE::RENDER_TARGET::k*` 132-mal.
