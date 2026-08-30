@@ -43,7 +43,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | #   | Teilprojekt                                                                                                            | Abnahmekriterium                                                         | Status            |
 | --- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------- |
 | A   | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab     | **abgeschlossen** |
-| B1  | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                   | in Spezifikation  |
+| B1  | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                   | **abgeschlossen** |
 | B2  | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Benanntes RENDER_TARGET-Enum im commonlibf4-Fork plus Dokumentation      | offen             |
 | C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt | offen             |
 | D   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz, Ini-Versionierung          | Zwei Dummy-Features unabhängig an-/abschaltbar                           | offen             |
@@ -87,7 +87,7 @@ und nur wenige Engine-Anker über die Adressbibliothek ziehen.
 `ENABLE_SKYRIM_SE/AE/VR` wird im Projektcode nirgends ausgewertet — beides geht ausschließlich an
 CommonLibSSE-NG. Der Build-Layer ist also dünn; die Kopplung sitzt im Code, nicht im Buildsystem.
 
-## Für Teilprojekt B bestätigt
+## Aus Teilprojekt A bestätigt
 
 Teilprojekt A ist am 2026-08-30 abgenommen worden. Die folgenden Punkte sind damit gemessen und
 nicht mehr Annahme; B setzt sie als gegeben voraus.
@@ -113,6 +113,30 @@ Beobachtetes Verhalten, das B kennen sollte:
     Thread** ein.
 -   Der Visual-Studio-Generator bricht bei zu langen Checkout-Pfaden mit `MSB6003` ab und zeigt
     dabei fälschlich auf `link.exe`. Ursache sind die `.tlog`-Pfade unter `build/FO4/CMakeFiles`.
+
+## Aus Teilprojekt B1 bestätigt
+
+B1 ist am 2026-08-30 abgenommen worden. Der Marker war in zwei RenderDoc-Captures nachweisbar
+(`CommunityShadersFO4 Frame 379` und `... Frame 1925`), verifiziert durch Suche im Capture-File
+statt durch die Oberfläche.
+
+| Sachverhalt                | Bestätigter Wert                                                                                                                                                                               |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Adressauflösung für AE** | **trägt.** Der Kreuzvergleich ist bestanden: das Device aus `GetRendererData()` ist dasselbe, das Context und SwapChain melden. `REL::VariantID{og, ng}` liefert für AE also korrekte Adressen |
+| Feature-Level              | `0xb000`, also D3D 11.0                                                                                                                                                                        |
+| SwapChain                  | 2560x1440, Format 28 (`R8G8B8A8_UNORM`), 2 Puffer                                                                                                                                              |
+| `IDXGISwapChain::Present`  | vtable-Slot 8, bestätigt durch einen laufenden Frame-Zähler                                                                                                                                    |
+| Verkettungsziel            | `0x7ffa699338e0`, Systemmodul-Bereich — es saß nichts unter uns, wir waren Erste auf der Kette                                                                                                 |
+| Installationszeitpunkt     | `kGameDataReady` ist früh genug, der SwapChain steht dort                                                                                                                                      |
+| D3D-Typen                  | `REX::W32` deckt D3D11 und DXGI vollständig ab, `<d3d11.h>` wird nirgends gebraucht                                                                                                            |
+
+Beobachtetes Verhalten, das spätere Teilprojekte kennen sollten:
+
+-   Der PCH bringt nur `REL` und `REX` mit. Wer D3D- oder DXGI-Typen in einer eigenen Schnittstelle
+    nennt, muss `REX/W32/D3D11.h`, `DXGI.h` oder `D3D11_1.h` selbst einbinden.
+-   Der Marker aus B1 sitzt am Frame-**Ende**, weil er an Present hängt: im RenderDoc-Event-Browser
+    erscheint er ganz unten, direkt vor dem abschließenden `Present`. Ein Marker, der eine ganze
+    Frame-Struktur umschließt, braucht einen Hook am Frame-Anfang.
 
 ## Bekannte Lücken in CommonLibF4
 
