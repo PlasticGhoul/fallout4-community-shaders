@@ -44,7 +44,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | --- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------- |
 | A   | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab       | **abgeschlossen** |
 | B1  | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                     | **abgeschlossen** |
-| B2  | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle | offen             |
+| B2  | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle | **abgeschlossen** |
 | C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt   | offen             |
 | D   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz, Ini-Versionierung          | Zwei Dummy-Features unabhängig an-/abschaltbar                             | offen             |
 | E   | **Menü** — ImGui-Overlay, Input-Handling, Einstellungs-UI                                                              | Overlay im Spiel bedienbar, Einstellungen überleben Neustart               | offen             |
@@ -137,6 +137,21 @@ Beobachtetes Verhalten, das spätere Teilprojekte kennen sollten:
 -   Der Marker aus B1 sitzt am Frame-**Ende**, weil er an Present hängt: im RenderDoc-Event-Browser
     erscheint er ganz unten, direkt vor dem abschließenden `Present`. Ein Marker, der eine ganze
     Frame-Struktur umschließt, braucht einen Hook am Frame-Anfang.
+
+## Aus Teilprojekt B2 bestätigt
+
+B2 ist am 2026-08-30 abgenommen worden. Die vollständige Tabelle steht in
+`docs/fallout4-port/render-targets.md`.
+
+| Sachverhalt                  | Bestätigter Wert                                                                                                                                |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Belegte Targets              | 65 von 101 Render-Targets, 10 von 13 Tiefenpuffern, 1 von 2 Cubemaps                                                                            |
+| Beschriftung                 | wirkt. 267 Objekte benannt, keine Ablehnung; 59 Namen in einem Spielwelt-Capture sichtbar. `SetPrivateData` greift also auch nachträglich       |
+| Verbindung der beiden Arrays | über `renderTargetID` und **rückwärts**: `renderTargetID[j] == i` nennt den Renderer-Slot der Manager-Zeile `j`. Direkte Indizierung ist falsch |
+| `BSGraphics::Format`         | **ist** `DXGI_FORMAT`. In allen 65 Fällen numerisch identisch, sobald über die richtige Zeile gelesen                                           |
+| Schattenkarten               | `DS_007` und `DS_008`, 4096x4096 `R16_TYPELESS`, auflösungsunabhängig                                                                           |
+
+Die beiden mittleren Erkenntnisse ließen sich an commonlibf4 zurückgeben.
 
 ## Bekannte Lücken in CommonLibF4
 

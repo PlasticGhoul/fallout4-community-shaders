@@ -31,16 +31,31 @@ namespace Render
 			}
 		};
 
+		// What the engine's own bookkeeping says about a render target, if
+		// anything. The first inventory run showed that indexing the manager
+		// with the renderer's index does not line the two up, so both the
+		// direct row and a row found by reverse lookup are reported until it
+		// is clear which - if either - is the right one.
+		struct EngineRow
+		{
+			std::uint32_t idAtIndex{ 0 };       // renderTargetID[i]
+			std::uint32_t formatAtIndex{ 0 };   // renderTargetData[i].format
+			std::int32_t mappedRow{ -1 };       // j where renderTargetID[j] == i
+			std::uint32_t formatAtMapped{ 0 };  // renderTargetData[j].format
+		};
+
 		// Logs one line describing a texture.
 		void LogTexture(
 			std::string_view a_label,
 			REX::W32::ID3D11Texture2D* a_texture,
-			std::uint32_t a_engineFormat)
+			const EngineRow& a_engine)
 		{
 			REX::W32::D3D11_TEXTURE2D_DESC desc{};
 			a_texture->GetDesc(std::addressof(desc));
 
-			REX::INFO("{:<16} {:>5}x{:<5} {:<22} mips {:<2} samples {:<2} bind {:<40} engineFormat {}",
+			REX::INFO(
+				"{:<16} {:>5}x{:<5} {:<22} mips {:<2} samples {:<2} bind {:<40} "
+				"id {:<4} fmt@i {:<3} row {:<4} fmt@row {}",
 				a_label,
 				desc.width,
 				desc.height,
@@ -48,7 +63,42 @@ namespace Render
 				desc.mipLevels,
 				desc.sampleDesc.count,
 				BindFlagsString(desc.bindFlags),
-				a_engineFormat);
+				a_engine.idAtIndex,
+				a_engine.formatAtIndex,
+				a_engine.mappedRow,
+				a_engine.formatAtMapped);
+		}
+
+		// BSGraphics::Format is declared without enumerators, so the value is
+		// read as a plain integer.
+		std::uint32_t RawFormat(const RE::BSGraphics::RenderTargetProperties& a_props) noexcept
+		{
+			return *reinterpret_cast<const std::uint32_t*>(std::addressof(a_props.format));
+		}
+
+		EngineRow ReadEngineRow(RE::BSGraphics::RenderTargetManager* a_manager, std::size_t a_index)
+		{
+			EngineRow row;
+			if (a_manager == nullptr) {
+				return row;
+			}
+
+			if (a_index < std::size(a_manager->renderTargetData)) {
+				row.idAtIndex = a_manager->renderTargetID[a_index];
+				row.formatAtIndex = RawFormat(a_manager->renderTargetData[a_index]);
+			}
+
+			// The mapping may run the other way: an entry whose id names this
+			// renderer index.
+			for (std::size_t j = 0; j < std::size(a_manager->renderTargetID); ++j) {
+				if (a_manager->renderTargetID[j] == a_index) {
+					row.mappedRow = static_cast<std::int32_t>(j);
+					row.formatAtMapped = RawFormat(a_manager->renderTargetData[j]);
+					break;
+				}
+			}
+
+			return row;
 		}
 
 		void InventoryRenderTargets(
@@ -68,17 +118,7 @@ namespace Render
 
 				const auto label = std::format("FO4_RT_{:03}", i);
 
-				// Read as raw memory: BSGraphics::Format is only forward-declared
-				// in commonlibf4, so it is an incomplete type and cannot be cast.
-				// Side by side with the real DXGI format this yields the mapping
-				// between the engine's enum and DXGI's.
-				std::uint32_t engineFormat = 0;
-				if (a_manager != nullptr && i < std::size(a_manager->renderTargetData)) {
-					engineFormat = *reinterpret_cast<const std::uint32_t*>(
-						std::addressof(a_manager->renderTargetData[i].format));
-				}
-
-				LogTexture(label, target.texture, engineFormat);
+				LogTexture(label, target.texture, ReadEngineRow(a_manager, i));
 
 				a_tally.Apply(target.texture, label);
 				a_tally.Apply(target.copyTexture, label + "_COPY");
@@ -104,7 +144,7 @@ namespace Render
 				++occupied;
 
 				const auto label = std::format("FO4_DS_{:03}", i);
-				LogTexture(label, target.texture, 0);
+				LogTexture(label, target.texture, EngineRow{});
 
 				a_tally.Apply(target.texture, label);
 				a_tally.Apply(target.srViewDepth, label + "_SRV_DEPTH");
@@ -135,7 +175,7 @@ namespace Render
 				++occupied;
 
 				const auto label = std::format("FO4_CUBE_{:03}", i);
-				LogTexture(label, target.texture, 0);
+				LogTexture(label, target.texture, EngineRow{});
 
 				a_tally.Apply(target.texture, label);
 				a_tally.Apply(target.srView, label + "_SRV");
