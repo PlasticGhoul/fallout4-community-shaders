@@ -40,14 +40,14 @@ RE-Header und laut eigenem README unfertige NG-Unterstützung) sowie
 Reihenfolge ist bindend, solange nichts anderes vereinbart wird: jedes Teilprojekt setzt auf dem
 vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem beschreibt.
 
-| #   | Teilprojekt                                                                                                               | Abnahmekriterium                                                                | Status           |
-| --- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------- |
-| A   | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung    | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab            | in Spezifikation |
-| B   | **Render-Kern** — D3D11-Device/Context/SwapChain, Present-Hook, Frame-Lifecycle, FO4-Render-Target-Inventar, Debug-Marker | RenderDoc-Capture mit eigenen Markern; benannte FO4-Render-Targets dokumentiert | offen            |
-| C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                                 | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt        | offen            |
-| D   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz, Ini-Versionierung             | Zwei Dummy-Features unabhängig an-/abschaltbar                                  | offen            |
-| E   | **Menü** — ImGui-Overlay, Input-Handling, Einstellungs-UI                                                                 | Overlay im Spiel bedienbar, Einstellungen überleben Neustart                    | offen            |
-| F+  | **Features einzeln** — je ein Zyklus pro portiertem CS-Feature                                                            | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                          | offen            |
+| #   | Teilprojekt                                                                                                               | Abnahmekriterium                                                                | Status            |
+| --- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------- |
+| A   | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung    | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab            | **abgeschlossen** |
+| B   | **Render-Kern** — D3D11-Device/Context/SwapChain, Present-Hook, Frame-Lifecycle, FO4-Render-Target-Inventar, Debug-Marker | RenderDoc-Capture mit eigenen Markern; benannte FO4-Render-Targets dokumentiert | offen             |
+| C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                                 | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt        | offen             |
+| D   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz, Ini-Versionierung             | Zwei Dummy-Features unabhängig an-/abschaltbar                                  | offen             |
+| E   | **Menü** — ImGui-Overlay, Input-Handling, Einstellungs-UI                                                                 | Overlay im Spiel bedienbar, Einstellungen überleben Neustart                    | offen             |
+| F+  | **Features einzeln** — je ein Zyklus pro portiertem CS-Feature                                                            | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                          | offen             |
 
 A bis C sind die eigentliche Portierungsarbeit. D und E sind weitgehend aus dem bestehenden
 Skyrim-Code übernehmbar, weil sie kaum engine-gekoppelt sind. Die vorhandenen HLSL-Shader werden
@@ -80,6 +80,33 @@ und nur wenige Engine-Anker über die Adressbibliothek ziehen.
 `add_compile_definitions(SKYRIM)` steht an genau einer Stelle (`cmake/XSEPlugin.cmake:1`), und
 `ENABLE_SKYRIM_SE/AE/VR` wird im Projektcode nirgends ausgewertet — beides geht ausschließlich an
 CommonLibSSE-NG. Der Build-Layer ist also dünn; die Kopplung sitzt im Code, nicht im Buildsystem.
+
+## Für Teilprojekt B bestätigt
+
+Teilprojekt A ist am 2026-08-30 abgenommen worden. Die folgenden Punkte sind damit gemessen und
+nicht mehr Annahme; B setzt sie als gegeben voraus.
+
+| Sachverhalt                               | Bestätigter Wert                                                                  |
+| ----------------------------------------- | --------------------------------------------------------------------------------- |
+| Spielversion der Testumgebung             | `1.11.240.0` (Fallout4.exe und `LoadInterface::RuntimeVersion()` stimmen überein) |
+| F4SE                                      | `0.7.9`, `f4se_1_11_240.dll`                                                      |
+| Von commonlibf4 aufgelöster Runtime-Eimer | `AE`                                                                              |
+| `GetSaveFolderName()`                     | `Fallout4`                                                                        |
+| Tatsächlicher Logpfad                     | `<Dokumente>/My Games/Fallout4/F4SE/CommunityShadersFO4.log`                      |
+| `<RE/Fallout.h>`                          | übersetzt sauber als eigene Übersetzungseinheit (116 KB Objektdatei)              |
+| `/W4 /WX` gegen commonlibf4-Header        | kein einziger Treffer; die `PUBLIC`-Unterdrückungen von commonlib-shared reichen  |
+| `commonlib-shared` per `add_subdirectory` | funktioniert unverändert, der Shim deckt nur commonlibf4 ab                       |
+
+Beobachtetes Verhalten, das B kennen sollte:
+
+-   Lehnt `F4SEPlugin_Load` mit `false` ab, protokolliert F4SE das als
+    `reported as incompatible during load` und zeigt dem Nutzer **vor dem Spielstart einen
+    Warndialog**. Das Spiel startet danach normal weiter. Die Ablehnung ist also sichtbar, ohne
+    dass wir dafür etwas bauen müssten.
+-   `kGameDataReady` trifft rund neun Sekunden nach `kPostPostLoad` und auf einem **anderen
+    Thread** ein.
+-   Der Visual-Studio-Generator bricht bei zu langen Checkout-Pfaden mit `MSB6003` ab und zeigt
+    dabei fälschlich auf `link.exe`. Ursache sind die `.tlog`-Pfade unter `build/FO4/CMakeFiles`.
 
 ## Bekannte Lücken in CommonLibF4
 
