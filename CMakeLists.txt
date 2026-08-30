@@ -138,6 +138,19 @@ if(FO4CS_DEPLOY_DIR)
         COMMENT "Deploying to ${FO4CS_DEPLOY_DIR}/F4SE/Plugins"
         VERBATIM
     )
+
+    # Only package/Shaders/FO4 travels. The 153 inherited Skyrim files one
+    # level up are the target of subproject F, not something to ship now.
+    add_custom_command(
+        TARGET ${PROJECT_NAME}
+        POST_BUILD
+        COMMAND
+            "${CMAKE_COMMAND}" -E copy_directory_if_different
+            "${CMAKE_SOURCE_DIR}/package/Shaders/FO4"
+            "${FO4CS_DEPLOY_DIR}/Shaders/FO4"
+        COMMENT "Deploying shaders to ${FO4CS_DEPLOY_DIR}/Shaders/FO4"
+        VERBATIM
+    )
 endif()
 
 # ------------------------------------------------------------------ host tests
