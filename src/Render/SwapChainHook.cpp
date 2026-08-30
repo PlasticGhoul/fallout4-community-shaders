@@ -2,6 +2,7 @@
 
 #include "Render/Markers.h"
 #include "Render/Renderer.h"
+#include "Render/TargetInventory.h"
 #include "Render/VTablePatch.h"
 
 #include <atomic>
@@ -72,6 +73,10 @@ namespace Render
 		REX::INFO("Present hooked, chaining to {}", g_patch.Original());
 
 		static_cast<void>(InitMarkers());
+
+		// Runs only once the cross-check above has passed. Without verified
+		// renderer access every number the inventory reads would be worthless.
+		RunTargetInventory();
 	}
 
 	std::uint64_t FrameCount() noexcept
