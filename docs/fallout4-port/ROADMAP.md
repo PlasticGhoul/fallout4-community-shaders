@@ -169,6 +169,7 @@ C ist am 2026-08-30 abgenommen worden. Das Befunddokument ist
 | Hot-Reload              | wirkt binnen einer Sekunde, ohne Spielneustart                                                                      |
 | Übersetzungsfehler      | Bild behält den letzten guten Shader, Spiel läuft weiter, Compilerfehler mit echter Datei und Zeile im Log          |
 | `REX::W32::D3DCompile`  | nutzbar, `d3dcompiler.lib` wird von `commonlib-shared` bereits `PUBLIC` gelinkt                                     |
+| Nicht geprüft           | das RenderDoc-Capture mit unserem Shader-Namen. Bewusst ausgelassen, Begründung in `imagespace-passes.md`           |
 
 **Korrekturen an Annahmen, die diese Roadmap über C getroffen hatte:**
 
