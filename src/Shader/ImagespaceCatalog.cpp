@@ -1,5 +1,7 @@
 #include "Shader/ImagespaceCatalog.h"
 
+#include "Shader/BSShaderLayout.h"
+
 #include <RE/I/ImageSpaceEffect.h>
 #include <RE/I/ImageSpaceManager.h>
 #include <REX/W32/RTTI.h>
@@ -25,6 +27,14 @@ namespace Shader
 			std::string className;
 			std::uint32_t subobjectOffset{ 0 };
 		};
+
+		// Only these carry a BSShader. Everything else in the effect list is a
+		// plain ImageSpaceEffect subclass and is counted, not reported.
+		constexpr auto kShaderPrefix = "BSImagespaceShader"sv;
+
+		// kImageSpace. Every image space shader measured in subproject C reads
+		// exactly this.
+		constexpr std::int32_t kImageSpaceShaderType = 0xC;
 
 		// MSVC stores a pointer to the complete object locator immediately
 		// before the first entry of every polymorphic vtable.
@@ -84,13 +94,16 @@ namespace Shader
 		// Stage two of the safety net: the address computed from the subobject
 		// offset must itself carry a locator of the same class whose offset is
 		// zero. That proves the arithmetic from both ends.
-		RE::BSShader* ShaderBaseOf(
-			const RE::ImageSpaceEffect* a_effect,
-			const ObjectInfo& a_info) noexcept
+		//
+		// Returns the address of the BSShader half as a void*, deliberately:
+		// commonlibf4's RE::BSShader describes the wrong object, so the fields
+		// are reached through the measured offsets in BSShaderLayout rather
+		// than through its members.
+		void* ShaderBaseOf(const RE::ImageSpaceEffect* a_effect, const ObjectInfo& a_info) noexcept
 		{
 			const auto address =
 				reinterpret_cast<std::uintptr_t>(a_effect) - a_info.subobjectOffset;
-			auto* const candidate = reinterpret_cast<RE::BSShader*>(address);
+			auto* const candidate = reinterpret_cast<void*>(address);
 
 			const auto whole = Describe(candidate);
 			if (!whole.has_value()) {
@@ -104,24 +117,23 @@ namespace Shader
 			return candidate;
 		}
 
-		// Stage three: the fields have to look like a BSShader before we
-		// believe any of this.
-		bool LooksPlausible(const RE::BSShader* a_shader) noexcept
+		// Stage three: the fields have to look like a BSShader before we believe
+		// any of this. Returns the reason to log, or nullptr when it holds.
+		const char* ImplausibleBecause(const void* a_shader) noexcept
 		{
-			if (a_shader->shaderType < 0 || a_shader->shaderType > 0x40) {
-				return false;
+			if (ShaderType(a_shader) != kImageSpaceShaderType) {
+				return "not an image space shader type";
 			}
 
-			if (a_shader->fxpFilename == nullptr) {
-				return false;
+			if (FxpFilename(a_shader) == nullptr) {
+				return "no fxp filename";
 			}
 
-			const auto techniques = a_shader->pixelShaders.size();
-			return techniques > 0 && techniques < 64;
+			return nullptr;
 		}
 	}
 
-	std::vector<ImagespacePass> RunImagespaceCatalog()
+	std::vector<ImagespacePass> RunImagespaceCatalog(bool a_verbose)
 	{
 		std::vector<ImagespacePass> found;
 
@@ -132,63 +144,112 @@ namespace Shader
 		}
 
 		if (manager->effectList.empty()) {
-			REX::WARN("the image space effect list is still empty");
+			if (a_verbose) {
+				REX::WARN("the image space effect list is still empty");
+			}
 			return found;
 		}
 
-		REX::INFO("=== image space catalog ===");
-		REX::INFO("{} entries in the effect list", manager->effectList.size());
+		if (a_verbose) {
+			REX::INFO("=== image space catalog ===");
+		}
 
-		std::uint32_t rejected = 0;
+		std::uint32_t visited = 0;
+		std::uint32_t unnamed = 0;
+		std::uint32_t plainEffects = 0;
+		std::uint32_t noBase = 0;
+		std::uint32_t implausible = 0;
+		std::uint32_t withoutTechniques = 0;
 
 		for (auto* const effect : manager->effectList) {
+			++visited;
+
 			const auto info = Describe(effect);
 			if (!info.has_value()) {
-				++rejected;
+				++unnamed;
+				continue;
+			}
+
+			// Plain image space effects have no BSShader half at all. They are
+			// counted so the totals add up, not reported one by one.
+			if (!std::string_view{ info->className }.starts_with(kShaderPrefix)) {
+				++plainEffects;
 				continue;
 			}
 
 			auto* const shader = ShaderBaseOf(effect, *info);
-			if (shader == nullptr || !LooksPlausible(shader)) {
-				REX::WARN("{}: rejected by the safety net", info->className);
-				++rejected;
+			if (shader == nullptr) {
+				++noBase;
+				if (a_verbose) {
+					REX::WARN(
+						"{}: no matching class at -0x{:X}, the offset does not hold",
+						info->className,
+						info->subobjectOffset);
+				}
+				continue;
+			}
+
+			if (const auto* const reason = ImplausibleBecause(shader); reason != nullptr) {
+				++implausible;
+				if (a_verbose) {
+					REX::WARN("{}: {}", info->className, reason);
+				}
+				continue;
+			}
+
+			const auto techniques = PixelShaderTechniques(shader);
+			if (techniques.empty()) {
+				// Normal, and not a fault: plenty of passes are compute or
+				// vertex only, and the engine fills these maps lazily.
+				++withoutTechniques;
 				continue;
 			}
 
 			ImagespacePass pass;
 			pass.className = info->className;
 			pass.shader = shader;
+			pass.fxpFilename = FxpFilename(shader);
 
 			// Only an unambiguous single technique is worth recording as a
-			// target; anything else we log but do not offer for replacement.
-			if (shader->pixelShaders.size() == 1) {
-				auto* const entry = *shader->pixelShaders.begin();
-				pass.slot = entry;
-				pass.techniqueID = entry->id;
+			// target; anything else we report but do not offer for replacement.
+			if (techniques.size() == 1) {
+				pass.slot = techniques.front();
+				pass.techniqueID = techniques.front()->id;
 			}
 
-			std::string techniques;
-			for (auto* const entry : shader->pixelShaders) {
-				techniques += std::format(
-					"{}{}@{}",
-					techniques.empty() ? "" : ",",
-					entry->id,
-					static_cast<const void*>(entry->shader));
-			}
+			if (a_verbose) {
+				std::string listed;
+				for (const auto* const entry : techniques) {
+					listed += std::format(
+						"{}{}@{}",
+						listed.empty() ? "" : ",",
+						entry->id,
+						static_cast<const void*>(entry->shader));
+				}
 
-			REX::INFO(
-				"{:<44} +{:<4} type {:<3} fxp {:<28} ps [{}]",
-				pass.className,
-				info->subobjectOffset,
-				shader->shaderType,
-				shader->fxpFilename,
-				techniques);
+				REX::INFO(
+					"{:<48} fxp {:<12} ps [{}]",
+					pass.className,
+					pass.fxpFilename,
+					listed);
+			}
 
 			found.push_back(std::move(pass));
 		}
 
-		REX::INFO("{} passes described, {} rejected", found.size(), rejected);
-		REX::INFO("=== end of catalog ===");
+		if (a_verbose || !found.empty()) {
+			REX::INFO(
+				"{} visited: {} with pixel techniques, {} without, {} plain effects, "
+				"{} unnamed, {} without a shader base, {} implausible",
+				visited,
+				found.size(),
+				withoutTechniques,
+				plainEffects,
+				unnamed,
+				noBase,
+				implausible);
+			REX::INFO("=== end of catalog ===");
+		}
 
 		return found;
 	}

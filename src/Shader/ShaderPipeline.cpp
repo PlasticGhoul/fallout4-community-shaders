@@ -24,12 +24,16 @@ namespace Shader
 		// there: the first proven pass with exactly one technique.
 		constexpr auto kPreferredClass = "BSImagespaceShaderCopy"sv;
 
-		// The effect list may not be populated on the very first frame. Asking
-		// once a second for ten seconds is generous, and spacing the attempts
-		// out keeps a persistently empty list from filling the log with the
-		// same warning six hundred times.
+		// The effect list exists early, but the engine fills its technique maps
+		// much later - the first run of subproject C found 226 named passes
+		// within two seconds of kGameDataReady and not one of them with a
+		// technique yet, because the game was still sitting in the main menu.
+		// So the catalog keeps asking, once a second, until it finds something.
 		constexpr std::uint64_t kCatalogInterval = 60;
-		constexpr std::uint64_t kCatalogAttempts = 10;
+
+		// One line a minute while nothing is found, so a wait is visible in the
+		// log without drowning it.
+		constexpr std::uint64_t kCatalogHeartbeat = 60;
 
 		constexpr auto kPollInterval = std::chrono::milliseconds{ 500 };
 
@@ -127,11 +131,17 @@ namespace Shader
 			return nullptr;
 		}
 
-		void RunCatalogOnce()
+		void RunCatalogOnce(bool a_verbose)
 		{
-			const auto passes = RunImagespaceCatalog();
+			auto passes = RunImagespaceCatalog(a_verbose);
 			if (passes.empty()) {
 				return;
+			}
+
+			// Something turned up on a quiet attempt: print the table once, now
+			// that there is a table worth printing.
+			if (!a_verbose) {
+				passes = RunImagespaceCatalog(true);
 			}
 
 			const auto* const chosen = ChoosePass(passes);
@@ -162,15 +172,14 @@ namespace Shader
 	{
 		++g_frames;
 
-		if (!g_catalogDone && g_catalogTries < kCatalogAttempts &&
-			g_frames % kCatalogInterval == 0) {
+		if (!g_catalogDone && g_frames % kCatalogInterval == 0) {
+			RunCatalogOnce(g_catalogTries == 0);
 			++g_catalogTries;
-			RunCatalogOnce();
 
-			if (!g_catalogDone && g_catalogTries == kCatalogAttempts) {
-				REX::ERROR(
-					"no usable image space pass after {} attempts, giving up",
-					kCatalogAttempts);
+			if (!g_catalogDone && g_catalogTries % kCatalogHeartbeat == 0) {
+				REX::INFO(
+					"still waiting for a usable image space pass, attempt {}",
+					g_catalogTries);
 			}
 		}
 
