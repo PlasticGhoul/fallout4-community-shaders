@@ -4,6 +4,7 @@
 #include "Render/Renderer.h"
 #include "Render/TargetInventory.h"
 #include "Render/VTablePatch.h"
+#include "Shader/ShaderPipeline.h"
 
 #include <atomic>
 #include <format>
@@ -34,6 +35,10 @@ namespace Render
 			if (frame % kLogInterval == 0) {
 				REX::DEBUG("frame {}", frame);
 			}
+
+			// Ours runs inside the named block, so a capture shows it under
+			// the marker rather than loose between frames.
+			Shader::TickPipeline();
 
 			const auto name = std::format(L"CommunityShadersFO4 Frame {}", frame);
 
