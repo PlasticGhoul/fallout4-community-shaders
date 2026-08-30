@@ -117,3 +117,34 @@ if(FO4CS_DEPLOY_DIR)
         VERBATIM
     )
 endif()
+
+# ------------------------------------------------------------------ host tests
+if(FO4CS_BUILD_TESTS)
+    enable_testing()
+
+    add_executable(
+        RuntimeTests
+        "${CMAKE_SOURCE_DIR}/tests/RuntimeTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Runtime.cpp"
+    )
+
+    target_include_directories(
+        RuntimeTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(RuntimeTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        RuntimeTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(RuntimeTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            RuntimeTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME Runtime COMMAND RuntimeTests)
+endif()
