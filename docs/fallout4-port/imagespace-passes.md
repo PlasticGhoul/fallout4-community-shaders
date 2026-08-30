@@ -94,6 +94,22 @@ Beweis: `ISCopy` ist ein Allzweck-Kopierpass, den die Engine nur einplant, wenn 
 umkopiert werden muss. Beim Blick in den Himmel läuft er verlässlich, beim Blick auf Terrain je
 nach aktiver Effektkette. Ein konstanter Stich hätte bedeutet, dass wir bloß das Endbild einfärben.
 
+## 5a. Was nicht geprüft wurde
+
+Ein Abnahmekriterium der Spec ist **offen geblieben**: ein RenderDoc-Capture, in dem unser
+Shader-Objekt unter `FO4CS_PS_ImagespaceCopy` erscheint. Bewusst ausgelassen, nicht vergessen.
+
+Belegt ist die Wirkung bereits ohne Capture, und zwar zwingend: der Katalog meldete für
+`BSImagespaceShaderCopy` den Zeiger `0x20549579938`, der Tausch protokollierte
+`installed 0x2054954cc38 in place of 0x20549579938`, der Stich wurde sichtbar, eine Änderung an
+der HLSL-Datei änderte die Farbe im laufenden Spiel, und ein Syntaxfehler ließ den letzten guten
+Shader stehen. Damit steht fest, dass die Engine unseren übersetzten Shader bindet und ausführt.
+
+Das Capture würde darüber hinaus nur zeigen, dass `SetDebugName` aus B2 auch an einem
+`ID3D11PixelShader` haftet — Komfort für spätere Fehlersuche, nicht Teil des Mechanismus. Wer das
+nächste Mal ohnehin ein Capture aufnimmt, kann es nebenbei mitprüfen: nach der Zeichenkette
+`FO4CS_PS_ImagespaceCopy` in der `.rdc` suchen.
+
 ## 6. Die 121 Pässe mit Pixel-Technik
 
 Alle führen genau **eine** Technik mit der ID `0`. Klassenname, dann der engine-eigene Name des
