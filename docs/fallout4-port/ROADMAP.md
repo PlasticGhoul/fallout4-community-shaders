@@ -40,15 +40,15 @@ RE-Header und laut eigenem README unfertige NG-Unterstützung) sowie
 Reihenfolge ist bindend, solange nichts anderes vereinbart wird: jedes Teilprojekt setzt auf dem
 vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem beschreibt.
 
-| #   | Teilprojekt                                                                                                            | Abnahmekriterium                                                         | Status            |
-| --- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------- |
-| A   | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab     | **abgeschlossen** |
-| B1  | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                   | **abgeschlossen** |
-| B2  | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Benanntes RENDER_TARGET-Enum im commonlibf4-Fork plus Dokumentation      | offen             |
-| C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt | offen             |
-| D   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz, Ini-Versionierung          | Zwei Dummy-Features unabhängig an-/abschaltbar                           | offen             |
-| E   | **Menü** — ImGui-Overlay, Input-Handling, Einstellungs-UI                                                              | Overlay im Spiel bedienbar, Einstellungen überleben Neustart             | offen             |
-| F+  | **Features einzeln** — je ein Zyklus pro portiertem CS-Feature                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                   | offen             |
+| #   | Teilprojekt                                                                                                            | Abnahmekriterium                                                           | Status            |
+| --- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------- |
+| A   | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab       | **abgeschlossen** |
+| B1  | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                     | **abgeschlossen** |
+| B2  | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle | offen             |
+| C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt   | offen             |
+| D   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz, Ini-Versionierung          | Zwei Dummy-Features unabhängig an-/abschaltbar                             | offen             |
+| E   | **Menü** — ImGui-Overlay, Input-Handling, Einstellungs-UI                                                              | Overlay im Spiel bedienbar, Einstellungen überleben Neustart               | offen             |
+| F+  | **Features einzeln** — je ein Zyklus pro portiertem CS-Feature                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 
 Das ursprüngliche Teilprojekt B wurde am 2026-08-30 in B1 und B2 geteilt. B1 ist begrenzte
 Ingenieursarbeit mit klarem Ende; B2 ist offene Reverse-Engineering-Forschung, deren Aufwand sich
