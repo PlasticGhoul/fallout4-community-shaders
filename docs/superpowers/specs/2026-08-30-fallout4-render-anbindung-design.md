@@ -59,10 +59,12 @@ Zustandslos. Kapselt `BSGraphics::GetRendererData()` und `BSGraphics::GetCurrent
 
 Ihre Aufgabe ist nicht Abstraktion um ihrer selbst willen, sondern zwei konkrete Dinge:
 
-1.  **Typumdeutung.** commonlibf4 hält die Zeiger als `REX::W32::ID3D11Device*`,
-    `REX::W32::ID3D11DeviceContext*` und `REX::W32::IDXGISwapChain*` — eigene, vorwärtsdeklarierte
-    Stubtypen, nicht die Typen aus `<d3d11.h>`. Die Umdeutung auf die echten COM-Schnittstellen
-    passiert hier an einer einzigen Stelle statt an jeder Aufrufstelle.
+1.  **Ein Ort für die Herkunft der Zeiger.** commonlibf4 hält sie als `REX::W32::ID3D11Device*`,
+    `REX::W32::ID3D11DeviceContext*` und `REX::W32::IDXGISwapChain*`. Entgegen der ersten Annahme
+    sind das **keine** bloßen Stubs: `REX::W32` deklariert D3D11 und DXGI vollständig, inklusive
+    `ID3DUserDefinedAnnotation` und der zugehörigen IIDs. Wir bleiben deshalb durchgehend in
+    diesem Namensraum und binden `<d3d11.h>` gar nicht erst ein — eine Umdeutung zwischen zwei
+    Typsystemen entfällt damit ersatzlos.
 2.  **Null-Prüfung an einem Ort.** `GetRendererData()` kann vor der Renderer-Initialisierung
     einen Nullzeiger liefern.
 
@@ -220,9 +222,10 @@ Begründet, aber nicht bewiesen. Werden im Verlauf verifiziert und in der Roadma
 -   `REL::VariantID{og, ng}` liefert für die AE-Runtime den NG-Wert, und die so aufgelösten
     Adressen sind für 1.11.240 korrekt. Prüfung durch den Kreuzvergleich aus Abschnitt 6.
 -   Bei `kGameDataReady` ist der SwapChain vorhanden.
--   `<d3d11.h>` und die `REX::W32`-Deklarationen von commonlibf4 lassen sich in derselben
-    Übersetzungseinheit einbinden. commonlib-shared verwendet dafür intern
-    `REX/W32/MACRO_GUARD_BEGIN.h`; ob Konsumenten dasselbe brauchen, zeigt der erste Bau.
+-   ~~`<d3d11.h>` und die `REX::W32`-Deklarationen lassen sich gemeinsam einbinden.~~ **Erledigt
+    vor Umsetzungsbeginn:** die Frage stellt sich nicht. `REX::W32` deklariert D3D11 und DXGI
+    vollständig, einschließlich `ID3DUserDefinedAnnotation` und `IID_ID3D11Device`. Wir bleiben
+    in diesem Namensraum, `<d3d11.h>` wird nicht eingebunden.
 -   `IDXGISwapChain::Present` liegt in dieser Umgebung auf vtable-Slot 8. Ergibt sich aus der
     COM-Vererbungskette und wird beim ersten Lauf durch einen laufenden Frame-Zähler bestätigt.
 
