@@ -42,6 +42,11 @@ Requires Visual Studio 2026 with Desktop C++ and the Windows 11 SDK, CMake 4.2+,
 `VCPKG_ROOT` set. Set `FO4CS_DEPLOY_DIR` to copy the built plugin to `<dir>/F4SE/Plugins` after
 linking.
 
+**Keep the checkout path short.** The Visual Studio generator writes `.tlog` files deep under
+`build/FO4/CMakeFiles/`, and MSBuild fails with `MSB6003 ... DirectoryNotFoundException` once those
+exceed `MAX_PATH`. A checkout roughly 100 characters deep is already enough to break a cold
+configure, and the error names `link.exe` rather than the real cause.
+
 ## Test
 
 ```pwsh
