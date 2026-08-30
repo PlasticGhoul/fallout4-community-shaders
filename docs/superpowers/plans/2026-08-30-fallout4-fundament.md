@@ -999,7 +999,7 @@ Die geerbte Dokumentation beschreibt durchgehend Skyrim und würde jeden künfti
 
 **Files:**
 
--   Modify: `.clangd`, `.claude/CLAUDE.md`, `AI-INSTRUCTIONS.md`, `README.md`, `TRANSLATING.md`
+-   Modify: `.clangd`, `.claude/CLAUDE.md`, `AI-INSTRUCTIONS.md`, `.github/copilot-instructions.md`, `README.md`, `TRANSLATING.md`
 
 **Interfaces:**
 
@@ -1089,16 +1089,23 @@ Ersetze die Skyrim-Abschnitte durch: Build-Befehle der neuen Presets, commonlibf
 
 Auf einen Verweis auf `.claude/CLAUDE.md` und `docs/fallout4-port/ROADMAP.md` reduzieren, Skyrim-spezifische Kommandos entfernen.
 
--   [ ] **Step 5: `TRANSLATING.md` mit Hinweis versehen**
+-   [ ] **Step 5: `.github/copilot-instructions.md` nachziehen**
+
+Die Datei verweist auf `.claude/CLAUDE.md` und `AI-INSTRUCTIONS.md` und ist nach den Schritten 3
+und 4 damit zur Hälfte richtig. Zu korrigieren sind die Copilot-spezifischen Abschnitte darunter,
+die weiterhin Skyrim-Build-Befehle und -Pfade nennen. Die Datei ist erst bei der Ausführung von
+Task 1 aufgefallen; Spec Abschnitt 4.5 führt sie nicht.
+
+-   [ ] **Step 6: `TRANSLATING.md` mit Hinweis versehen**
 
 Einen Absatz am Anfang: das i18n-System ist bis Teilprojekt E inaktiv, die Anleitung bleibt gültig für den Zeitpunkt, an dem es zurückkehrt.
 
--   [ ] **Step 6: pre-commit über alles laufen lassen**
+-   [ ] **Step 7: pre-commit über alles laufen lassen**
 
 Run: `pre-commit run --all-files`
 Erwartet: grün, oder automatisch korrigierte Formatierung — dann erneut laufen lassen.
 
--   [ ] **Step 7: Commit**
+-   [ ] **Step 8: Commit**
 
 ```bash
 git add -A
