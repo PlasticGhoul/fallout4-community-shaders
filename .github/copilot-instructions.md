@@ -1,124 +1,51 @@
 # GitHub Copilot Instructions
 
-**ALWAYS follow these instructions first and only fallback to additional search and context gathering if the information is incomplete or found to be in error.**
+**ALWAYS follow these instructions first and only fall back to additional search and context
+gathering if the information is incomplete or found to be in error.**
 
-## Primary Documentation
+## What this repository is
 
-**For comprehensive development guidance, architecture details, and complete build instructions, see:**
+A fork of Skyrim Community Shaders being ported to **Fallout 4** as an F4SE plugin. It is no
+longer a Skyrim project. The inherited Skyrim plugin sources were removed from the working tree
+and remain reachable through the `skyrim-base` tag; the HLSL shaders were kept and are the actual
+porting target.
 
--   **`.claude/CLAUDE.md`** - Complete 400+ line guide covering all aspects of development
--   **`AI-INSTRUCTIONS.md`** - Quick reference that also points to .claude/CLAUDE.md
+## Primary documentation
 
-This file provides Copilot-specific guidance while avoiding duplication of the comprehensive documentation above.
+-   **`docs/fallout4-port/ROADMAP.md`** — how the port is cut into subprojects, what is decided,
+    what is open. Decisions there are not to be relitigated.
+-   **`.claude/CLAUDE.md`** — build, test, engine library, runtime targeting, conventions, and an
+    explicit list of inherited areas that are temporarily moot.
+-   **`docs/superpowers/specs/`** and **`docs/superpowers/plans/`** — the subproject in flight.
 
-## Project Overview
+This file avoids duplicating those.
 
-SKSE64 plugin providing modular DirectX 11 graphics enhancements for Skyrim SE/AE. Features runtime shader compilation, 25+ graphics features, and cross-platform Skyrim variant support.
+## Build essentials
 
-## Environment and Build Essentials
+Windows only. Visual Studio 2026 with Desktop C++ and the Windows 11 SDK, CMake 4.2+, vcpkg with
+`VCPKG_ROOT`, Git.
 
-### Windows-Only Requirements
-
--   Visual Studio Community 2022 with "Desktop development with C++" workload
--   CMake 3.21+, Git, vcpkg with VCPKG_ROOT environment variable, Windows SDK
--   **NEVER CANCEL BUILDS**: 45-60 minutes build time, 15-30 minutes shader validation
-
-### Linux/WSL Limitations
-
--   **Cannot build or validate shaders** - requires Windows fxc.exe compiler
--   **Limited to**: Code review, documentation, Python tooling only
-
-### Primary Build Command (Windows)
-
-```powershell
-# ALL preset is primary - other presets (SE, AE) are legacy
-./BuildRelease.bat ALL    # Universal binary (recommended)
-./BuildRelease.bat        # Same as ALL (default)
+```pwsh
+git clone --recursive https://github.com/PlasticGhoul/fallout4-community-shaders.git
+cd fallout4-community-shaders
+cmake -S . --preset FO4
+cmake --build --preset FO4
 ```
 
-### Essential Repository Setup
+`--recursive` matters: commonlibf4 carries a nested submodule. A cold build takes minutes, not the
+better part of an hour — the inherited Skyrim build times no longer apply.
 
-```bash
-git clone https://github.com/doodlum/skyrim-community-shaders.git --recursive
-cd skyrim-community-shaders
-git submodule update --init --recursive  # If not cloned with --recursive
-```
+Use `FO4-Fast` (Ninja) while iterating. Verify with `ctest --test-dir build/FO4 -C Release` and
+`pwsh tools/verify-plugin.ps1`.
 
-## GitHub Copilot Role Guidelines
+Linux and WSL cannot build this: it needs MSVC and, later, `fxc.exe`.
 
-### Act as Expert
+## Role
 
-**Graphics programming and Skyrim modding expert** with deep knowledge of:
+Act as an experienced graphics programming and Fallout 4 modding expert: DirectX 11 pipelines and
+performance, F4SE plugin development, commonlibf4 runtime targeting, HLSL and GPU compute, ImGui.
 
--   DirectX 11/12 rendering pipelines and performance optimization
--   SKSE plugin development and CommonLibSSE-NG runtime targeting
--   HLSL shader development and GPU compute programming
--   ImGui interface design and Skyrim engine integration
-
-### Proactive Issue Identification
-
-**Flag potential problems before they occur:**
-
--   **Performance Impact**: Graphics features affect rendering performance - suggest user toggles
--   **Runtime Compatibility**: Warn about SE/AE compatibility issues, suggest `REL::RelocateMember()` patterns
--   **Buffer Conflicts**: Highlight GPU register conflicts, recommend hlslkit buffer scanning
--   **Security Risks**: Validate user input, prevent DirectX crashes from malformed configurations
-
-### Code Quality Standards
-
--   **Complete Solutions**: No TODO/FIXME placeholders - provide fully functional code
--   **Performance Conscious**: Always consider GPU workload and user experience
--   **Cross-Platform**: Ensure changes work across SE/AE variants using runtime detection
--   **Error Handling**: Include proper resource management and graceful degradation
-
-## Architecture Quick Reference
-
-### Core Systems Access (`src/Globals.h`)
-
-```cpp
-// Feature registry - all graphics features globally accessible
-globals::features::lightLimitFix
-globals::features::screenSpaceGI
-globals::features::volumetricLighting
-// ... 25+ more features
-
-// Core systems
-globals::state         // Feature lifecycle management
-globals::shaderCache   // Runtime shader compilation
-globals::d3d::*       // DirectX 11 device/context access
-```
-
-### Feature Development Pattern
-
-1. Inherit from `Feature` class (`src/Feature.h`)
-2. Implement `DrawSettings()`, `LoadSettings()`, `SaveSettings()`
-3. Add shaders to `features/YourFeature/Shaders/`
-4. Register in `globals::features` namespace
-5. Use template in `template/` directory as starting point
-
-### Common Development Commands
-
-```bash
-# Fast shader deployment (dev iteration - no DLL build)
-# See docs/development/shader-workflow.md and docs/development/vscode-setup.md
-cmake --build ./build/ALL --target COPY_SHADERS
-
-# Shader validation (targeted testing recommended during development)
-cmake --build ./build/ALL --target prepare_shaders
-hlslkit-compile --shader-dir build/ALL/aio/Shaders/[specific-feature] --output-dir build/ShaderCache --config .github/configs/shader-validation.yaml
-
-# Pre-commit validation
-pre-commit run --all-files
-```
-
-## Key Differences from .claude/CLAUDE.md
-
-This file focuses on Copilot-specific guidance while `.claude/CLAUDE.md` provides:
-
--   Complete architecture documentation (Feature system, DirectX hooking, shader architecture)
--   Comprehensive build setup and shader validation workflows
--   Detailed CommonLibSSE-NG runtime targeting patterns
--   Performance considerations and testing strategies
--   Complete troubleshooting guide and development best practices
-
-Refer to `.claude/CLAUDE.md` for detailed technical information not covered in this Copilot-specific summary.
+Flag problems before they land — performance cost in the render path, crashes from unvalidated
+input, runtime-compatibility breaks across OG/NG/AE, GPU register conflicts. Provide complete,
+working code; no TODO or placeholder implementations. Explain reasoning for anything that touches
+the render pipeline.

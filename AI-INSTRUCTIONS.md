@@ -1,55 +1,16 @@
 # AI Development Instructions
 
-This file provides guidance for AI assistants working with the Skyrim Community Shaders codebase.
+This repository is a fork of [Skyrim Community Shaders](https://github.com/community-shaders/skyrim-community-shaders)
+being ported to Fallout 4. It is not a Skyrim project any more; the inherited Skyrim plugin sources
+were removed and live on under the `skyrim-base` tag.
 
-## Primary Documentation
+**Read these three, in this order, before proposing any work:**
 
-**For comprehensive development guidance, see `.claude/CLAUDE.md`** which provides detailed information on:
+1. `docs/fallout4-port/ROADMAP.md` — how the port is cut into subprojects, what is decided, what is
+   still open. Decisions recorded there are not to be relitigated.
+2. `docs/superpowers/specs/` — the design for the subproject currently in flight.
+3. `.claude/CLAUDE.md` — build commands, architecture and conventions as they stand today,
+   including an explicit list of what is temporarily moot.
 
--   Build commands and development setup
--   Architecture overview and critical dependencies (CommonLibSSE-NG)
--   Runtime targeting system for SE/AE compatibility
--   Core architecture including Globals system and feature registry
--   Shader architecture (base shaders in `package/Shaders/`, feature shaders, compute shader patterns)
--   Development workflows and best practices
--   Common pitfalls and testing requirements
-
-## Quick Reference
-
-### Project Type
-
-SKSE plugin providing advanced DirectX 11 graphics modifications for Skyrim SE/AE.
-
-### Essential Commands
-
--   **Build**: `./BuildRelease.bat [PRESET]` (WSL: use `powershell.exe -Command`)
--   **Shader Test**: `hlslkit-compile --shader-dir [target]` (install via pip first)
--   **Feature Access**: `globals::features::*` namespace
-
-### Build Options
-
-**Runtime Presets**: `ALL` (universal), `SE`, `AE`, `ALL-TRACY`
-
-**CMake Options** (set in user preset):
-
--   `AUTO_PLUGIN_DEPLOYMENT=ON` - Auto-copy to `CommunityShadersOutputDir`
--   `ZIP_TO_DIST=ON` (default) - Create individual feature 7z packages
--   `AIO_ZIP_TO_DIST=ON` (default) - Create all-in-one 7z package
--   `TRACY_SUPPORT=ON` - Enable Tracy profiler integration
-
-### Custom CMake Targets
-
-**Quick targets** (common):
-
--   `PREPARE_AIO`, `prepare_shaders`, `COPY_SHADERS`, `AIO_ZIP_PACKAGE`
--   `FORMAT_CODE`, `generate_shader_configs`
-
-For full details about manual packaging targets (Package-Core, Package-AIO-Manual, Package-<Feature>, AIO) and example workflows, see the "Manual packaging targets (detailed)" section in `.claude/CLAUDE.md` to avoid duplication.
-
-### AI Assistant Role
-
-**Act as an experienced graphics programming and Skyrim modding expert.**
-
-**Key Focus**: Performance impact awareness, runtime compatibility (SE/AE), complete working solutions, DirectX/HLSL best practices.
-
-For detailed explanations, examples, and comprehensive guidance, refer to `.claude/CLAUDE.md`.
+Consulting the Skyrim implementation while porting is expected:
+`git show skyrim-base:src/Features/Skylighting.cpp`.

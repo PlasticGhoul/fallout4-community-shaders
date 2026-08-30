@@ -1,5 +1,11 @@
 # Translating Community Shaders
 
+> **Inactive during the Fallout 4 port.** The i18n system returns with subproject E (the menu);
+> see [the roadmap](docs/fallout4-port/ROADMAP.md). The translation files under `package/` were
+> kept and this guide stays valid for the point at which the system comes back — but there is
+> currently no UI to translate, and the `extract-i18n.py` / `sort-i18n.py` workflow is not wired
+> into the build or CI.
+
 Community Shaders supports multiple languages through a JSON-based translation system.
 This document explains how to contribute translations.
 

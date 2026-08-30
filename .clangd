@@ -1,11 +1,9 @@
 CompileFlags:
   Add:
     - -std=c++23
-    - -DENABLE_SKYRIM_AE
-    - -DENABLE_SKYRIM_SE
-    - -DENABLE_SKYRIM_VR
+    - -Iextern/CommonLibF4/include
+    - -Iextern/CommonLibF4/lib/commonlib-shared/include
     - -Isrc
-    - -Iextern/CommonLibSSE-NG/include
-    - -Ibuild/ALL/vcpkg_installed/x64-windows-static-md/include
-    - -Ipackage/Shaders
+    - -Iinclude
+    - -Ibuild/FO4/vcpkg_installed/x64-windows-static-md-release/include
   Compiler: clang-cl
