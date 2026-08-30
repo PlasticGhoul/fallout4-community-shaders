@@ -104,13 +104,22 @@ Schnittstelle.
 
 ### 5.1 `ShaderSource`
 
-Löst einen logischen Shader-Namen gegen `Data/Shaders/FO4/` auf, liest die Datei und bedient
-`#include` über eine eigene `ID3DInclude`-Implementierung. Führt dabei Buch über **alle** berührten
-Dateien — diese Menge braucht der Watcher, damit eine Änderung an einer `.hlsli`-Datei ebenfalls
-eine Neuübersetzung auslöst.
+Löst einen logischen Shader-Namen gegen `Data/Shaders/FO4/` auf, liest die Datei und löst
+`#include "…"` **selbst und textuell** auf: die Zeile wird durch den Inhalt der eingebundenen Datei
+ersetzt, eingerahmt von `#line`-Direktiven, damit Compilerfehler weiterhin auf Datei und Zeile der
+_Quelle_ zeigen. Ergebnis ist ein einziger Übersetzungstext plus die Menge aller berührten Dateien
+— diese Menge braucht der Watcher, damit eine Änderung an einer `.hlsli`-Datei ebenfalls eine
+Neuübersetzung auslöst.
+
+**Warum nicht `ID3DInclude`.** `REX::W32` deklariert `ID3DInclude` als `: public IUnknown`. Das
+Windows SDK deklariert dieselbe Schnittstelle mit `DECLARE_INTERFACE(ID3DInclude)`, also **ohne**
+Basis und mit genau zwei vtable-Einträgen (`d3dcommon.h:641` im SDK 10.0.26100.0). Wer die
+REX-Fassung implementiert, schiebt drei `IUnknown`-Slots davor; `d3dcompiler` ruft dann
+`QueryInterface`, wo es `Open` erwartet. Wir umgehen das, indem wir `nullptr` als Include-Handler
+übergeben. Der Fehler in `REX::W32` wird an commonlib-shared zurückgemeldet.
 
 Includes werden nur innerhalb von `Data/Shaders/` aufgelöst. Ein `..`, das aus dem Baum
-herausführt, wird abgelehnt und protokolliert.
+herausführt, wird abgelehnt und protokolliert. Zyklen werden erkannt und ebenfalls abgelehnt.
 
 ### 5.2 `ShaderCompiler`
 
@@ -129,11 +138,24 @@ Der direkte Nachfahre von B2s Inventar: erst wissen, was da ist, dann eingreifen
 
 Läuft `ImageSpaceManager::GetSingleton()->effectList` ab und bestimmt für jeden Eintrag:
 
--   die Klasse, über einen Vergleich der vtable-Adresse gegen die relozierten Werte aus
-    `RE::VTABLE::BSImagespaceShader*`,
--   den Offset des `ImageSpaceEffect`-Subobjekts innerhalb des Gesamtobjekts,
+-   die Klasse, **aus der RTTI des Objekts selbst**,
+-   den Offset des `ImageSpaceEffect`-Subobjekts innerhalb des Gesamtobjekts, ebenfalls aus der
+    RTTI gelesen statt geschätzt,
 -   daraus die Adresse des `BSShader`-Subobjekts,
 -   dessen `shaderType`, `fxpFilename` und die Technik-IDs in `pixelShaders`.
+
+**Warum RTTI statt vtable-IDs.** Der naheliegende Weg wäre, die vtable-Adresse gegen die
+relozierten Werte aus `RE::VTABLE::BSImagespaceShader*` zu vergleichen. Das scheitert am
+Fehlerverhalten der Adressbibliothek: `REL::ID::offset()` ruft bei einer unbekannten ID
+`REX::FAIL` (`IDDB.cpp:442`), was den Prozess mit einem Dialog beendet und nicht abfangbar ist.
+Bei 162 Klassen mit je bis zu drei IDs wäre eine einzige in der AE-Bibliothek fehlende ID ein
+Absturz beim Spielstart.
+
+MSVC legt vor jedem vtable-Eintrag einen `RTTICompleteObjectLocator` ab, den `REX::W32` bereits
+deklariert. Aus ihm kommen beide gesuchten Angaben ohne jeden Bibliothekszugriff: das Feld
+`typeDescriptor` führt zum dekorierten Klassennamen (`.?AVBSImagespaceShaderCopy@@`), und das Feld
+`offset` **ist** der gesuchte Offset des Subobjekts — der Compiler hat ihn dort hinterlegt. Der
+Katalog benennt damit auch Klassen, an die wir vorher nicht gedacht haben.
 
 Ergebnis ist eine Tabelle im Log — Klassenname, Offset, Technik-IDs, Shader-Zeiger — und im
 Speicher ein Verzeichnis, aus dem `ShaderOverride` seinen Ziel-Slot bezieht.
@@ -153,9 +175,19 @@ installiert ist. Kann jederzeit zurücktauschen.
 
 ### 5.5 `ShaderWatcher`
 
-`ReadDirectoryChangesW` auf `Data/Shaders/FO4/` in einem eigenen Thread, rekursiv. Entprellt
-Änderungen — Editoren schreiben eine Datei gern mehrfach — und meldet betroffene Shader in eine
-Warteschlange.
+Ein eigener Thread fragt alle 500 ms `std::filesystem::last_write_time` für **die Dateimenge ab,
+die `ShaderSource` gemeldet hat** — die Hauptdatei und jedes eingebundene `.hlsli`. Ändert sich ein
+Zeitstempel, gilt der Shader als veraltet.
+
+**Warum kein `ReadDirectoryChangesW`.** `REX::W32::KERNEL32` deklariert weder diese Funktion noch
+`FindFirstChangeNotification`. Sie zu benutzen hieße, `<Windows.h>` einzubinden — genau das, was
+`REX::W32` vermeiden soll, und wofür B1 bereits die Regel aufgestellt hat, bei einem Typsystem zu
+bleiben. Bei einer Handvoll beobachteter Dateien ist Abfragen ohnehin billiger als der Apparat
+drumherum.
+
+Die Abfrage entprellt von selbst: ein Editor, der eine Datei mehrfach schreibt, erzeugt zwischen
+zwei Abfragen nur einen einzigen erkannten Zeitstempelwechsel. Eine Datei, die gerade nicht lesbar
+ist, weil der Editor sie noch offen hält, wird beim nächsten Durchgang erneut versucht.
 
 ## 6. Ablauf und Zeitpunkte
 
@@ -195,12 +227,14 @@ Das ist die Stelle, an der eine falsche Annahme nicht abstürzt, sondern in frem
 schreibt. Der Aufbau wird deshalb **belegt, bevor irgendetwas geschrieben wird.** Drei Stufen, alle
 drei müssen halten:
 
-1.  **vtable-Identität.** Für einen `effectList`-Eintrag `p` muss `*(void**)p` einer der drei
-    relozierten Adressen aus `VTABLE::BSImagespaceShader…` der erkannten Klasse entsprechen. Das
-    sagt zugleich, welche der drei das `ImageSpaceEffect`-Subobjekt ist.
-2.  **Offset-Beleg.** Vom Subobjekt zurückgerechnet muss am mutmaßlichen `BSShader`-Anfang die
-    _erste_ vtable derselben Klasse stehen. Damit ist der Offset der Mehrfachvererbung gemessen
-    statt geraten.
+1.  **RTTI-Identität.** Der Locator bei `vtable[-1]` muss `signature == 1` führen, und die aus
+    seinem Feld `self` zurückgerechnete Modulbasis muss der von
+    `REX::FModule::GetExecutingModule().GetBaseAddress()` entsprechen. Damit ist belegt, dass die
+    vtable zum Spielmodul gehört und der Locator echt ist. Der Klassenname muss mit `.?AV`
+    beginnen und `BSImagespaceShader` enthalten.
+2.  **Offset aus der RTTI.** `offset` des Locators nennt die Lage des Subobjekts. Der daraus
+    berechnete `BSShader`-Anfang muss seinerseits einen Locator derselben Klasse tragen, dessen
+    `offset` null ist. Damit ist die Rechnung von beiden Seiten belegt.
 3.  **Plausibilität.** `shaderType` im gültigen Bereich, `fxpFilename` ein lesbarer String,
     `pixelShaders.size()` klein und ungleich null.
 
@@ -230,7 +264,7 @@ registriert.
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `ShaderCompilerTests` | Gültiges HLSL ergibt nicht-leeren Bytecode; ungültiges ergibt Fehlschlag mit nicht-leerem Fehlertext, der die Zeilennummer nennt; eine Warnung wird zum Fehler. Läuft auf dem Host, weil `d3dcompiler.lib` ohnehin gelinkt ist |
 | `ShaderSourceTests`   | Pfadauflösung, `#include` inklusive Verschachtelung, gesammelte Dateimenge, fehlende Datei, ein `..` das aus dem Baum führt                                                                                                    |
-| `ShaderWatcherTests`  | Temporäres Verzeichnis, Datei anfassen, Änderung kommt innerhalb einer großzügigen Frist an; zwei schnelle Schreibvorgänge ergeben **eine** Meldung                                                                            |
+| `ShaderWatcherTests`  | Temporäres Verzeichnis, Datei anfassen, Änderung wird beim nächsten Durchgang gemeldet; ein Durchgang ohne Änderung meldet nichts; eine gelöschte Datei führt nicht zu einer Ausnahme                                          |
 
 Jeder Test wird nach dem Grünwerden absichtlich gebrochen, mit vorher benanntem erwartetem
 Fehlschlag. Dabei ist darauf zu achten, dass die Mutation auch übersetzt — sonst prüft man das alte
@@ -265,6 +299,14 @@ Diese Punkte sind hergeleitet, aber nicht gemessen. Jeder von ihnen kann die Ums
     ein brauchbares Bild ergibt.
 -   Dass die Engine ihre Imagespace-Shader im laufenden Betrieb nicht ohnehin regelmäßig neu lädt.
     Trifft das doch zu, wird aus dem Wächter mehr als eine Randabsicherung.
+
+## 11a. Befund für commonlib-shared
+
+`REX::W32::ID3DInclude` erbt in `REX/W32/D3D.h` von `IUnknown`. Das Windows SDK deklariert die
+Schnittstelle mit `DECLARE_INTERFACE(ID3DInclude)`, also ohne Basis und mit genau zwei
+vtable-Einträgen. Die REX-Fassung ist damit unbrauchbar: eine daraus abgeleitete Implementierung
+bekommt drei `IUnknown`-Slots vorangestellt, und `d3dcompiler` ruft `QueryInterface`, wo es `Open`
+erwartet. Der dritte Befund, der sich zurückgeben lässt — nach den beiden aus B2.
 
 ## 12. Übergabe
 
