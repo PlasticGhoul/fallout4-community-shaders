@@ -1,4 +1,5 @@
 #include "Plugin.h"
+#include "Render/SwapChainHook.h"
 #include "Runtime.h"
 
 namespace
@@ -15,6 +16,7 @@ namespace
 			break;
 		case F4SE::MessagingInterface::kGameDataReady:
 			REX::INFO("kGameDataReady received");
+			Render::InstallSwapChainHook();
 			break;
 		default:
 			break;
