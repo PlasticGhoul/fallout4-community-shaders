@@ -77,6 +77,28 @@ target_sources(
         "${CMAKE_CURRENT_BINARY_DIR}/cmake/version.rc"
 )
 
+# The Plugin.h above is stamped at configure time and goes stale on the next
+# commit, so a plain rebuild would ship a binary that misreports which commit
+# produced it. Re-derive the identity before every build instead. The script
+# uses configure_file, which leaves the header alone when nothing changed, so
+# this costs one git call and never forces a recompile.
+add_custom_target(
+    ${PROJECT_NAME}_git_version
+    COMMAND
+        "${CMAKE_COMMAND}" -D "SOURCE_DIR=${CMAKE_SOURCE_DIR}" -D
+        "IN_FILE=${CMAKE_SOURCE_DIR}/cmake/Plugin.h.in" -D
+        "OUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/cmake/Plugin.h" -D
+        "PROJECT_NAME=${PROJECT_NAME}" -D
+        "PROJECT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}" -D
+        "PROJECT_VERSION_MINOR=${PROJECT_VERSION_MINOR}" -D
+        "PROJECT_VERSION_PATCH=${PROJECT_VERSION_PATCH}" -P
+        "${CMAKE_SOURCE_DIR}/cmake/GitVersion.cmake"
+    BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/cmake/Plugin.h"
+    COMMENT "Refreshing the build identity"
+    VERBATIM
+)
+add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_git_version)
+
 target_include_directories(
     ${PROJECT_NAME}
     PRIVATE
