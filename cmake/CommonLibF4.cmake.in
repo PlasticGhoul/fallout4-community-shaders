@@ -1,0 +1,61 @@
+# CMake shim for commonlibf4, which upstream ships with xmake.lua only.
+#
+# Written against the upstream layout as of 2026-08-30: include/, src/ and
+# lib/commonlib-shared/. commonlib-shared carries a full CMakeLists of its own
+# and is used directly; only commonlibf4 itself needs rebuilding here.
+# If this file stops configuring, check whether upstream moved directories
+# before changing anything else.
+cmake_minimum_required(VERSION 4.2)
+
+project(CommonLibF4Shim LANGUAGES CXX)
+
+set(COMMONLIBF4_SOURCE_DIR "@COMMONLIBF4_SOURCE_DIR@")
+
+add_subdirectory(
+    "${COMMONLIBF4_SOURCE_DIR}/lib/commonlib-shared"
+    "${CMAKE_CURRENT_BINARY_DIR}/commonlib-shared"
+)
+
+file(
+    GLOB_RECURSE COMMONLIBF4_SOURCES
+    LIST_DIRECTORIES false
+    CONFIGURE_DEPENDS
+    "${COMMONLIBF4_SOURCE_DIR}/src/*.cpp"
+)
+
+file(
+    GLOB_RECURSE COMMONLIBF4_HEADERS
+    LIST_DIRECTORIES false
+    CONFIGURE_DEPENDS
+    "${COMMONLIBF4_SOURCE_DIR}/include/*.h"
+)
+
+add_library(CommonLibF4 STATIC ${COMMONLIBF4_SOURCES} ${COMMONLIBF4_HEADERS})
+add_library(CommonLibF4::CommonLibF4 ALIAS CommonLibF4)
+
+target_include_directories(
+    CommonLibF4
+    PUBLIC "${COMMONLIBF4_SOURCE_DIR}/include"
+)
+
+target_compile_features(CommonLibF4 PUBLIC cxx_std_23)
+
+target_link_libraries(CommonLibF4 PUBLIC commonlib-shared::commonlib-shared)
+
+target_compile_definitions(
+    CommonLibF4
+    PUBLIC
+        _UNICODE
+        UNICODE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+)
+
+target_precompile_headers(
+    CommonLibF4
+    PRIVATE "${COMMONLIBF4_SOURCE_DIR}/include/F4SE/Impl/PCH.h"
+)
+
+if(MSVC)
+    target_compile_options(CommonLibF4 PRIVATE /bigobj /utf-8)
+endif()
