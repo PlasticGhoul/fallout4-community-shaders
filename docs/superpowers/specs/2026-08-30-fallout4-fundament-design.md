@@ -25,7 +25,7 @@ ausgeschlossen, dass die Ursache im Fundament liegt.
 -   `commonlibf4` als Submodul, eingebunden über `add_subdirectory` plus generierten CMake-Shim.
 -   Auf das Nötige reduziertes vcpkg-Manifest.
 -   F4SE-Entrypoints, Plugin-Deklaration, Versionsressource.
--   Logging in eine Datei.
+-   Konfiguration des Logkanals, den `F4SE::Init` bereitstellt.
 -   Zweistufige Runtime-Erkennung mit sauberer Ablehnung nicht unterstützter Versionen.
 -   Ein Nachrichten-Listener, der den F4SE-Nachrichtenweg nachweist.
 -   Deploy-Hilfe für die Entwicklungsschleife.
@@ -45,14 +45,14 @@ ausgeschlossen, dass die Ursache im Fundament liegt.
 
 Diese Punkte sind entschieden und werden in A nicht neu verhandelt.
 
-| Thema             | Entscheidung                                                                 | Begründung                                                                                                                                      |
-| ----------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Geerbter C++-Code | Radikaler Schnitt, Historie über Tag `skyrim-base`                           | Sauberer Arbeitsbaum; kein toter Code in Suche, Grep und clangd. Rückgriff über `git show` bleibt jederzeit möglich                             |
-| Projektgerüst     | Neues minimales CMakeLists; Packaging, Deployment und CI vorerst stillgelegt | Deren Anforderungen (Fallout-Datenpfade, Feature-Layout) stehen noch nicht fest; sie jetzt umzubauen hieße, gegen Unbekanntes zu bauen          |
-| Plugin-Identität  | `FO4CommunityShaders`, Version `0.1.0`                                       | Keine Verwechslung mit dem Skyrim-Plugin in Logs und Absturzberichten; 0.x benennt die Reife ehrlich                                            |
-| Engine-Bibliothek | `commonlibf4` als Submodul auf eigenem Fork, plus generierter CMake-Shim     | Bibliothek liefert nur `xmake.lua`; wir werden sie erweitern müssen, also braucht sie einen editierbaren Fork statt eines gepinnten vcpkg-Ports |
-| Versionsprüfung   | Exakt gegen `F4SE::RUNTIME_1_11_240`, nicht gegen `RUNTIME_LATEST`           | `RUNTIME_LATEST` ist ein bewegliches Ziel und ließe uns nach einer Spielaktualisierung stillschweigend auf eine ungetestete Runtime laufen      |
-| Trampolin         | In A abgeschaltet                                                            | A installiert keinen Hook. Das Trampolin kommt mit B                                                                                            |
+| Thema             | Entscheidung                                                                 | Begründung                                                                                                                                                                                                                                           |
+| ----------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Geerbter C++-Code | Radikaler Schnitt, Historie über Tag `skyrim-base`                           | Sauberer Arbeitsbaum; kein toter Code in Suche, Grep und clangd. Rückgriff über `git show` bleibt jederzeit möglich                                                                                                                                  |
+| Projektgerüst     | Neues minimales CMakeLists; Packaging, Deployment und CI vorerst stillgelegt | Deren Anforderungen (Fallout-Datenpfade, Feature-Layout) stehen noch nicht fest; sie jetzt umzubauen hieße, gegen Unbekanntes zu bauen                                                                                                               |
+| Plugin-Identität  | `CommunityShadersFO4`, Version `0.1.0`                                       | Keine Verwechslung mit dem Skyrim-Plugin in Logs und Absturzberichten; 0.x benennt die Reife ehrlich. Bewusst nicht `FO4CommunityShaders`: diesen Namen belegt bereits die Referenzimplementierung, beide Plugins würden sonst dieselbe DLL erzeugen |
+| Engine-Bibliothek | `commonlibf4` als Submodul auf eigenem Fork, plus generierter CMake-Shim     | Bibliothek liefert nur `xmake.lua`; wir werden sie erweitern müssen, also braucht sie einen editierbaren Fork statt eines gepinnten vcpkg-Ports                                                                                                      |
+| Versionsprüfung   | Exakt gegen `F4SE::RUNTIME_1_11_240`, nicht gegen `RUNTIME_LATEST`           | `RUNTIME_LATEST` ist ein bewegliches Ziel und ließe uns nach einer Spielaktualisierung stillschweigend auf eine ungetestete Runtime laufen                                                                                                           |
+| Trampolin         | In A abgeschaltet                                                            | A installiert keinen Hook. Das Trampolin kommt mit B                                                                                                                                                                                                 |
 
 ## 4. Repository-Umbau
 
@@ -178,8 +178,10 @@ erkennbar bleibt.
 ### 5.3 Abhängigkeiten
 
 Das vcpkg-Manifest wird auf eine Abhängigkeit reduziert: `spdlog` mit Feature `wchar`, verlangt
-von `commonlib-shared`. Für den Unit-Test kommt `catch2` hinzu. `xbyak` und `detours` folgen mit
-den Hooks in B, ImGui mit dem Menü in E.
+von `commonlib-shared`. Mehr nicht: der Unit-Test aus Abschnitt 7.1 kommt ohne Test-Framework aus
+— ein schlichtes Executable mit Rückgabewert ungleich null genügt für eine einzige
+Entscheidungsfunktion und erspart eine weitere Abhängigkeit. `xbyak` und `detours` folgen mit den
+Hooks in B, ImGui mit dem Menü in E.
 
 `builtin-baseline` bleibt auf `dddca6fa87f177e0678e2545c4b4636a44aa05bd` — dem Stand, auf den die
 lokale vcpkg-Installation bereits ausgecheckt ist und mit dem der geerbte Build nachweislich
@@ -195,7 +197,7 @@ Neues Wurzel-`CMakeLists.txt`, Zielgröße unter 150 Zeilen. `cmake_minimum_requ
 bleibt: der Generator `Visual Studio 18 2026` verlangt ein aktuelles CMake, und die vorhandene
 Toolchain erfüllt das nachweislich.
 
--   Projektversion `0.1.0`, Zielname `FO4CommunityShaders`, Bibliothekstyp `SHARED`.
+-   Projektversion `0.1.0`, Zielname `CommunityShadersFO4`, Bibliothekstyp `SHARED`.
 -   `Plugin.h` und `version.rc` werden aus den vorhandenen Vorlagen `cmake/Plugin.h.in` und
     `cmake/Version.rc.in` erzeugt, angepasst auf Name, Version und Autor.
 -   Unser Target führt `/W4 /WX` und `cxx_std_23`. Die beiden Fremd-Targets behalten ihre
@@ -204,7 +206,8 @@ Toolchain erfüllt das nachweislich.
     `<Windows.h>` unter `WIN32_LEAN_AND_MEAN`.
 -   Option `FO4CS_DEPLOY_DIR`: ist sie gesetzt, kopiert ein Post-Build-Schritt die DLL nach
     `<FO4CS_DEPLOY_DIR>/F4SE/Plugins/`. Mehr nicht.
--   Option `FO4CS_BUILD_TESTS`, Standard `ON`, für das Test-Target.
+-   Option `FO4CS_BUILD_TESTS`, Standard `ON`, für das Test-Executable; `enable_testing()`
+    plus `add_test`, ausführbar über `ctest`.
 
 ### 5.5 Presets
 
@@ -231,8 +234,10 @@ aus der SKSE-Entsprechung abgeleitet.
     `UsesSigScanning(false)`, `IsLayoutDependent(true)`, `HasNoStructUse(false)` und
     `CompatibleVersions({ F4SE::RUNTIME_1_11_240 })`.
 -   `F4SEPlugin_Query` für den älteren Ladepfad, füllt `F4SE::PluginInfo`.
--   `F4SEPlugin_Load` mit `F4SE::InitInfo`, dabei `trampoline = false`, weil A keinen Hook
-    installiert.
+-   `F4SEPlugin_Load` mit `F4SE::InitInfo`, dabei `trampoline = false` und `hook = false`, weil A
+    keinen Hook installiert. `hook` wäre auch auf `true` folgenlos -- `InitHook` aktiviert nur
+    vom Plugin registrierte `REL::FHook`-Objekte, und davon gibt es keine --, aber die
+    Hook-Freiheit von A soll im Code stehen und nicht aus einer Abwesenheit folgen.
 
 ### 6.2 Runtime-Erkennung
 
@@ -253,21 +258,25 @@ ohne laufendes Spiel testbar ist.
 
 ### 6.3 Logging
 
-Die libxse-Linie von `commonlibf4` liefert kein `Logger.h`; das existiert ausschließlich in
-`alandtse/CommonLibF4`. Das Logging wird daher selbst aufgesetzt, klein gehalten:
+Anders als zunächst angenommen bringt die Bibliothek Logging mit. Es gibt zwar kein
+`F4SE/Logger.h` -- das existiert nur in `alandtse/CommonLibF4` --, aber `F4SE::Init` richtet den
+Kanal vollständig ein, sobald `InitInfo::log` gesetzt ist (Standard: `true`):
 
--   spdlog, ohnehin als Pflichtabhängigkeit vorhanden.
--   Datei-Sink auf `<Dokumente>/My Games/Fallout4/F4SE/FO4CommunityShaders.log`, Basispfad über
-    `SHGetKnownFolderPath(FOLDERID_Documents)`.
--   Im Debug-Build zusätzlich der MSVC-Ausgabefenster-Sink.
--   Ausgabemuster `[%Y-%m-%d %H:%M:%S.%e] [%l] [%t] [%s:%#] %v`, übernommen aus dem geerbten
-    Projekt: Zeitstempel, Ebene, Thread, Quelldatei und Zeile.
--   Standardebene `info`, `flush_on(info)`, damit ein Absturz die letzte Zeile nicht verschluckt.
--   Erste Zeile nach Initialisierung: Plugin-Name, Version, erkannte Runtime, gemeldete
-    Spielversion.
+-   Zielpfad `<Dokumente>/My Games/{GetSaveFolderName()}/F4SE/{Plugin-Name}.log`, aufgelöst über
+    `SHGetKnownFolderPath(FOLDERID_Documents)`. `GetSaveFolderName()` liefert ab F4SE 0.7.1 den
+    Wert des Interfaces und fällt darunter auf `Fallout4` zurück; die Ziel-F4SE 0.7.9 nutzt also
+    den echten Wert.
+-   Sinks: MSVC-Ausgabefenster plus Datei, wahlweise rotierend über `InitInfo::logRotate`.
+-   Level und Flush-Level aus `InitInfo::logLevel`, Muster aus `InitInfo::logPattern`.
+-   Die erste Zeile mit Plugin-Name und Version schreibt die Bibliothek selbst.
 
-Der Zielpfad ist eine **Annahme** und wird beim ersten Lauf gegen den Ort abgeglichen, an dem
-F4SE selbst schreibt. Siehe Abschnitt 8.
+Wir setzen daher lediglich `InitInfo` und schreiben über `REX::INFO` / `REX::ERROR`. Ein eigenes
+Log-Modul entfällt.
+
+Daraus folgt eine Reihenfolge-Bedingung: `F4SE::Init` muss **vor** der Versionsprüfung laufen,
+sonst lässt sich eine Ablehnung nicht protokollieren. Das ist unbedenklich, weil `Init` mit
+`trampoline = false` und `hook = false` nur den Plugin-Zustand aufbaut, den Logkanal öffnet und
+die F4SE-Interfaces abfragt.
 
 ### 6.4 Nachrichten
 
@@ -278,8 +287,8 @@ Nachrichtenweg steht, auf dem B aufsetzt.
 
 ### 6.5 Dateien
 
-`src/XSEPlugin.cpp`, `src/Log.h`, `src/Log.cpp`, `src/Runtime.h`, `src/Runtime.cpp`,
-`include/PCH.h`. Wenige hundert Zeilen insgesamt.
+`src/XSEPlugin.cpp`, `src/Runtime.h`, `src/Runtime.cpp`, `include/PCH.h`. Rund zweihundert
+Zeilen insgesamt.
 
 ## 7. Verifikation und Abnahme
 
@@ -293,7 +302,7 @@ Nachrichtenweg steht, auf dem B aufsetzt.
     `CONFIGURE_DEPENDS`-Abhängigkeiten.
 3.  **Artefaktprüfung** durch ein neues `tools/verify-plugin.ps1`: PE-Signatur, Maschinentyp
     `0x8664`, gesetztes DLL-Bit, Exporttabelle enthält `F4SEPlugin_Load`, `F4SEPlugin_Query`
-    und `F4SEPlugin_Version`, Versionsressource trägt `FO4CommunityShaders` und `0.1.0`.
+    und `F4SEPlugin_Version`, Versionsressource trägt `CommunityShadersFO4` und `0.1.0`.
 4.  **Unit-Test** für `IsSupportedRuntime`: `1.11.240` wird akzeptiert; `1.10.163`, `1.10.984`
     und eine erfundene höhere Version werden abgelehnt. Dies ist die einzige Stelle in A, die
     still und folgenschwer falsch sein kann.
@@ -322,7 +331,9 @@ tatsächlich bestätigten Log-Pfad und die F4SE-Version, gegen die getestet wurd
 Diese Punkte sind begründet, aber nicht bewiesen. Sie werden im Verlauf von A verifiziert und das
 Ergebnis wird in der Roadmap festgehalten.
 
--   Der F4SE-Logpfad lautet `<Dokumente>/My Games/Fallout4/F4SE/`. Abgleich bei Prüfschritt 6.
+-   `GetSaveFolderName()` liefert unter Fallout 4 AE `Fallout4`, der Logpfad lautet also
+    `<Dokumente>/My Games/Fallout4/F4SE/`. Der Pfad wird von der Bibliothek gebildet, nicht von
+    uns; Abgleich bei Prüfschritt 6.
 -   `commonlib-shared` lässt sich per `add_subdirectory` ohne Anpassung in unseren Build
     einhängen. Fällt das durch, weicht der Shim aus Abschnitt 5.2 auf den Nachbau aus, den die
     Referenzimplementierung verwendet.
