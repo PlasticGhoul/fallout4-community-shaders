@@ -288,28 +288,28 @@ if(FO4CS_BUILD_TESTS)
     add_test(NAME ShaderCompiler COMMAND ShaderCompilerTests)
 
     add_executable(
-        ShaderWatcherTests
-        "${CMAKE_SOURCE_DIR}/tests/ShaderWatcherTests.cpp"
-        "${CMAKE_SOURCE_DIR}/src/Shader/ShaderWatcher.cpp"
+        FileWatchTests
+        "${CMAKE_SOURCE_DIR}/tests/FileWatchTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Util/FileWatch.cpp"
     )
 
     target_include_directories(
-        ShaderWatcherTests
+        FileWatchTests
         PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
     )
-    target_compile_features(ShaderWatcherTests PRIVATE cxx_std_23)
+    target_compile_features(FileWatchTests PRIVATE cxx_std_23)
     target_precompile_headers(
-        ShaderWatcherTests
+        FileWatchTests
         PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
     )
-    target_link_libraries(ShaderWatcherTests PRIVATE CommonLibF4::CommonLibF4)
+    target_link_libraries(FileWatchTests PRIVATE CommonLibF4::CommonLibF4)
 
     if(MSVC)
         target_compile_options(
-            ShaderWatcherTests
+            FileWatchTests
             PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
         )
     endif()
 
-    add_test(NAME ShaderWatcher COMMAND ShaderWatcherTests)
+    add_test(NAME FileWatch COMMAND FileWatchTests)
 endif()

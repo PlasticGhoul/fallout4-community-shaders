@@ -4,7 +4,7 @@
 #include "Shader/ShaderCompiler.h"
 #include "Shader/ShaderOverride.h"
 #include "Shader/ShaderSource.h"
-#include "Shader/ShaderWatcher.h"
+#include "Util/FileWatch.h"
 
 #include <atomic>
 #include <chrono>
@@ -59,7 +59,7 @@ namespace Shader
 		// Reads, splices and compiles. Creating the D3D object is left to the
 		// render thread: keeping every D3D call on one thread is one fewer
 		// assumption to be wrong about.
-		void CompileAndPublish(FileWatch& a_watch)
+		void CompileAndPublish(Util::FileWatch& a_watch)
 		{
 			const auto source = LoadSource(ShaderRoot(), kShaderFile);
 			if (!source.has_value()) {
@@ -90,7 +90,7 @@ namespace Shader
 
 		void WatcherLoop()
 		{
-			FileWatch watch;
+			Util::FileWatch watch;
 			bool loadedOnce = false;
 
 			while (!g_stop.load(std::memory_order_acquire)) {

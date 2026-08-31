@@ -1,6 +1,6 @@
-#include "Shader/ShaderWatcher.h"
+#include "Util/FileWatch.h"
 
-namespace Shader
+namespace Util
 {
 	namespace
 	{

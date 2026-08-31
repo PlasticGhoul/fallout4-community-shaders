@@ -1,4 +1,4 @@
-#include "Shader/ShaderWatcher.h"
+#include "Util/FileWatch.h"
 
 #include <chrono>
 #include <cstdio>
@@ -44,7 +44,7 @@ int main()
 
 	const std::vector<std::filesystem::path> files{ first, second };
 
-	Shader::FileWatch watch;
+	Util::FileWatch watch;
 	watch.Reset(files);
 
 	Check(!watch.Poll(), "nothing changed right after Reset");
@@ -68,7 +68,7 @@ int main()
 	Check(!threw, "a deleted file does not throw");
 
 	// An empty watch set is the normal state before the first shader loads.
-	Shader::FileWatch empty;
+	Util::FileWatch empty;
 	Check(!empty.Poll(), "an empty watch reports nothing");
 
 	std::filesystem::remove_all(root);

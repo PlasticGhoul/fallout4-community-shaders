@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-namespace Shader
+namespace Util
 {
 	/// Polls the modification times of a fixed set of files.
 	///
