@@ -46,17 +46,24 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | B1  | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                     | **abgeschlossen** |
 | B2  | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle | **abgeschlossen** |
 | C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt   | **abgeschlossen** |
-| D   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz, Ini-Versionierung          | Zwei Dummy-Features unabhängig an-/abschaltbar                             | offen             |
+| D1  | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz                             | Zwei Features unabhängig an-/abschaltbar                                   | **abgeschlossen** |
+| D2  | **Paketierung** — `dist/`, AIO-Archive, Ini-Versionsaudit                                                              | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel               | offen             |
 | E   | **Menü** — ImGui-Overlay, Input-Handling, Einstellungs-UI                                                              | Overlay im Spiel bedienbar, Einstellungen überleben Neustart               | offen             |
 | F+  | **Features einzeln** — je ein Zyklus pro portiertem CS-Feature                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+
+Das ursprüngliche Teilprojekt D wurde am 2026-08-30 in D1 und D2 geteilt: Laufzeitverhalten und
+Auslieferung sind zwei Subsysteme ohne Berührung. **D2 rutscht hinter F**, weil Paketierung erst
+lohnt, wenn es echte Features zu paketieren gibt. Das Abnahmekriterium von D1 heißt „zwei
+Features", nicht mehr „zwei Dummy-Features" — siehe die Begründung im Abschnitt zu D1.
 
 Das ursprüngliche Teilprojekt B wurde am 2026-08-30 in B1 und B2 geteilt. B1 ist begrenzte
 Ingenieursarbeit mit klarem Ende; B2 ist offene Reverse-Engineering-Forschung, deren Aufwand sich
 vorher nicht seriös schätzen lässt. Zusammen hätte B kein vorhersagbares Ende gehabt. Die
 Marker aus B1 sind zugleich das Werkzeug, mit dem sich in B2 überhaupt sinnvoll suchen lässt.
 
-A bis C sind die eigentliche Portierungsarbeit. D und E sind weitgehend aus dem bestehenden
-Skyrim-Code übernehmbar, weil sie kaum engine-gekoppelt sind. Die vorhandenen HLSL-Shader werden
+A bis C sind die eigentliche Portierungsarbeit. Für D und E galt die Annahme, sie seien
+weitgehend aus dem bestehenden Skyrim-Code übernehmbar, weil sie kaum engine-gekoppelt sind —
+**für D1 hat sich das nicht bestätigt**, siehe den Abschnitt zu D1. Die vorhandenen HLSL-Shader werden
 erst ab F relevant — sie sind das Ziel der Portierung, nicht ihr Anfang.
 
 ## Ausgangslage (gemessen am Skyrim-Stand, 2026-08-30)
@@ -186,6 +193,65 @@ C ist am 2026-08-30 abgenommen worden. Das Befunddokument ist
     Dateiüberwachung geht über `std::filesystem::last_write_time`, nicht über `<Windows.h>`.
 -   `effectList.size()` meldet 225, die Iteration findet 226 gefüllte Plätze. Der Iteration
     trauen, nicht `size()`.
+
+## Aus Teilprojekt D1 bestätigt
+
+D1 ist am 2026-08-31 abgenommen worden. Spec und Plan liegen unter `docs/superpowers/`.
+
+| Sachverhalt         | Bestätigter Wert                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Basisklasse         | vier Methoden reichen (`Name`, `Setup`, `Frame`, `Shutdown`). Skyrims Fassung hat 42 Virtuals und hängt an `I18n`                                                                           |
+| Registrierung       | drei Zustände, Aufbau in Registrierungsreihenfolge, Abbau rückwärts. Ohne Spiel prüfbar, weil der Wunschzustand als Lambda hereinkommt statt aus den Einstellungen gelesen zu werden        |
+| Persistenz          | `REX::FJsonSettingStore` mit glaze `7.2.1`, erste neue Abhängigkeit über `spdlog` hinaus. Baut sauber unter `/W4 /WX`                                                                       |
+| Einstiegspunkt      | genau einer pro Frame (`Features::TickSystem`), C's Sonderverdrahtung im Present-Hook ist weg                                                                                               |
+| Erstes Feature      | C's Pipeline als `ImagespaceTint`, mit echtem Zustand: erzeugter `ID3D11PixelShader` plus Zeiger in Engine-Speicher                                                                         |
+| Hochfahren im Spiel | belegt im Log: `2 features registered`, `ImagespaceTint: running`, Katalog wählte `BSImagespaceShaderCopy` Technik `0`                                                                      |
+| Abschalten im Spiel | Stich verschwindet in **unter einer Sekunde** nach dem Speichern der JSON, ohne Spielneustart. Erster Aufruf von `PixelShaderOverride::Restore()` überhaupt — der Zeiger geht sauber zurück |
+| Unabhängigkeit      | `FrameCounter` und `ImagespaceTint` lassen sich einzeln umschalten, ohne einander zu stören                                                                                                 |
+| Kaputte JSON        | glaze meldet den Fehler, beide Features behalten den letzten korrekten Stand, das Spiel läuft weiter                                                                                        |
+| Host-Tests          | acht, davon drei neu (`FileWatch`, `FeatureSettings`, `FeatureRegistry`), jeder durch Mutation als greifend belegt                                                                          |
+
+**Korrekturen an Annahmen, die diese Roadmap über D getroffen hatte:**
+
+-   D ist **nicht** „weitgehend aus dem bestehenden Skyrim-Code übernehmbar". Skyrims `Feature`
+    zieht `FeatureCategories`, `FeatureConstraints`, `FeatureVersions`, `RestartSettings` und
+    `I18n` nach sich — eine 1:1-Übernahme hätte i18n-Arbeit aus E nach D1 vorgezogen. Die
+    Basisklasse ist stattdessen aus dem gewachsen, was C tatsächlich braucht.
+-   Das Abnahmekriterium hieß „zwei **Dummy**-Features". Ein Feature, das nichts besitzt, kann
+    nicht zeigen, ob `Shutdown` etwas taugt. C's Pipeline wurde deshalb selbst zum ersten Feature.
+
+**Fallstricke in `REX`, die spätere Teilprojekte kennen sollten** — alle vier im Quelltext von
+commonlib-shared nachgeschlagen, nicht vermutet:
+
+-   **`TJsonSetting::m_path` ist ein JSON-Pointer, kein Punkt-Pfad.** `JsonSettingLoadEx` stellt
+    ein `/` voran und reicht das an `glz::get` weiter, das je Segment ein Objekt tiefer geht
+    (`src/REX/TJsonSetting.cpp:8`). `Name.enabled` adressiert einen obersten Schlüssel mit einem
+    Punkt im Namen; richtig ist `Name/enabled`. Mit dem Punkt greift **keine** Einstellung, still
+    und ohne Fehlermeldung — durch eine Mutation im Test belegt.
+-   **`FJsonSettingStore::Save()` kann keine Schlüssel anlegen.** Es schreibt über `glz::set`, und
+    dessen `seek_op<generic_json>` bricht bei `obj.find(key) == end()` ab
+    (`glaze/json/generic.hpp:714`). Auf einer fehlenden Datei ist `Save()` damit wirkungslos: die
+    erste Fassung muss von uns geschrieben werden, sonst hätte auch das Menü in E nichts, worin es
+    speichern könnte.
+-   **`Save()` schreibt nach `m_fileBase`, nicht nach `m_fileUser`** (`FJsonSettingStore.cpp`).
+    Wir setzen `fileBase` auf die eine Nutzerdatei und lassen `fileUser` leer.
+-   **`m_fileBase`, `m_fileUser` und `m_path` sind `string_view`s** (`FSettingStore.h`,
+    `TJsonSetting.h:48`). Die Zeichenketten müssen ihre Einstellung überleben und dürfen nach der
+    Konstruktion nicht umziehen — ein `std::vector` als Ablage würde beim Wachsen jeden View
+    ungültig machen.
+-   `JsonSettingLoad`/`Save` sind **nicht für `float`** instanziiert. Wer einen Gleitkommawert
+    braucht, nimmt `double`.
+
+**Offene Beobachtung, bewusst nicht weiterverfolgt:** Ein Spielstart am 2026-08-31 blieb schwarz
+hängen und war nach einem Neustart nicht wieder auffällig; ein Absturz war es nicht, es entstand
+kein Crashlog. Die Logs der betroffenen Läufe sind überschrieben — daher rührt die inzwischen
+eingeschaltete Log-Rotation (`InitInfo::logRotate = 5`), die die letzten fünf Läufe aufhebt.
+
+Beim Lesen des Quelltextes fiel dabei auf, dass `kGameDataReady` erst `InstallSwapChainHook()` und
+danach `StartSystem()` rief: acht Millisekunden lang war der Present-Hook scharf, während
+`Registry::Register` noch an seinen Vektor anhängte, und der Lauf von 19:53 belegt, dass beide auf
+verschiedenen Threads laufen (`3012` und `20772`). Die Reihenfolge ist daraufhin umgedreht worden,
+sodass das Fenster nicht mehr existiert. Ob es die Ursache des Hängers war, bleibt **ungeprüft**.
 
 ## Bekannte Lücken in CommonLibF4
 

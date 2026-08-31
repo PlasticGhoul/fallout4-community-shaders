@@ -100,6 +100,30 @@ Write through `REX::INFO` / `REX::ERROR`; do not add a logging module.
 Consequence: `F4SE::Init` must run **before** the runtime check, otherwise a refusal cannot be
 logged.
 
+## Features
+
+Subproject D1 landed the runtime framework. Everything a feature needs is in `src/Feature/`, the
+features themselves in `src/Features/`.
+
+A feature derives from `Features::Feature` and implements four methods: `Name`, `Setup`, `Frame`
+and `Shutdown`. `Features::Registry` owns them, holds one of three states per feature — off,
+running, refused — and is driven once per `Present` from `Features::TickSystem`. Register in
+`RegisterAll` (`src/Feature/FeatureSystem.cpp`) and declare the enable switch next to it;
+registration order is startup order, and teardown runs in reverse.
+
+Two rules that are not obvious from the headers:
+
+-   **`Setup` fails only on things that would fail again.** A refused feature is not retried until
+    the settings file changes, so waiting for the engine to be ready belongs in `Frame`, never in
+    `Setup`. `ImagespaceTint` is the worked example: its catalog runs from `Frame`.
+-   **Read settings straight from the `TJsonSetting` member, every time.** There is no change
+    notification. Whoever caches a value has to refresh it themselves.
+
+Settings live in `<Documents>/My Games/Fallout4/F4SE/CommunityShadersFO4.json`, next to the log,
+one block per feature. The file is written from the declared defaults when it does not exist —
+`REX` saves through `glz::set`, which only ever overwrites keys that are already there, so it can
+never create the file itself.
+
 ## Conventions
 
 -   C++23, MSVC only. Our target builds with `/W4 /WX`; the two third-party targets keep their own
@@ -117,14 +141,14 @@ The following were inherited from the Skyrim project and are **not in effect**. 
 restore or reference them until the subproject that owns them lands. Their originals are in git
 history and under `.github/workflows-disabled/`.
 
-| Area                                                                    | Returns with          |
-| ----------------------------------------------------------------------- | --------------------- |
-| Packaging, AIO archives, `dist/`, feature `.ini` version audit          | Subproject D          |
-| Release branch model, semantic-release, hotfix lines, Nexus upload      | after the port ships  |
-| i18n (`T()`/`TKEY`, `extract-i18n.py`, `sort-i18n.py`), themes, fonts   | Subproject E          |
-| Feature framework, `Feature` base class, release stages, `CORE` markers | Subproject D          |
-| Shader validation (`hlslkit`), shader defines, buffer scanning          | Subproject C          |
-| CI workflows, PR checks, shader validation in CI                        | when the above return |
+| Area                                                                  | Returns with          |
+| --------------------------------------------------------------------- | --------------------- |
+| Packaging, AIO archives, `dist/`, feature `.ini` version audit        | Subproject D2         |
+| Release branch model, semantic-release, hotfix lines, Nexus upload    | after the port ships  |
+| i18n (`T()`/`TKEY`, `extract-i18n.py`, `sort-i18n.py`), themes, fonts | Subproject E          |
+| Release stages, `CORE` markers, feature categories and constraints    | not before F          |
+| Shader validation (`hlslkit`), shader defines, buffer scanning        | Subproject C          |
+| CI workflows, PR checks, shader validation in CI                      | when the above return |
 
 `features/` still holds all 40 inherited feature directories with their `.ini` files and assets.
-They are raw material for subprojects D and F, not an active feature set.
+They are raw material for subprojects D2 and F, not an active feature set.
