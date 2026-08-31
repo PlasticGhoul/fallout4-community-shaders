@@ -67,6 +67,87 @@ Check (-not ($staged | Where-Object { $_ -like "Data/*" })) "the root is Data, n
 
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 
+# --------------------------------------------------------------- the archives
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+function Get-Entries([string]$Archive) {
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($Archive)
+    try {
+        # Measured on 2026-08-31: cmake -E tar writes clean Data-relative
+        # names with no ./ prefix, and directory entries of their own. The
+        # prefix is stripped anyway because other archivers do add one, and a
+        # mod manager would be handed a path it cannot place.
+        return @($zip.Entries | ForEach-Object { $_.FullName -replace '^\./', '' } |
+            Where-Object { $_ -ne "" -and -not $_.EndsWith("/") })
+    } finally {
+        $zip.Dispose()
+    }
+}
+
+$dist = Join-Path $root $DistDir
+
+# Sorted out in PowerShell rather than by -Filter: that one hands its pattern
+# to the filesystem, which knows only * and ?, so a character class would be
+# matched literally and find nothing.
+$archives = @(Get-ChildItem $dist -Filter "*.zip" -ErrorAction SilentlyContinue)
+$aio = @($archives | Where-Object { $_.Name -like "CommunityShadersFO4-AIO-*" })
+$base = @($archives | Where-Object {
+        $_.Name -like "CommunityShadersFO4-*" -and $_.Name -notlike "CommunityShadersFO4-AIO-*"
+    })
+$addon = @($archives | Where-Object { $_.Name -like "ImagespaceTint-*" })
+
+# A stale archive would let a broken rule pass here: the tree half is rebuilt
+# on every run, the archives are only ever whatever was packed last. Both the
+# plugin and the rule that packs it count - changing the rule without repacking
+# is exactly how a mutation slips through this half unnoticed.
+$newest = @(
+    (Get-Item $PluginFile),
+    (Get-Item (Join-Path $root "tools/package.ps1"))
+) | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+$stale = @($archives | Where-Object { $_.LastWriteTime -lt $newest.LastWriteTime })
+Check ($stale.Count -eq 0) "the archives are newer than the plugin and the packing rule"
+
+Check ($base.Count -eq 1) "exactly one base archive"
+Check ($addon.Count -eq 1) "exactly one addon archive"
+Check ($aio.Count -eq 1) "exactly one all-in-one archive"
+
+if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $aio.Count -eq 1) {
+    # Wrapped at the call site as well: PowerShell unrolls a single element
+    # array on assignment, and a lone entry would arrive as a bare string
+    # whose .Count is empty.
+    $baseEntries = @(Get-Entries $base[0].FullName)
+    $addonEntries = @(Get-Entries $addon[0].FullName)
+    $aioEntries = @(Get-Entries $aio[0].FullName)
+
+    Check ($baseEntries -contains "F4SE/Plugins/CommunityShadersFO4.dll") "the base carries the plugin"
+    Check ($baseEntries -contains "F4SE/Plugins/CommunityShadersFO4.pdb") "and the pdb"
+    Check ($baseEntries -contains "COPYING") "and the licence"
+    Check ($baseEntries -contains "README.md") "and the readme"
+    Check (-not ($baseEntries -contains "Shaders/FO4/ImagespaceCopy.hlsl")) "and not the addon's shader"
+
+    Check (
+        $addonEntries.Count -eq 1 -and $addonEntries[0] -eq "Shaders/FO4/ImagespaceCopy.hlsl"
+    ) "the addon carries its shader and nothing else"
+
+    $union = @($baseEntries + $addonEntries | Sort-Object -Unique)
+    Check (
+        $null -eq (Compare-Object $union (@($aioEntries) | Sort-Object -Unique))
+    ) "the all-in-one is the union of base and addons"
+
+    foreach ($pair in @(
+            @{ Name = "base"; Entries = $baseEntries },
+            @{ Name = "addon"; Entries = $addonEntries },
+            @{ Name = "all-in-one"; Entries = $aioEntries })) {
+        $e = $pair.Entries
+        Check (-not ($e | Where-Object { $_ -match '(^|/)CORE$' })) "no CORE marker in the $($pair.Name)"
+        Check (-not ($e | Where-Object { $_ -like "SKSE/*" })) "no SKSE leftovers in the $($pair.Name)"
+        Check (-not ($e | Where-Object { $_ -like "Interface/*" })) "no Interface leftovers in the $($pair.Name)"
+        Check (-not ($e | Where-Object { $_ -match '^Shaders/[^/]+\.hlsl$' })) "no Skyrim shaders in the $($pair.Name)"
+        Check (-not ($e | Where-Object { $_ -like "Data/*" })) "the $($pair.Name) root is Data itself"
+    }
+}
+
 Write-Host ""
 if ($script:failures -gt 0) {
     Write-Host "$script:failures check(s) failed"

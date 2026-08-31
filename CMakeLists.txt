@@ -151,6 +151,21 @@ if(FO4CS_DEPLOY_DIR)
     )
 endif()
 
+# Deliberately outside ALL: the iteration build is the fast way into the game
+# and has no business writing three archives every time.
+add_custom_target(
+    package
+    COMMAND
+        pwsh -NoProfile -File "${CMAKE_SOURCE_DIR}/tools/package.ps1"
+        -SourceRoot "${CMAKE_SOURCE_DIR}" -PluginFile
+        "$<TARGET_FILE:${PROJECT_NAME}>" -PdbFile
+        "$<TARGET_PDB_FILE:${PROJECT_NAME}>" -Version "${PROJECT_VERSION}"
+        -CMake "${CMAKE_COMMAND}" -WorkDir "${CMAKE_CURRENT_BINARY_DIR}/package"
+    DEPENDS ${PROJECT_NAME}
+    COMMENT "Packing dist/"
+    VERBATIM
+)
+
 # ------------------------------------------------------------------ host tests
 if(FO4CS_BUILD_TESTS)
     enable_testing()

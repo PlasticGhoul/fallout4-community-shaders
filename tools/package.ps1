@@ -111,4 +111,71 @@ if ($Stage) {
     exit 0
 }
 
-throw "packing is not implemented yet"
+if (-not $CMake) {
+    throw "-CMake is required when building archives; it is what packs them"
+}
+if (-not $WorkDir) {
+    $WorkDir = Join-Path ([System.IO.Path]::GetTempPath()) "fo4cs-package"
+}
+if (-not $OutDir) {
+    $OutDir = Join-Path $root "dist"
+}
+
+# A stale archive from an earlier commit would otherwise sit here and travel
+# with the next upload.
+Remove-Item $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $OutDir -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+$OutDir = (Resolve-Path $OutDir).Path
+
+function Get-NameSuffix {
+    $sha = & git -C $root rev-parse --short HEAD 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $sha) {
+        # No git, no commit: the version alone still names the artefact.
+        return $Version
+    }
+    if (& git -C $root status --porcelain) {
+        return "$Version-g$sha-dirty"
+    }
+    return "$Version-g$sha"
+}
+
+function New-Archive([string]$TreeDir, [string]$ArchivePath) {
+    Push-Location $TreeDir
+    try {
+        & $CMake -E tar cf $ArchivePath --format=zip -- .
+        if ($LASTEXITCODE -ne 0) {
+            throw "packing $ArchivePath failed"
+        }
+    } finally {
+        Pop-Location
+    }
+    Write-Host "wrote $ArchivePath"
+}
+
+$suffix = Get-NameSuffix
+
+$baseTree = Join-Path $WorkDir "base"
+New-BaseTree $baseTree
+New-Archive $baseTree (Join-Path $OutDir "CommunityShadersFO4-$suffix.zip")
+
+# The all-in-one grows out of the base rather than being assembled twice.
+$aioTree = Join-Path $WorkDir "aio"
+Copy-Tree $baseTree $aioTree
+
+foreach ($feature in Get-Features | Where-Object { -not $_.IsCore }) {
+    $tree = Join-Path $WorkDir $feature.Name
+    Copy-FeatureTree $feature.Path $tree
+
+    if (-not (Get-ChildItem $tree -Recurse -File -ErrorAction SilentlyContinue)) {
+        # An empty addon archive would be a nuisance to whoever downloaded it.
+        Write-Host "skip  $($feature.Name) has no assets, no addon archive"
+        continue
+    }
+
+    New-Archive $tree (Join-Path $OutDir "$($feature.Name)-$suffix.zip")
+    Copy-Tree $tree $aioTree
+}
+
+New-Archive $aioTree (Join-Path $OutDir "CommunityShadersFO4-AIO-$suffix.zip")
+exit 0
