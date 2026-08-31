@@ -109,7 +109,8 @@ A feature derives from `Features::Feature` and implements four methods: `Name`, 
 and `Shutdown`. `Features::Registry` owns them, holds one of three states per feature — off,
 running, refused — and is driven once per `Present` from `Features::TickSystem`. Register in
 `RegisterAll` (`src/Feature/FeatureSystem.cpp`) and declare the enable switch next to it;
-registration order is startup order, and teardown runs in reverse.
+registration order is startup order, and teardown runs in reverse. Assets a feature needs on disk
+go in `package/Features/<Name>/`, see Packaging below.
 
 Two rules that are not obvious from the headers:
 
@@ -123,6 +124,35 @@ Settings live in `<Documents>/My Games/Fallout4/F4SE/CommunityShadersFO4.json`, 
 one block per feature. The file is written from the declared defaults when it does not exist —
 `REX` saves through `glz::set`, which only ever overwrites keys that are already there, so it can
 never create the file itself.
+
+## Packaging
+
+```pwsh
+cmake --build --preset FO4 --target package   # writes dist/, three archives
+pwsh tools/verify-package.ps1                 # checks the tree and the archives
+```
+
+`tools/package.ps1` holds the one rule that turns this repo into a mod tree, and it has two
+callers. With `-Stage <dir>` it assembles the tree and stops; the build's deploy step calls it that
+way, so the installation you play is the tree that ships. Without `-Stage` it writes three archives
+to `dist/`: the base, one per feature without a `CORE` marker, and an all-in-one. The target hangs
+outside `ALL` - the iteration build writes no archives.
+
+Feature assets live in `package/Features/<Name>/`, laid out `Data`-relative. A file named `CORE` in
+that directory means the feature ships inside the base archive rather than as its own addon; the
+marker itself never reaches an archive. `features/` is **not** the place for them: it holds the 40
+inherited Skyrim directories, 27 of which carry a `CORE` marker of their own.
+
+`package/` is never copied wholesale. Only `package/Shaders/FO4` and `package/Features` travel;
+`package/Interface` and `package/SKSE` are inherited Skyrim content that subproject E has yet to
+decide about.
+
+Two things worth knowing before touching any of it:
+
+-   **The deploy step writes straight into the game, past whatever mod manager is installed.**
+    Changing the staging rule changes the live installation on the next build.
+-   **Archive paperwork stays out of the staged tree.** A mod manager deploys `COPYING` and the
+    readme as hard links, and writing over those follows the link back into its staging folder.
 
 ## Conventions
 
@@ -143,12 +173,13 @@ history and under `.github/workflows-disabled/`.
 
 | Area                                                                  | Returns with          |
 | --------------------------------------------------------------------- | --------------------- |
-| Packaging, AIO archives, `dist/`, feature `.ini` version audit        | Subproject D2         |
+| Feature `.ini` versions and their audit                               | not before F          |
 | Release branch model, semantic-release, hotfix lines, Nexus upload    | after the port ships  |
 | i18n (`T()`/`TKEY`, `extract-i18n.py`, `sort-i18n.py`), themes, fonts | Subproject E          |
-| Release stages, `CORE` markers, feature categories and constraints    | not before F          |
+| Release stages, feature categories and constraints                    | not before F          |
 | Shader validation (`hlslkit`), shader defines, buffer scanning        | Subproject C          |
 | CI workflows, PR checks, shader validation in CI                      | when the above return |
 
 `features/` still holds all 40 inherited feature directories with their `.ini` files and assets.
-They are raw material for subprojects D2 and F, not an active feature set.
+They are raw material for subproject F, not an active feature set, and **nothing packages them** —
+our own feature assets live under `package/Features/`, see below.

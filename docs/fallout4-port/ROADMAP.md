@@ -47,14 +47,20 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | B2  | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle | **abgeschlossen** |
 | C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt   | **abgeschlossen** |
 | D1  | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz                             | Zwei Features unabhängig an-/abschaltbar                                   | **abgeschlossen** |
-| D2  | **Paketierung** — `dist/`, AIO-Archive, Ini-Versionsaudit                                                              | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel               | offen             |
+| D2  | **Paketierung** — `dist/`, Basis-, Addon- und AIO-Archive                                                              | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel               | **abgeschlossen** |
 | E   | **Menü** — ImGui-Overlay, Input-Handling, Einstellungs-UI                                                              | Overlay im Spiel bedienbar, Einstellungen überleben Neustart               | offen             |
 | F+  | **Features einzeln** — je ein Zyklus pro portiertem CS-Feature                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 
 Das ursprüngliche Teilprojekt D wurde am 2026-08-30 in D1 und D2 geteilt: Laufzeitverhalten und
-Auslieferung sind zwei Subsysteme ohne Berührung. **D2 rutscht hinter F**, weil Paketierung erst
-lohnt, wenn es echte Features zu paketieren gibt. Das Abnahmekriterium von D1 heißt „zwei
+Auslieferung sind zwei Subsysteme ohne Berührung. Das Abnahmekriterium von D1 heißt „zwei
 Features", nicht mehr „zwei Dummy-Features" — siehe die Begründung im Abschnitt zu D1.
+
+D2 sollte dabei zunächst **hinter F** rutschen, weil Paketierung erst lohne, wenn es echte
+Features zu paketieren gebe. Das ist am 2026-08-31 umgekehrt worden: eine funktionierende
+Auslieferung früh zu haben heißt, dass jedes Feature ab F automatisch mitfährt, statt am Ende in
+eine gewachsene Struktur nachgerüstet zu werden. Der Preis war, dass die Aufteilung in Basis und
+Addons an zwei Features geprüft wurde statt an zwanzig. Der Ini-Versionsaudit ist dabei **nicht**
+mitgekommen und bleibt ruhend, siehe den Abschnitt zu D2.
 
 Das ursprüngliche Teilprojekt B wurde am 2026-08-30 in B1 und B2 geteilt. B1 ist begrenzte
 Ingenieursarbeit mit klarem Ende; B2 ist offene Reverse-Engineering-Forschung, deren Aufwand sich
@@ -252,6 +258,54 @@ danach `StartSystem()` rief: acht Millisekunden lang war der Present-Hook scharf
 `Registry::Register` noch an seinen Vektor anhängte, und der Lauf von 19:53 belegt, dass beide auf
 verschiedenen Threads laufen (`3012` und `20772`). Die Reihenfolge ist daraufhin umgedreht worden,
 sodass das Fenster nicht mehr existiert. Ob es die Ursache des Hängers war, bleibt **ungeprüft**.
+
+## Aus Teilprojekt D2 bestätigt
+
+D2 ist am 2026-08-31 abgenommen worden. Spec und Plan liegen unter `docs/superpowers/`.
+
+| Sachverhalt         | Bestätigter Wert                                                                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Archive             | drei aus einem Lauf: Basis `2,48 MB`, Addon `0,9 KB`, AIO `2,48 MB`. Nur `.zip`, kein 7-Zip                                         |
+| Auslöser            | eigenes Ziel `package`, nicht in `ALL`. Der normale Bau schreibt keine Archive                                                      |
+| Eine Regel          | `tools/package.ps1` bedient beides: `-Stage` für die Spielinstallation, ohne `-Stage` die Archive                                   |
+| Kosten des Stagings | **0,33 s je Bau** gemessen. Die Spec hätte ab einer Sekunde zurückgedreht                                                           |
+| `cmake -E tar`      | schreibt saubere Data-relative Namen **ohne** `./`-Präfix, dazu eigene Verzeichniseinträge                                          |
+| Vortex              | packt **beide** Archivformen richtig aus, ohne Hüllordner — auch ein Addon, dessen Wurzel nur `Shaders/` enthält                    |
+| Basis ohne Addon    | vierfach belegt: `cannot read …/ImagespaceCopy.hlsl`, dann `replacing BSImagespaceShaderCopy technique 0`, kein Stich, kein Absturz |
+| Basis mit Addon     | `installed … in place of …`, Stich sichtbar — die getrennten Archive ergeben zusammen dasselbe wie das AIO                          |
+| PDB                 | im Release-Bau entstand **keine**. `/Zi` plus `/DEBUG /OPT:REF /OPT:ICF` nachgerüstet; PDB `7,8 MB`, DLL unverändert `0,7 MB`       |
+
+**Korrekturen an Annahmen, die Spec und Plan getroffen hatten:**
+
+-   Die Spec sah Feature-Assets unter `features/<Name>/` vor, wie bei Skyrim CS. Das trägt nicht:
+    dort liegen die 40 geerbten Skyrim-Verzeichnisse, 27 davon mit `CORE`-Marker, und ein Glob
+    packte sie alle ein. Sie liegen deshalb unter **`package/Features/<Name>/`**, wo nur steht,
+    was wir hinlegen. `features/` behält seine Rolle als Rohmaterial für F.
+-   Der Plan nahm an, `cmake -E tar` stelle den Einträgen ein `./` voran. Tut es nicht.
+-   Der Testschritt „Addon bei laufendem Spiel nachinstallieren" ist **nicht durchführbar**: ein
+    Mod-Manager liefert nicht aus, solange das Spiel läuft. Vortex schrieb die Datei erst, als das
+    Spiel beendet war — vier Läufe davor sahen sie deshalb nicht. Wer das prüfen will, muss die
+    Datei von Hand kopieren.
+
+**Fallstricke, die spätere Teilprojekte kennen sollten:**
+
+-   **Der Deploy-Schritt schreibt an Vortex vorbei direkt nach `Data`.** Während einer
+    Mutationsprobe hat er 185 fremde Dateien in die Spielinstallation getragen. Wer die
+    Staging-Regel anfasst, ändert damit unmittelbar das installierte Spiel.
+-   **Lizenztexte gehören nicht in den Staging-Baum.** Ein Mod-Manager liefert sie als Hardlink
+    aus; sie zu überschreiben schlägt in seinen Staging-Ordner durch. `-Stage` lässt sie deshalb
+    weg, das Archiv führt sie.
+-   **Ein Prüfer, der Archive liest, kann auf veralteten Archiven grün melden.**
+    `verify-package.ps1` vergleicht ihr Alter deshalb gegen DLL **und** `tools/package.ps1`.
+-   `Get-ChildItem -Filter` reicht sein Muster an das Dateisystem weiter, das nur `*` und `?`
+    kennt — eine Zeichenklasse wie `[0-9]` trifft nichts. Und PowerShell packt einelementige
+    Arrays beim Zuweisen aus, weshalb `.Count` dort leer ist.
+
+**Offener Befund für F, aus dem Quelltext gelesen und bewusst ungeprüft geblieben:** In
+`ImagespaceTint::WatcherLoop` wird `loadedOnce` auch dann gesetzt, wenn `CompileAndPublish` an
+einer fehlenden Datei scheitert. Weil `_watch.Reset` in diesem Zweig nicht mehr erreicht wird,
+bleibt der Watcher für die **ganze Sitzung** leer — damit greift auch das Hot-Reload aus
+Teilprojekt C nicht mehr, sobald ein Shader beim ersten Versuch fehlte.
 
 ## Bekannte Lücken in CommonLibF4
 
