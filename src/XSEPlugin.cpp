@@ -17,8 +17,12 @@ namespace
 			break;
 		case F4SE::MessagingInterface::kGameDataReady:
 			REX::INFO("kGameDataReady received");
-			Render::InstallSwapChainHook();
+			// Features first. Installing the hook makes Present live on the
+			// render thread, and Present drives the registry - registering into
+			// a vector that another thread may already be walking is a race we
+			// can avoid entirely by ordering, without a flag to synchronise on.
 			Features::StartSystem();
+			Render::InstallSwapChainHook();
 			break;
 		default:
 			break;
