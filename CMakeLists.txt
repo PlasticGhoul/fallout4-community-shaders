@@ -119,6 +119,14 @@ if(MSVC)
         ${PROJECT_NAME}
         PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
     )
+
+    # Ship a pdb. Without one, an Addictol crash log names raw addresses
+    # instead of our functions, which is the difference between a diagnosable
+    # report and a useless one. /DEBUG on its own turns the linker's
+    # optimisations back off, so they are asked for explicitly.
+    target_compile_options(${PROJECT_NAME} PRIVATE /Zi)
+    target_link_options(${PROJECT_NAME} PRIVATE /DEBUG /OPT:REF /OPT:ICF)
+
     # /MP is an MSBuild-only knob; Ninja parallelises on its own and warns.
     if(CMAKE_GENERATOR MATCHES "Visual Studio")
         target_compile_options(${PROJECT_NAME} PRIVATE /MP)
@@ -126,29 +134,19 @@ if(MSVC)
 endif()
 
 if(FO4CS_DEPLOY_DIR)
+    # The same script the package target uses, so the installation that gets
+    # played is the tree that gets shipped. Two copy commands here would be a
+    # second rule, and rules in two places drift.
     add_custom_command(
         TARGET ${PROJECT_NAME}
         POST_BUILD
         COMMAND
-            "${CMAKE_COMMAND}" -E make_directory
-            "${FO4CS_DEPLOY_DIR}/F4SE/Plugins"
-        COMMAND
-            "${CMAKE_COMMAND}" -E copy_if_different
-            "$<TARGET_FILE:${PROJECT_NAME}>" "${FO4CS_DEPLOY_DIR}/F4SE/Plugins/"
-        COMMENT "Deploying to ${FO4CS_DEPLOY_DIR}/F4SE/Plugins"
-        VERBATIM
-    )
-
-    # Only package/Shaders/FO4 travels. The 153 inherited Skyrim files one
-    # level up are the target of subproject F, not something to ship now.
-    add_custom_command(
-        TARGET ${PROJECT_NAME}
-        POST_BUILD
-        COMMAND
-            "${CMAKE_COMMAND}" -E copy_directory_if_different
-            "${CMAKE_SOURCE_DIR}/package/Shaders/FO4"
-            "${FO4CS_DEPLOY_DIR}/Shaders/FO4"
-        COMMENT "Deploying shaders to ${FO4CS_DEPLOY_DIR}/Shaders/FO4"
+            pwsh -NoProfile -File "${CMAKE_SOURCE_DIR}/tools/package.ps1"
+            -SourceRoot "${CMAKE_SOURCE_DIR}" -PluginFile
+            "$<TARGET_FILE:${PROJECT_NAME}>" -PdbFile
+            "$<TARGET_PDB_FILE:${PROJECT_NAME}>" -Version "${PROJECT_VERSION}"
+            -Stage "${FO4CS_DEPLOY_DIR}"
+        COMMENT "Staging into ${FO4CS_DEPLOY_DIR}"
         VERBATIM
     )
 endif()

@@ -1,0 +1,2 @@
+This feature ships inside the base archive rather than as its own addon.
+The file's presence is the marker; its contents are never read.
