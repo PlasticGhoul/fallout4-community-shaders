@@ -59,6 +59,12 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadIn
 	initInfo.trampoline = false;  // subproject A installs no hooks
 	initInfo.hook = false;        // no REL::FHook objects are registered either
 
+	// Keeps the last five runs instead of truncating on every start. Each game
+	// start costs real time to produce, and diagnosing one run while a second
+	// one overwrites its evidence is how a finding gets lost. F4SE turns this
+	// into a rotating sink that rotates once per process start.
+	initInfo.logRotate = 5;
+
 	// Must run before the version check: Init is what opens the log channel,
 	// and a refusal that cannot be logged is a refusal nobody can diagnose.
 	F4SE::Init(a_f4se, initInfo);
