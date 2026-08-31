@@ -3,6 +3,7 @@
 #include "Feature/FeatureRegistry.h"
 #include "Feature/FeatureSettings.h"
 #include "Features/FrameCounter.h"
+#include "Features/ImagespaceTint.h"
 
 #include <memory>
 
@@ -15,6 +16,11 @@ namespace Features
 		void RegisterAll()
 		{
 			TheRegistry().Register(std::make_unique<FrameCounter>());
+
+			// Registered last so that it is torn down first: teardown runs in
+			// reverse, and the one that writes into engine memory should be the
+			// one that gives it back soonest.
+			TheRegistry().Register(std::make_unique<ImagespaceTint>());
 		}
 	}
 
@@ -25,6 +31,7 @@ namespace Features
 		// Declared before Init, because a REX setting registers with its store
 		// at construction and Init is what walks that registration.
 		Settings::DeclareFeature("FrameCounter", false);
+		Settings::DeclareFeature("ImagespaceTint", true);
 
 		Settings::Init();
 

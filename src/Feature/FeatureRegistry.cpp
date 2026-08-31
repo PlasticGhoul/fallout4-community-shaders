@@ -128,7 +128,12 @@ namespace Features
 
 	Registry& TheRegistry() noexcept
 	{
-		static Registry registry;
-		return registry;
+		// Deliberately leaked. A function local static would be destroyed from
+		// inside DLL detach, which would tear down features while the loader
+		// lock is held and the engine is already gone: joining a thread there
+		// deadlocks, and handing a pointer back to freed engine memory is
+		// worse than not handing it back at all. The process is ending anyway.
+		static Registry* const registry = new Registry;
+		return *registry;
 	}
 }
