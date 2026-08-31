@@ -142,7 +142,7 @@ GPL-3.0-or-later, with the modding exception in `EXCEPTIONS.md`. See `COPYING`.
 
 -   [ ] **Step 3: Den fehlschlagenden Prüfer schreiben**
 
-`tools/verify-package.ps1`. In dieser Aufgabe prüft er nur den Baum; Aufgabe 3 ergänzt die Archive.
+`tools/verify-package.ps1`. In dieser Aufgabe prüft er nur den Baum; Aufgabe 2 ergänzt die Archive.
 
 ```powershell
 <#
