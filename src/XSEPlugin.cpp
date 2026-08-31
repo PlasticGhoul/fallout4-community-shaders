@@ -1,7 +1,7 @@
+#include "Feature/FeatureSystem.h"
 #include "Plugin.h"
 #include "Render/SwapChainHook.h"
 #include "Runtime.h"
-#include "Shader/ShaderPipeline.h"
 
 namespace
 {
@@ -18,7 +18,7 @@ namespace
 		case F4SE::MessagingInterface::kGameDataReady:
 			REX::INFO("kGameDataReady received");
 			Render::InstallSwapChainHook();
-			Shader::StartPipeline();
+			Features::StartSystem();
 			break;
 		default:
 			break;
