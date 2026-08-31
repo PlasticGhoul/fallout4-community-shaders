@@ -11,6 +11,7 @@
             "name": "spdlog",
             "default-features": false,
             "features": ["wchar"]
-        }
+        },
+        "glaze"
     ]
 }

@@ -11,6 +11,11 @@ project(CommonLibF4Shim LANGUAGES CXX)
 
 set(COMMONLIBF4_SOURCE_DIR "@COMMONLIBF4_SOURCE_DIR@")
 
+# REX ships a JSON setting store behind this option, which is what subproject
+# D1 persists feature settings with. It has to be set before the subdirectory
+# is added, or the option's default of OFF wins.
+set(COMMONLIB_JSON ON)
+
 add_subdirectory(
     "${COMMONLIBF4_SOURCE_DIR}/lib/commonlib-shared"
     "${CMAKE_CURRENT_BINARY_DIR}/commonlib-shared"
