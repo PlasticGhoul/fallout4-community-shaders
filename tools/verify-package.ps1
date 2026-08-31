@@ -55,10 +55,13 @@ $staged = @(Get-ChildItem $stage -Recurse -File |
     ForEach-Object { $_.FullName.Substring($stage.Length).TrimStart('\', '/').Replace('\', '/') })
 
 Check ($staged -contains "F4SE/Plugins/CommunityShadersFO4.dll") "the tree carries the plugin"
-Check ($staged -contains "COPYING") "and the licence"
-Check ($staged -contains "EXCEPTIONS.md") "and the modding exception"
-Check ($staged -contains "README.md") "and the readme"
 Check ($staged -contains "Shaders/FO4/ImagespaceCopy.hlsl") "and the feature's shader"
+
+# Deliberately absent from a staged tree: a game install wants what the plugin
+# needs at runtime, not the archive's paperwork. The archive checks below are
+# where the licence has to turn up.
+Check (-not ($staged -contains "COPYING")) "and not the licence"
+Check (-not ($staged -contains "README.md")) "and not the readme"
 Check (-not ($staged | Where-Object { $_ -match '(^|/)CORE$' })) "and no CORE marker"
 Check (-not ($staged | Where-Object { $_ -like "SKSE/*" })) "no SKSE leftovers"
 Check (-not ($staged | Where-Object { $_ -like "Interface/*" })) "no Interface leftovers"

@@ -69,7 +69,11 @@ function Copy-FeatureTree([string]$From, [string]$To) {
     }
 }
 
-function New-BaseTree([string]$To) {
+# $IncludeDocs is false when staging into a game install: the licence and the
+# readme are archive furniture, and a mod manager may already have deployed
+# its own copies as hard links, which writing over would follow straight back
+# into its staging folder.
+function New-BaseTree([string]$To, [bool]$IncludeDocs) {
     $plugins = Join-Path $To "F4SE/Plugins"
     New-Item -ItemType Directory -Force -Path $plugins | Out-Null
     Copy-Item $PluginFile $plugins -Force
@@ -82,9 +86,11 @@ function New-BaseTree([string]$To) {
         Write-Host "warn  no pdb found, the archive will not carry one"
     }
 
-    Copy-Item (Join-Path $root "COPYING") $To -Force
-    Copy-Item (Join-Path $root "EXCEPTIONS.md") $To -Force
-    Copy-Item (Join-Path $root "package/README.md") (Join-Path $To "README.md") -Force
+    if ($IncludeDocs) {
+        Copy-Item (Join-Path $root "COPYING") $To -Force
+        Copy-Item (Join-Path $root "EXCEPTIONS.md") $To -Force
+        Copy-Item (Join-Path $root "package/README.md") (Join-Path $To "README.md") -Force
+    }
 
     $shaders = Join-Path $root "package/Shaders/FO4"
     if (Test-Path $shaders) {
@@ -103,7 +109,7 @@ if (-not (Test-Path $PluginFile)) {
 if ($Stage) {
     # The staged tree is the all-in-one tree: an install wants everything, and
     # what gets played should be what gets shipped.
-    New-BaseTree $Stage
+    New-BaseTree $Stage $false
     foreach ($feature in Get-Features | Where-Object { -not $_.IsCore }) {
         Copy-FeatureTree $feature.Path $Stage
     }
@@ -156,7 +162,7 @@ function New-Archive([string]$TreeDir, [string]$ArchivePath) {
 $suffix = Get-NameSuffix
 
 $baseTree = Join-Path $WorkDir "base"
-New-BaseTree $baseTree
+New-BaseTree $baseTree $true
 New-Archive $baseTree (Join-Path $OutDir "CommunityShadersFO4-$suffix.zip")
 
 # The all-in-one grows out of the base rather than being assembled twice.
