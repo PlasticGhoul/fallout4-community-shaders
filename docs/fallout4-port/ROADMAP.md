@@ -1,6 +1,6 @@
 # Fallout 4 Port — Roadmap
 
-Status: Planung. Stand 2026-08-30.
+Status: Umsetzung, A bis E1 abgeschlossen. Stand 2026-09-04.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
