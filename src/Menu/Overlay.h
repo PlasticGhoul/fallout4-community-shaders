@@ -25,7 +25,14 @@ namespace Menu
 		/// a_pointer overrides what the win32 backend read from the system
 		/// cursor, and is only used while visible. See MousePointer for why the
 		/// system cursor cannot be trusted here.
-		void Draw(bool a_visible, std::uint64_t a_frame, MousePointer::Point a_pointer) noexcept;
+		///
+		/// Returns whether the player asked to close the overlay from inside
+		/// it. Acted on by the caller rather than here, so that a click and the
+		/// toggle key take the same path through the gate.
+		[[nodiscard]] bool Draw(
+			bool a_visible,
+			std::uint64_t a_frame,
+			MousePointer::Point a_pointer) noexcept;
 
 		[[nodiscard]] void* Window() const noexcept { return _window; }
 

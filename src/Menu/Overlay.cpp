@@ -133,11 +133,13 @@ namespace Menu
 		return true;
 	}
 
-	void Overlay::Draw(bool a_visible, std::uint64_t a_frame, MousePointer::Point a_pointer) noexcept
+	bool Overlay::Draw(bool a_visible, std::uint64_t a_frame, MousePointer::Point a_pointer) noexcept
 	{
 		if (!_ready) {
-			return;
+			return false;
 		}
+
+		bool closeWanted = false;
 
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
@@ -157,6 +159,11 @@ namespace Menu
 				ImGui::Text("Frame %llu", static_cast<unsigned long long>(a_frame));
 				ImGui::Separator();
 				ImGui::TextUnformatted("The feature list arrives with subproject E2.");
+				ImGui::Separator();
+
+				// Not decoration: a button that reacts is what proves the
+				// pointer and the click path arrive where they are aimed.
+				closeWanted = ImGui::Button("Close");
 			}
 			ImGui::End();
 		}
@@ -168,5 +175,7 @@ namespace Menu
 		if (a_visible && BindBackBuffer()) {
 			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 		}
+
+		return closeWanted;
 	}
 }

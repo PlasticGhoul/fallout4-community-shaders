@@ -57,7 +57,17 @@ namespace Menu
 			return;
 		}
 
-		TheGate().SetToggleKey(Features::Settings::GetUInt32(kToggleKeyPath));
+		const auto toggleKey = Features::Settings::GetUInt32(kToggleKeyPath);
+		TheGate().SetToggleKey(toggleKey);
+
+		// Announced once, next to the window handle and the ImGui version, so
+		// that a report of "the key does nothing" can be answered from the log
+		// instead of from a guess. A zero here disables the overlay.
+		static bool announced = false;
+		if (!announced) {
+			REX::INFO("overlay toggle key is 0x{:02X}", toggleKey);
+			announced = true;
+		}
 
 		// Installed here rather than at kGameDataReady: the window handle comes
 		// from the swap chain, and EnsureReady is what reads it.
@@ -85,6 +95,11 @@ namespace Menu
 			ThePointer().Release();
 		}
 
-		TheOverlay().Draw(open, Render::FrameCount(), pointer);
+		if (TheOverlay().Draw(open, Render::FrameCount(), pointer)) {
+			// Through the gate rather than straight to a flag, so that the
+			// button and the toggle key close the overlay the same way, input
+			// layer and all.
+			TheGate().RequestToggle();
+		}
 	}
 }
