@@ -1,0 +1,9 @@
+{
+    "_meta": {
+        "language": "English",
+        "locale": "en",
+        "auto_generated": true,
+        "generator": "tools/extract-i18n.py",
+        "note": "DO NOT EDIT MANUALLY. Run: python tools/extract-i18n.py --write"
+    }
+}

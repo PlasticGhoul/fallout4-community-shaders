@@ -54,8 +54,24 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $stage)) {
 $staged = @(Get-ChildItem $stage -Recurse -File |
     ForEach-Object { $_.FullName.Substring($stage.Length).TrimStart('\', '/').Replace('\', '/') })
 
+$runtimeFiles = @(
+    "F4SE/Plugins/CommunityShadersFO4/Fonts/IBMPlexSans-Regular.ttf",
+    "F4SE/Plugins/CommunityShadersFO4/Fonts/IBMPlexSans-SemiBold.ttf",
+    "F4SE/Plugins/CommunityShadersFO4/Translations/en.json"
+)
+
 Check ($staged -contains "F4SE/Plugins/CommunityShadersFO4.dll") "the tree carries the plugin"
 Check ($staged -contains "Shaders/FO4/ImagespaceCopy.hlsl") "and the feature's shader"
+
+foreach ($file in $runtimeFiles) {
+    Check ($staged -contains $file) "and $file"
+}
+
+# The licence has to travel with the font, not merely near it: the SIL OFL
+# requires it to accompany the files it covers.
+Check (
+    $staged -contains "F4SE/Plugins/CommunityShadersFO4/Fonts/OFL.txt"
+) "and the font licence next to the fonts"
 
 # Deliberately absent from a staged tree: a game install wants what the plugin
 # needs at runtime, not the archive's paperwork. The archive checks below are
@@ -127,6 +143,12 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $aio.Count -eq 1) {
     Check ($baseEntries -contains "F4SE/Plugins/CommunityShadersFO4.pdb") "and the pdb"
     Check ($baseEntries -contains "COPYING") "and the licence"
     Check ($baseEntries -contains "README.md") "and the readme"
+
+    # Base, not an addon: the overlay is what a feature is switched from, so
+    # what the overlay reads cannot be optional.
+    foreach ($file in $runtimeFiles) {
+        Check ($baseEntries -contains $file) "and $file"
+    }
     Check (-not ($baseEntries -contains "Shaders/FO4/ImagespaceCopy.hlsl")) "and not the addon's shader"
 
     Check (

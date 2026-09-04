@@ -8,8 +8,8 @@
     build's deploy step uses. Without -Stage three archives are written: the
     base, one per feature that carries no CORE marker, and an all-in-one.
 
-    package/ is never copied wholesale. Only package/Shaders/FO4 and
-    package/Features/<Name> travel; package/Interface and package/SKSE are
+    package/ is never copied wholesale. Only package/Shaders/FO4, package/F4SE
+    and package/Features/<Name> travel; package/Interface and package/SKSE are
     inherited Skyrim content and must not ship.
 
 .EXAMPLE
@@ -95,6 +95,15 @@ function New-BaseTree([string]$To, [bool]$IncludeDocs) {
     $shaders = Join-Path $root "package/Shaders/FO4"
     if (Test-Path $shaders) {
         Copy-Tree $shaders (Join-Path $To "Shaders/FO4")
+    }
+
+    # What the plugin reads at runtime: fonts and translations. Fallout 4 loads
+    # from Data/F4SE/Plugins, not from SKSE - package/SKSE holds the inherited
+    # Skyrim equivalents and still ships nothing. Merged into the F4SE folder
+    # the plugin already went into; the names do not collide.
+    $runtime = Join-Path $root "package/F4SE"
+    if (Test-Path $runtime) {
+        Copy-Tree $runtime (Join-Path $To "F4SE")
     }
 
     foreach ($feature in Get-Features | Where-Object { $_.IsCore }) {
