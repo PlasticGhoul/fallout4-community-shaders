@@ -123,6 +123,56 @@ int main()
 		Check(!gate.IsToggleKey(0), "a toggle key of zero matches nothing");
 	}
 
+	// Capture beats the toggle key. Without that order the toggle key could
+	// never be rebound onto itself: the press would close the overlay instead
+	// of being taken.
+	{
+		Counters counters;
+		auto gate = MakeGate(counters);
+		gate.SetToggleKey(35);
+
+		gate.RequestToggle();
+		Check(gate.Tick(), "the overlay is open");
+
+		Check(!gate.IsCapturing(), "nothing is being captured yet");
+		Check(!gate.OfferKey(112), "and a key is not taken");
+
+		gate.ArmCapture();
+		Check(gate.IsCapturing(), "arming starts a capture");
+		Check(gate.OfferKey(35), "the toggle key itself is taken, not acted on");
+		Check(!gate.IsCapturing(), "and the capture disarms itself");
+
+		Check(gate.TakeCapturedKey() == 35, "the captured key comes back once");
+		Check(gate.TakeCapturedKey() == 0, "and only once");
+
+		Check(gate.Tick(), "and the overlay never closed");
+	}
+
+	// Two presses inside one frame must not both be taken.
+	{
+		Counters counters;
+		auto gate = MakeGate(counters);
+		gate.SetToggleKey(35);
+
+		gate.ArmCapture();
+		Check(gate.OfferKey(112), "the first press is taken");
+		Check(!gate.OfferKey(113), "the second is not");
+		Check(gate.TakeCapturedKey() == 112, "and the first one is what was kept");
+	}
+
+	// An armed capture that is cancelled takes nothing.
+	{
+		Counters counters;
+		auto gate = MakeGate(counters);
+		gate.SetToggleKey(35);
+
+		gate.ArmCapture();
+		gate.CancelCapture();
+		Check(!gate.IsCapturing(), "a cancelled capture is disarmed");
+		Check(!gate.OfferKey(112), "and takes nothing afterwards");
+		Check(gate.TakeCapturedKey() == 0, "and has nothing to hand over");
+	}
+
 	std::printf("%d failure(s)\n", g_failures);
 	return g_failures == 0 ? 0 : 1;
 }

@@ -81,6 +81,7 @@ namespace Menu
 		// from the swap chain, and EnsureReady is what reads it.
 		InstallWindowHook(
 			TheOverlay().Window(),
+			[](std::uint32_t a_key) { return TheGate().OfferKey(a_key); },
 			[](std::uint32_t a_key) { return TheGate().IsToggleKey(a_key); },
 			[] { TheGate().RequestToggle(); },
 			[] { return TheGate().IsOpen(); });

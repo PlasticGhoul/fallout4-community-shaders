@@ -22,6 +22,40 @@ namespace Menu
 		_toggleWanted.store(true, std::memory_order_release);
 	}
 
+	void Gate::ArmCapture() noexcept
+	{
+		_capturing.store(true, std::memory_order_release);
+	}
+
+	void Gate::CancelCapture() noexcept
+	{
+		_capturing.store(false, std::memory_order_release);
+		_captured.store(0, std::memory_order_release);
+	}
+
+	bool Gate::IsCapturing() const noexcept
+	{
+		return _capturing.load(std::memory_order_acquire);
+	}
+
+	bool Gate::OfferKey(std::uint32_t a_key) noexcept
+	{
+		// An exchange rather than a load and a store: two presses inside one
+		// frame must not both be taken, and this runs on the window thread
+		// while the render thread reads the result.
+		if (!_capturing.exchange(false, std::memory_order_acq_rel)) {
+			return false;
+		}
+
+		_captured.store(a_key, std::memory_order_release);
+		return true;
+	}
+
+	std::uint32_t Gate::TakeCapturedKey() noexcept
+	{
+		return _captured.exchange(0, std::memory_order_acq_rel);
+	}
+
 	bool Gate::Tick() noexcept
 	{
 		if (!_toggleWanted.exchange(false, std::memory_order_acq_rel)) {

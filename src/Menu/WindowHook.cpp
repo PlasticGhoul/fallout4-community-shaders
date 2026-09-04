@@ -31,6 +31,7 @@ namespace Menu
 	namespace
 	{
 		REX::W32::WNDPROC g_original = nullptr;
+		std::function<bool(std::uint32_t)> g_offerKey;
 		std::function<bool(std::uint32_t)> g_wantsToggle;
 		std::function<void()> g_onToggle;
 		std::function<bool()> g_isOpen;
@@ -52,6 +53,14 @@ namespace Menu
 			std::uintptr_t a_wParam,
 			std::intptr_t a_lParam)
 		{
+			// Asked before the toggle, so that the toggle key can be rebound
+			// onto itself: offered first, the press is captured; offered second,
+			// it would close the overlay and never reach the capture.
+			if (a_msg == Win32::WM_KEYDOWN && g_offerKey &&
+				g_offerKey(static_cast<std::uint32_t>(a_wParam))) {
+				return 0;
+			}
+
 			if (a_msg == Win32::WM_KEYDOWN && g_wantsToggle &&
 				g_wantsToggle(static_cast<std::uint32_t>(a_wParam))) {
 				g_onToggle();
@@ -88,6 +97,7 @@ namespace Menu
 
 	void InstallWindowHook(
 		void* a_window,
+		std::function<bool(std::uint32_t)> a_offerKey,
 		std::function<bool(std::uint32_t)> a_wantsToggle,
 		std::function<void()> a_onToggle,
 		std::function<bool()> a_isOpen) noexcept
@@ -96,6 +106,7 @@ namespace Menu
 			return;
 		}
 
+		g_offerKey = std::move(a_offerKey);
 		g_wantsToggle = std::move(a_wantsToggle);
 		g_onToggle = std::move(a_onToggle);
 		g_isOpen = std::move(a_isOpen);

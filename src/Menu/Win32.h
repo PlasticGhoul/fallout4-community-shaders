@@ -20,12 +20,21 @@ namespace Menu::Win32
 	inline constexpr std::uint32_t WM_MOUSEFIRST = 0x0200u;
 	inline constexpr std::uint32_t WM_MOUSEHWHEEL = 0x020Eu;
 
+	// GetKeyNameTextW wants a scan code in bits 16..23 of its parameter, and
+	// what we store is a virtual key code. MapVirtualKeyW is the translation,
+	// and REX::W32 has the former but not the latter.
+	inline constexpr std::uint32_t MAPVK_VK_TO_VSC = 0u;
+
 	extern "C"
 	{
 		std::intptr_t __stdcall SetWindowLongPtrW(
 			REX::W32::HWND a_wnd,
 			std::int32_t a_index,
 			std::intptr_t a_newPtr) noexcept;
+
+		std::uint32_t __stdcall MapVirtualKeyW(
+			std::uint32_t a_code,
+			std::uint32_t a_mapType) noexcept;
 
 		std::intptr_t __stdcall CallWindowProcW(
 			REX::W32::WNDPROC a_prev,

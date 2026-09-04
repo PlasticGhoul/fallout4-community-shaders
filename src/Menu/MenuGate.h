@@ -43,11 +43,32 @@ namespace Menu
 
 		[[nodiscard]] bool IsOpen() const noexcept { return _open; }
 
+		/// Starts taking the next key press instead of acting on it. Armed
+		/// from the render thread, read and cleared on the window thread - the
+		/// same split the toggle already uses, for the same reason.
+		void ArmCapture() noexcept;
+		void CancelCapture() noexcept;
+		[[nodiscard]] bool IsCapturing() const noexcept;
+
+		/// Offered every key press the window procedure sees, and asked before
+		/// the toggle. Returns whether the key was taken, in which case the
+		/// caller must not act on it.
+		///
+		/// The order is the point: asked the other way round, the toggle key
+		/// could never be rebound onto itself, because pressing it would close
+		/// the overlay rather than be captured.
+		[[nodiscard]] bool OfferKey(std::uint32_t a_key) noexcept;
+
+		/// The captured key, once. Zero when there is none.
+		[[nodiscard]] std::uint32_t TakeCapturedKey() noexcept;
+
 	private:
 		Suppress _suppress;
 		Restore _restore;
 
 		std::atomic<bool> _toggleWanted{ false };
+		std::atomic<bool> _capturing{ false };
+		std::atomic<std::uint32_t> _captured{ 0 };
 		bool _open{ false };
 		bool _suppressing{ false };
 		std::uint32_t _toggleKey{ 0 };
