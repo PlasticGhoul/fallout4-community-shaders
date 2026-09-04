@@ -4,6 +4,7 @@
 #include "Shader/ImagespaceCatalog.h"
 #include "Shader/ShaderCompiler.h"
 #include "Shader/ShaderSource.h"
+#include "Util/GamePaths.h"
 
 #include <chrono>
 #include <memory>
@@ -39,10 +40,7 @@ namespace Features
 
 		std::filesystem::path ShaderRoot()
 		{
-			// Derived from the game module rather than the working directory:
-			// the working directory is not ours to rely on.
-			const std::filesystem::path exe = REX::FModule::GetExecutingModule().GetFileName();
-			return exe.parent_path() / "Data" / "Shaders" / "FO4";
+			return Util::DataDirectory() / "Shaders" / "FO4";
 		}
 
 		// Picks the pass to replace: the preferred class if the catalog found it

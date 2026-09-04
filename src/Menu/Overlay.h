@@ -47,6 +47,10 @@ namespace Menu
 
 		std::uint32_t _width{ 0 };
 		std::uint32_t _height{ 0 };
+
+		// Zero until the first frame, so the theme is applied once even if the
+		// setting already holds the reference size.
+		float _appliedFontSize{ 0.0f };
 		bool _ready{ false };
 		bool _refused{ false };
 	};

@@ -1,6 +1,9 @@
 #include "Menu/Overlay.h"
 
+#include "Menu/Fonts.h"
+#include "Menu/Theme.h"
 #include "Render/Renderer.h"
+#include "Settings/Settings.h"
 
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
@@ -61,6 +64,11 @@ namespace Menu
 		// No imgui.ini. The game's working directory is not ours to write in,
 		// and the overlay has no layout worth remembering yet.
 		io.IniFilename = nullptr;
+
+		// Before the backends: adding a font after the atlas is built would
+		// mean rebuilding it, and there is no reason to do that once a frame
+		// has been drawn.
+		Fonts::Load();
 
 		if (!ImGui_ImplWin32_Init(_window) ||
 			!ImGui_ImplDX11_Init(
@@ -153,6 +161,20 @@ namespace Menu
 
 		ImGui::NewFrame();
 
+		// Read every frame rather than cached: there is no change notification,
+		// so whoever caches a setting has to refresh it themselves. The theme
+		// is only rebuilt when the size actually moved.
+		const auto fontSize = static_cast<float>(Settings::GetDouble("Menu/fontSize"));
+		if (fontSize != _appliedFontSize) {
+			ApplyTheme(fontSize);
+			_appliedFontSize = fontSize;
+		}
+
+		// Pushed around the whole frame, not around the window: a tooltip or a
+		// popup opens outside it and would otherwise be drawn in a different
+		// size than the thing it belongs to.
+		ImGui::PushFont(Fonts::Body(), fontSize);
+
 		if (a_visible) {
 			ImGui::SetNextWindowSize(ImVec2{ 380.0f, 0.0f }, ImGuiCond_FirstUseEver);
 			if (ImGui::Begin("Community Shaders")) {
@@ -167,6 +189,8 @@ namespace Menu
 			}
 			ImGui::End();
 		}
+
+		ImGui::PopFont();
 
 		// Rendered even while invisible, so that ImGui keeps writing its input
 		// state forward and does not open with a frame from the past.

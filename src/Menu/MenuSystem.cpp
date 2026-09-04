@@ -4,6 +4,7 @@
 #include "Menu/MenuGate.h"
 #include "Menu/MousePointer.h"
 #include "Menu/Overlay.h"
+#include "Menu/Theme.h"
 #include "Menu/Win32.h"
 #include "Menu/WindowHook.h"
 #include "Render/SwapChainHook.h"
@@ -14,6 +15,7 @@ namespace Menu
 	namespace
 	{
 		constexpr auto kToggleKeyPath = "Menu/toggleKey"sv;
+		constexpr auto kFontSizePath = "Menu/fontSize"sv;
 
 		// VK_END. Unbound in Fallout 4 and common among its plugins.
 		constexpr std::uint32_t kDefaultToggleKey = 0x23;
@@ -48,6 +50,10 @@ namespace Menu
 
 	void StartSystem() noexcept
 	{
+		Settings::DeclareSlider(kFontSizePath, kReferenceFontSize, 12.0, 32.0)
+			.Label("setting.menu.font_size", "Font size")
+			.Help("setting.menu.font_size.help", "Size of the text in this overlay.");
+
 		Settings::DeclareKey(kToggleKeyPath, kDefaultToggleKey)
 			.Label("setting.menu.toggle_key", "Toggle key")
 			.Help("setting.menu.toggle_key.help", "Opens and closes this overlay.");
