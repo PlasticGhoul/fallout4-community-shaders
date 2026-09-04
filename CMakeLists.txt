@@ -411,4 +411,32 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME MenuGate COMMAND MenuGateTests)
+
+    # Schema only, deliberately: the whole point of the split is that the
+    # description of a setting needs neither REX nor a file to be exercised.
+    add_executable(
+        SettingsSchemaTests
+        "${CMAKE_SOURCE_DIR}/tests/SettingsSchemaTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Settings/Schema.cpp"
+    )
+
+    target_include_directories(
+        SettingsSchemaTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(SettingsSchemaTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        SettingsSchemaTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(SettingsSchemaTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            SettingsSchemaTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME SettingsSchema COMMAND SettingsSchemaTests)
 endif()
