@@ -1,6 +1,5 @@
 #include "Menu/MenuSystem.h"
 
-#include "Feature/FeatureSettings.h"
 #include "Menu/InputLayer.h"
 #include "Menu/MenuGate.h"
 #include "Menu/MousePointer.h"
@@ -8,6 +7,7 @@
 #include "Menu/Win32.h"
 #include "Menu/WindowHook.h"
 #include "Render/SwapChainHook.h"
+#include "Settings/Settings.h"
 
 namespace Menu
 {
@@ -48,7 +48,9 @@ namespace Menu
 
 	void StartSystem() noexcept
 	{
-		Features::Settings::DeclareUInt32(kToggleKeyPath, kDefaultToggleKey);
+		Settings::DeclareKey(kToggleKeyPath, kDefaultToggleKey)
+			.Label("setting.menu.toggle_key", "Toggle key")
+			.Help("setting.menu.toggle_key.help", "Opens and closes this overlay.");
 	}
 
 	void TickSystem() noexcept
@@ -57,7 +59,7 @@ namespace Menu
 			return;
 		}
 
-		const auto toggleKey = Features::Settings::GetUInt32(kToggleKeyPath);
+		const auto toggleKey = Settings::GetUInt32(kToggleKeyPath);
 		TheGate().SetToggleKey(toggleKey);
 
 		// Announced once, next to the window handle and the ImGui version, so

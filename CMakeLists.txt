@@ -334,33 +334,6 @@ if(FO4CS_BUILD_TESTS)
     add_test(NAME FileWatch COMMAND FileWatchTests)
 
     add_executable(
-        FeatureSettingsTests
-        "${CMAKE_SOURCE_DIR}/tests/FeatureSettingsTests.cpp"
-        "${CMAKE_SOURCE_DIR}/src/Feature/FeatureSettings.cpp"
-        "${CMAKE_SOURCE_DIR}/src/Util/FileWatch.cpp"
-    )
-
-    target_include_directories(
-        FeatureSettingsTests
-        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
-    )
-    target_compile_features(FeatureSettingsTests PRIVATE cxx_std_23)
-    target_precompile_headers(
-        FeatureSettingsTests
-        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
-    )
-    target_link_libraries(FeatureSettingsTests PRIVATE CommonLibF4::CommonLibF4)
-
-    if(MSVC)
-        target_compile_options(
-            FeatureSettingsTests
-            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
-        )
-    endif()
-
-    add_test(NAME FeatureSettings COMMAND FeatureSettingsTests)
-
-    add_executable(
         FeatureRegistryTests
         "${CMAKE_SOURCE_DIR}/tests/FeatureRegistryTests.cpp"
         "${CMAKE_SOURCE_DIR}/src/Feature/FeatureRegistry.cpp"

@@ -1,9 +1,9 @@
 #include "Feature/FeatureSystem.h"
 
 #include "Feature/FeatureRegistry.h"
-#include "Feature/FeatureSettings.h"
 #include "Features/FrameCounter.h"
 #include "Features/ImagespaceTint.h"
+#include "Settings/Settings.h"
 
 #include <memory>
 
@@ -41,8 +41,9 @@ namespace Features
 	void TickSystem() noexcept
 	{
 		// A settings change is also the moment a refused feature deserves
-		// another try, so the two belong together.
-		if (Settings::ReloadIfChanged()) {
+		// another try, so the two belong together. It answers for a change on
+		// disk and for one made in the overlay alike.
+		if (Settings::ConsumeChanged()) {
 			TheRegistry().ClearRefusals();
 		}
 
