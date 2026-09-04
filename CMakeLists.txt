@@ -439,4 +439,32 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME SettingsSchema COMMAND SettingsSchemaTests)
+
+    add_executable(
+        SettingsStoreTests
+        "${CMAKE_SOURCE_DIR}/tests/SettingsStoreTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Settings/Schema.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Settings/Store.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Util/FileWatch.cpp"
+    )
+
+    target_include_directories(
+        SettingsStoreTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(SettingsStoreTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        SettingsStoreTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(SettingsStoreTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            SettingsStoreTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME SettingsStore COMMAND SettingsStoreTests)
 endif()
