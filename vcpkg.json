@@ -12,6 +12,11 @@
             "default-features": false,
             "features": ["wchar"]
         },
-        "glaze"
+        "glaze",
+        {
+            "name": "imgui",
+            "default-features": false,
+            "features": ["dx11-binding", "win32-binding"]
+        }
     ]
 }

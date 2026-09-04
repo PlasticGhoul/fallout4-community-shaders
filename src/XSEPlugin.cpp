@@ -1,4 +1,5 @@
 #include "Feature/FeatureSystem.h"
+#include "Menu/MenuSystem.h"
 #include "Plugin.h"
 #include "Render/SwapChainHook.h"
 #include "Runtime.h"
@@ -21,6 +22,9 @@ namespace
 			// render thread, and Present drives the registry - registering into
 			// a vector that another thread may already be walking is a race we
 			// can avoid entirely by ordering, without a flag to synchronise on.
+			// Before the features, because their StartSystem is what loads the
+			// settings file, and a setting has to be declared before that.
+			Menu::StartSystem();
 			Features::StartSystem();
 			Render::InstallSwapChainHook();
 			break;

@@ -1,6 +1,7 @@
 #include "Render/SwapChainHook.h"
 
 #include "Feature/FeatureSystem.h"
+#include "Menu/MenuSystem.h"
 #include "Render/Markers.h"
 #include "Render/Renderer.h"
 #include "Render/TargetInventory.h"
@@ -39,6 +40,10 @@ namespace Render
 			// Ours runs inside the named block, so a capture shows it under
 			// the marker rather than loose between frames.
 			Features::TickSystem();
+
+			// After the features: the overlay belongs on top of whatever they
+			// drew.
+			Menu::TickSystem();
 
 			const auto name = std::format(L"CommunityShadersFO4 Frame {}", frame);
 

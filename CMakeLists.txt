@@ -48,6 +48,10 @@ configure_file(
 )
 add_subdirectory("${COMMONLIBF4_SHIM_DIR}" CommonLibF4 EXCLUDE_FROM_ALL)
 
+# The overlay's backends. Only the plugin links these; the host tests keep the
+# state machine away from ImGui on purpose.
+find_package(imgui CONFIG REQUIRED)
+
 # --------------------------------------------------------------- plugin target
 add_library(${PROJECT_NAME} SHARED)
 
@@ -112,7 +116,10 @@ target_precompile_headers(
     ${PROJECT_NAME}
     PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
 )
-target_link_libraries(${PROJECT_NAME} PRIVATE CommonLibF4::CommonLibF4)
+target_link_libraries(
+    ${PROJECT_NAME}
+    PRIVATE CommonLibF4::CommonLibF4 imgui::imgui
+)
 
 if(MSVC)
     target_compile_options(
