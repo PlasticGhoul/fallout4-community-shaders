@@ -440,4 +440,30 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME SettingsStore COMMAND SettingsStoreTests)
+
+    add_executable(
+        I18nTests
+        "${CMAKE_SOURCE_DIR}/tests/I18nTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/I18n/I18n.cpp"
+    )
+
+    target_include_directories(
+        I18nTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(I18nTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        I18nTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(I18nTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            I18nTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME I18n COMMAND I18nTests)
 endif()
