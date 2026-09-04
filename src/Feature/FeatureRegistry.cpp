@@ -31,8 +31,22 @@ namespace Features
 			return;
 		}
 
+		// Declared before it goes into the table, and guarded like every other
+		// call into a feature. A throw here says the feature's settings are
+		// missing, not that the feature cannot run, so it is still registered:
+		// its switch then reads as off, which is a state the player can see.
+		static_cast<void>(Guarded(a_feature->Name(), "Declare", [&] { a_feature->Declare(); }));
+
 		REX::INFO("registered feature {}", a_feature->Name());
 		_entries.emplace_back(Entry{ std::move(a_feature), State::kOff });
+	}
+
+	void Registry::ForEach(
+		const std::function<void(std::string_view, State)>& a_visit) const noexcept
+	{
+		for (const auto& entry : _entries) {
+			a_visit(entry.feature->Name(), entry.state);
+		}
 	}
 
 	void Registry::Tick(const EnabledQuery& a_query) noexcept

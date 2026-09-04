@@ -15,6 +15,7 @@ namespace Features
 	{
 	public:
 		[[nodiscard]] std::string_view Name() const override { return "FrameCounter"; }
+		void Declare() override;
 		[[nodiscard]] bool Setup() override;
 		void Frame() override;
 		void Shutdown() override;

@@ -39,6 +39,13 @@ namespace Features
 		/// that is the moment a refusal deserves reconsidering.
 		void ClearRefusals() noexcept;
 
+		/// Every feature, in registration order, with the state it is in. Name
+		/// and state only: the menu needs no more, and the registry gives away
+		/// nothing it owns.
+		void ForEach(
+			const std::function<void(std::string_view a_name, State a_state)>& a_visit)
+			const noexcept;
+
 		[[nodiscard]] State StateOf(std::string_view a_name) const noexcept;
 		[[nodiscard]] std::size_t Count() const noexcept;
 

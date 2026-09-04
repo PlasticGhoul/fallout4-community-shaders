@@ -27,6 +27,7 @@ namespace Features
 		~ImagespaceTint() override;
 
 		[[nodiscard]] std::string_view Name() const override { return "ImagespaceTint"; }
+		void Declare() override;
 		[[nodiscard]] bool Setup() override;
 		void Frame() override;
 		void Shutdown() override;

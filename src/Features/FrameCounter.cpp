@@ -1,7 +1,18 @@
 #include "Features/FrameCounter.h"
 
+#include "Settings/Settings.h"
+
 namespace Features
 {
+	void FrameCounter::Declare()
+	{
+		Settings::DeclareFeature("FrameCounter", false)
+			.Label("feature.frame_counter.name", "Frame Counter")
+			.Help(
+				"feature.frame_counter.help",
+				"Counts rendered frames and reports the count to the log.");
+	}
+
 	bool FrameCounter::Setup()
 	{
 		_frames = 0;

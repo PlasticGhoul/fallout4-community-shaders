@@ -1,5 +1,6 @@
 #include "Features/ImagespaceTint.h"
 
+#include "Settings/Settings.h"
 #include "Shader/ImagespaceCatalog.h"
 #include "Shader/ShaderCompiler.h"
 #include "Shader/ShaderSource.h"
@@ -75,6 +76,15 @@ namespace Features
 		if (_watcher.joinable()) {
 			_watcher.join();
 		}
+	}
+
+	void ImagespaceTint::Declare()
+	{
+		Settings::DeclareFeature("ImagespaceTint", true)
+			.Label("feature.imagespace_tint.name", "Imagespace Tint")
+			.Help(
+				"feature.imagespace_tint.help",
+				"Replaces an imagespace pixel shader with one of our own.");
 	}
 
 	bool ImagespaceTint::Setup()

@@ -26,12 +26,11 @@ namespace Features
 
 	void StartSystem() noexcept
 	{
+		// Registering is also declaring: the registry calls Declare on every
+		// feature it takes, which has to happen before Init because a REX
+		// setting registers with its store at construction and Init is what
+		// walks that registration.
 		RegisterAll();
-
-		// Declared before Init, because a REX setting registers with its store
-		// at construction and Init is what walks that registration.
-		Settings::DeclareFeature("FrameCounter", false);
-		Settings::DeclareFeature("ImagespaceTint", true);
 
 		Settings::Init();
 

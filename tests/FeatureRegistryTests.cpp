@@ -33,6 +33,11 @@ namespace
 
 		[[nodiscard]] std::string_view Name() const override { return _name; }
 
+		// Deliberately not recorded in g_order: that recorder belongs to the
+		// setup/teardown ordering test, and the counters below say everything
+		// this one needs.
+		void Declare() override { ++declares; }
+
 		[[nodiscard]] bool Setup() override
 		{
 			++setups;
@@ -54,6 +59,7 @@ namespace
 			g_order.push_back("shutdown:" + _name);
 		}
 
+		int declares = 0;
 		int setups = 0;
 		int frames = 0;
 		int shutdowns = 0;
@@ -62,6 +68,15 @@ namespace
 		std::string _name;
 		bool _setupSucceeds;
 		bool _frameThrows;
+	};
+
+	class ThrowingDeclareFeature : public Features::Feature
+	{
+	public:
+		[[nodiscard]] std::string_view Name() const override { return "throws"; }
+		void Declare() override { throw std::runtime_error("deliberate"); }
+		[[nodiscard]] bool Setup() override { return true; }
+		void Shutdown() override {}
 	};
 
 	Features::EnabledQuery Only(std::set<std::string> a_enabled)
@@ -157,6 +172,54 @@ int main()
 
 		Check(thrower->frames == 1, "and gets no further frames");
 		Check(bystander->frames == 2, "while the neighbour keeps running");
+	}
+
+	// Declare runs once, when the feature is registered, and before anything
+	// asks whether it should be running. It has to: a REX setting registers
+	// with its store at construction, and Settings::Init walks that
+	// registration, so a declaration that arrives after Init is invisible.
+	{
+		Features::Registry registry;
+		auto* const solo = new FakeFeature{ "solo", true, false };
+		registry.Register(std::unique_ptr<Features::Feature>{ solo });
+
+		Check(solo->declares == 1, "Register declares the feature exactly once");
+		Check(solo->setups == 0, "and does so before setting it up");
+
+		registry.Tick(Only({ "solo" }));
+		Check(solo->declares == 1, "and a tick does not declare it again");
+	}
+
+	// ForEach hands out names and states, in registration order.
+	{
+		Features::Registry registry;
+		registry.Register(std::make_unique<FakeFeature>("first", true, false));
+		registry.Register(std::make_unique<FakeFeature>("second", true, false));
+
+		registry.Tick(Only({ "first" }));
+
+		std::vector<std::string> names;
+		std::vector<Features::State> states;
+		registry.ForEach([&](std::string_view a_name, Features::State a_state) {
+			names.emplace_back(a_name);
+			states.push_back(a_state);
+		});
+
+		Check(names.size() == 2, "ForEach visits every feature");
+		Check(names.size() == 2 && names[0] == "first", "in registration order");
+		Check(names.size() == 2 && names[1] == "second", "both of them");
+		Check(states.size() == 2 && states[0] == Features::State::kRunning, "the running one");
+		Check(states.size() == 2 && states[1] == Features::State::kOff, "and the off one");
+	}
+
+	// A feature that throws out of Declare is still registered: the throw says
+	// its settings are missing, not that the feature cannot run at all, and the
+	// guard reports it the same way as every other call into a feature.
+	{
+		Features::Registry registry;
+		registry.Register(std::make_unique<ThrowingDeclareFeature>());
+
+		Check(registry.Count() == 1, "a feature that throws from Declare is still registered");
 	}
 
 	std::printf("%d failure(s)\n", g_failures);
