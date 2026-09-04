@@ -71,6 +71,24 @@ int main()
 	Util::FileWatch empty;
 	Check(!empty.Poll(), "an empty watch reports nothing");
 
+	// Rebase hides a change that already happened, but nothing after it. This
+	// is what keeps our own settings write from looking like somebody else's.
+	{
+		const auto owned = root / "owned.json";
+		WriteFile(owned, "{}\n");
+
+		Util::FileWatch watchOwned;
+		const std::vector<std::filesystem::path> ours{ owned };
+		watchOwned.Reset(ours);
+
+		AgeForward(owned);
+		watchOwned.Rebase();
+		Check(!watchOwned.Poll(), "a change before Rebase is not reported");
+
+		AgeForward(owned);
+		Check(watchOwned.Poll(), "but a change after Rebase still is");
+	}
+
 	std::filesystem::remove_all(root);
 	std::printf("%d failure(s)\n", g_failures);
 	return g_failures == 0 ? 0 : 1;

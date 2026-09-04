@@ -26,6 +26,13 @@ namespace Util
 		}
 	}
 
+	void FileWatch::Rebase()
+	{
+		for (auto& [path, stamp] : _entries) {
+			stamp = TimestampOr(path, stamp);
+		}
+	}
+
 	bool FileWatch::Poll()
 	{
 		bool changed = false;

@@ -27,6 +27,11 @@ namespace Util
 		/// that vanished is treated the same way: never an exception.
 		[[nodiscard]] bool Poll();
 
+		/// Takes the current timestamps as the new baseline without changing
+		/// the watched set. Exists for the case where we are the writer: our
+		/// own write must not come back as somebody else's change.
+		void Rebase();
+
 	private:
 		std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> _entries;
 	};
