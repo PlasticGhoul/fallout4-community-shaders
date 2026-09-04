@@ -378,4 +378,30 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME FeatureRegistry COMMAND FeatureRegistryTests)
+
+    add_executable(
+        MenuGateTests
+        "${CMAKE_SOURCE_DIR}/tests/MenuGateTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Menu/MenuGate.cpp"
+    )
+
+    target_include_directories(
+        MenuGateTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(MenuGateTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        MenuGateTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(MenuGateTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            MenuGateTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME MenuGate COMMAND MenuGateTests)
 endif()
