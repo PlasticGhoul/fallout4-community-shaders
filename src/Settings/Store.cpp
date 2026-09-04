@@ -59,6 +59,16 @@ namespace Settings
 			return watch;
 		}
 
+		// Raised by every Set and by RestoreDefaults, cleared by
+		// ConsumeChanged. A change made through the overlay never touches the
+		// watch, so without this it would reach nobody until the next Save -
+		// and after a Save the watch is deliberately silent about it.
+		bool& Dirty()
+		{
+			static bool dirty = false;
+			return dirty;
+		}
+
 		// REX reads through glz::get<T>, which matches the variant alternative
 		// with std::same_as (glaze/core/seek.hpp:271), and glz::generic holds a
 		// JSON number only ever as a double (glaze/json/generic.hpp:68). An
@@ -319,6 +329,85 @@ namespace Settings
 		return GetBool(std::format("{}/enabled", a_name));
 	}
 
+	void SetBool(std::string_view a_path, bool a_value) noexcept
+	{
+		auto* const bound = FindBinding(a_path);
+		if (bound == nullptr || bound->asBool == nullptr) {
+			return;
+		}
+		bound->asBool->SetValue(a_value);
+		Dirty() = true;
+	}
+
+	void SetDouble(std::string_view a_path, double a_value) noexcept
+	{
+		auto* const bound = FindBinding(a_path);
+		if (bound == nullptr || bound->asNumber == nullptr) {
+			return;
+		}
+		bound->asNumber->SetValue(a_value);
+		Dirty() = true;
+	}
+
+	void SetUInt32(std::string_view a_path, std::uint32_t a_value) noexcept
+	{
+		SetDouble(a_path, static_cast<double>(a_value));
+	}
+
+	void SetString(std::string_view a_path, std::string_view a_value) noexcept
+	{
+		auto* const bound = FindBinding(a_path);
+		if (bound == nullptr || bound->asString == nullptr) {
+			return;
+		}
+		bound->asString->SetValue(std::string{ a_value });
+		Dirty() = true;
+	}
+
+	void RestoreDefaults() noexcept
+	{
+		ResetToDeclaredDefaults();
+		Dirty() = true;
+	}
+
+	void Save() noexcept
+	{
+		const auto& file = CurrentFile();
+		if (file.empty()) {
+			return;
+		}
+
+		if (!WriteFile(file, WriteMode::kOverwrite)) {
+			// One line, not one per widget: a file that cannot be written now
+			// cannot be written on the next click either, and a slider being
+			// dragged would fill the log by itself.
+			static bool reported = false;
+			if (!reported) {
+				REX::ERROR(
+					"{} could not be written; changes will not survive a restart",
+					file.generic_string());
+				reported = true;
+			}
+			return;
+		}
+
+		// The write we just did was ours. Without this the next poll would read
+		// it as somebody else's change and set every feature up again.
+		Watch().Rebase();
+	}
+
+	bool ConsumeChanged() noexcept
+	{
+		const bool fromFile = Watch().Poll();
+		if (fromFile) {
+			REX::INFO("settings changed, reloading");
+			REX::FJsonSettingStore::GetSingleton()->Load();
+		}
+
+		const bool fromUs = std::exchange(Dirty(), false);
+		return fromFile || fromUs;
+	}
+
 	void Init(const std::filesystem::path& a_file)
 	{
 		CurrentFile() = a_file;
@@ -368,8 +457,12 @@ namespace Settings
 		store->Init("", StoredPath().c_str());
 		store->Load();
 
+		// Both halves of the change signal start from the same baseline. Reset
+		// clears the file half; leaving the flag half standing would report a
+		// change that Init has just superseded by replacing every value.
 		const std::filesystem::path watched[]{ a_file };
 		Watch().Reset(watched);
+		Dirty() = false;
 
 		REX::INFO("settings loaded from {}", a_file.generic_string());
 	}

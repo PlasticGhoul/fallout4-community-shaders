@@ -167,6 +167,90 @@ int main()
 	Check(!Settings::IsEnabled("Undeclared"), "an undeclared name reads as off");
 	Check(Settings::GetDouble("no/such/path") == 0.0, "and an undeclared path as zero");
 
+	// The round trip the acceptance criterion asks for: change it, write it,
+	// read it back from a fresh load.
+	{
+		const auto trip = root / "trip.json";
+		Settings::Init(trip);
+
+		Settings::SetBool("Alpha/enabled", true);
+		Settings::SetDouble("Menu/fontSize", 24.0);
+		Settings::SetUInt32("Menu/toggleKey", 112);
+		Settings::SetString("Menu/language", "de");
+
+		Check(Settings::IsEnabled("Alpha"), "a Set is visible to Get immediately");
+		Check(Settings::GetUInt32("Menu/toggleKey") == 112, "for a key too");
+
+		Settings::Save();
+		Settings::Init(trip);
+
+		Check(Settings::IsEnabled("Alpha"), "and survives a reload");
+		Check(Settings::GetDouble("Menu/fontSize") == 24.0, "including the slider");
+		Check(Settings::GetUInt32("Menu/toggleKey") == 112, "and the key");
+		Check(Settings::GetString("Menu/language") == "de", "and the choice");
+	}
+
+	// Our own write must not come back as somebody else's change, or every
+	// click in the overlay would tear down and set up every feature.
+	{
+		const auto quiet = root / "quiet.json";
+		Settings::Init(quiet);
+		Check(!Settings::ConsumeChanged(), "nothing changed right after Init");
+
+		Settings::SetBool("Alpha/enabled", true);
+		Check(Settings::ConsumeChanged(), "a Set is a change");
+		Check(!Settings::ConsumeChanged(), "and is reported exactly once");
+
+		Settings::Save();
+		Check(!Settings::ConsumeChanged(), "our own write is not a change");
+
+		const auto stamp = std::filesystem::last_write_time(quiet);
+		std::filesystem::last_write_time(quiet, stamp + std::chrono::seconds{ 5 });
+		Check(Settings::ConsumeChanged(), "but somebody else's write still is");
+	}
+
+	// Unknown keys survive a Save, not just an Init.
+	{
+		const auto foreign = root / "foreign.json";
+		WriteFile(foreign, R"({"Menu":{"somebodyElsesKey":7}})");
+		Settings::Init(foreign);
+
+		Settings::SetDouble("Menu/fontSize", 20.0);
+		Settings::Save();
+
+		const auto text = ReadFile(foreign);
+		Check(Contains(text, R"("somebodyElsesKey":7)"), "an unknown key survives a save");
+		Check(Contains(text, R"("fontSize":20)"), "next to the value we wrote");
+	}
+
+	// A save overwrites, where extending only fills in. Without that the
+	// overlay could change a value and never be able to write it back.
+	{
+		const auto over = root / "over.json";
+		WriteFile(over, R"({"Menu":{"toggleKey":112}})");
+		Settings::Init(over);
+		Check(Settings::GetUInt32("Menu/toggleKey") == 112, "the file's key was extended around");
+
+		Settings::SetUInt32("Menu/toggleKey", 45);
+		Settings::Save();
+		Check(Contains(ReadFile(over), R"("toggleKey":45)"), "and a save replaces it");
+	}
+
+	// The way back.
+	{
+		const auto reset = root / "reset.json";
+		Settings::Init(reset);
+
+		Settings::SetBool("Alpha/enabled", true);
+		Settings::SetUInt32("Menu/toggleKey", 112);
+		Settings::RestoreDefaults();
+
+		Check(!Settings::IsEnabled("Alpha"), "restoring puts a bool back");
+		Check(Settings::GetUInt32("Menu/toggleKey") == 35, "and a key");
+		Check(Settings::GetString("Menu/language") == "en", "and a choice");
+		Check(Settings::ConsumeChanged(), "and counts as a change");
+	}
+
 	std::filesystem::remove_all(root);
 	std::printf("%d failure(s)\n", g_failures);
 	return g_failures == 0 ? 0 : 1;
