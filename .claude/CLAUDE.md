@@ -125,6 +125,43 @@ one block per feature. The file is written from the declared defaults when it do
 `REX` saves through `glz::set`, which only ever overwrites keys that are already there, so it can
 never create the file itself.
 
+Not every setting is a feature switch. `DeclareBool` and `DeclareUInt32` take a two segment path,
+`"Block/Key"`, and the generated file groups by the first segment; `DeclareFeature` is shorthand
+for `DeclareBool("<Name>/enabled", …)`. Two rules that cost measurements to find:
+
+-   **Whole numbers are stored as `double`.** `glz::get<T>` matches the variant alternative with
+    `std::same_as`, and `glz::generic` holds a JSON number only ever as a `double`, so
+    `TJsonSetting<std::uint32_t>` links and runs but always returns its declared default. Only
+    `bool`, `double` and `std::string` can read a file at all.
+-   **An existing file is never extended.** New keys appear only when the file is absent, so a
+    player who updates never sees a setting added after their first run. Subproject E2 owns this.
+
+## Menu
+
+`src/Menu/` is a system of its own next to `Features`, and deliberately **not** a feature: it is
+the thing that drives features, so switching it off through the file it exists to edit would be
+backwards, and every toggle would tear down ImGui's D3D resources. `Menu::StartSystem` declares
+its settings from `kGameDataReady`; `Menu::TickSystem` runs once per `Present`, after
+`Features::TickSystem`, because the overlay belongs on top of whatever they drew.
+
+Four things to know before touching it:
+
+-   **The window procedure only sets a flag.** It runs on the window thread; the input layer and
+    ImGui belong to the render thread. `Menu::Gate` turns that flag into exactly one transition
+    per tick, however many key repeats arrived, and knows neither ImGui nor the engine — which is
+    what makes it testable without a game (`tests/MenuGateTests.cpp`).
+-   **`src/Menu/Win32.h` carries what `REX::W32` lacks.** `SetWindowLongPtrW`, `CallWindowProcW`,
+    the cursor functions, and every input `WM_` constant — the `WM` enumeration stops at
+    `WM_CHILDACTIVATE` (`0x0022`). Add missing USER32 there, never `<Windows.h>`.
+-   **`ImGui_ImplWin32_WndProcHandler` is declared against `::HWND__`**, not `REX::W32::HWND`. Its
+    C++ mangled name carries the parameter types, and REX's `HWND` is a different tag type; the
+    mismatch fails in the linker with a message that does not name the cause.
+-   **The overlay drives its own pointer.** While the game runs, something holds the system cursor
+    inside the middle 1280×720 of the screen and corrects a single pixel past it — not through
+    `ClipCursor`. `Menu::MousePointer` parks the cursor in the window's middle every frame and
+    uses only the distance travelled, so those edges are never approached. Details and the
+    measurements are in the E1 section of the roadmap.
+
 ## Packaging
 
 ```pwsh
@@ -175,7 +212,7 @@ history and under `.github/workflows-disabled/`.
 | --------------------------------------------------------------------- | --------------------- |
 | Feature `.ini` versions and their audit                               | not before F          |
 | Release branch model, semantic-release, hotfix lines, Nexus upload    | after the port ships  |
-| i18n (`T()`/`TKEY`, `extract-i18n.py`, `sort-i18n.py`), themes, fonts | Subproject E          |
+| i18n (`T()`/`TKEY`, `extract-i18n.py`, `sort-i18n.py`), themes, fonts | Subproject E2         |
 | Release stages, feature categories and constraints                    | not before F          |
 | Shader validation (`hlslkit`), shader defines, buffer scanning        | Subproject C          |
 | CI workflows, PR checks, shader validation in CI                      | when the above return |

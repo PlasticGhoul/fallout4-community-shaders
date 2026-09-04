@@ -48,7 +48,8 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt   | **abgeschlossen** |
 | D1  | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz                             | Zwei Features unabhängig an-/abschaltbar                                   | **abgeschlossen** |
 | D2  | **Paketierung** — `dist/`, Basis-, Addon- und AIO-Archive                                                              | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel               | **abgeschlossen** |
-| E   | **Menü** — ImGui-Overlay, Input-Handling, Einstellungs-UI                                                              | Overlay im Spiel bedienbar, Einstellungen überleben Neustart               | offen             |
+| E1  | **Overlay und Eingabe** — ImGui-Overlay, Fensterprozedur, Eingabesperre, eigener Zeiger                                | Overlay im Spiel bedienbar, Spieleingabe steht, solange es offen ist       | **abgeschlossen** |
+| E2  | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                        | Einstellungen im Overlay ändern, sie überleben einen Neustart              | offen             |
 | F+  | **Features einzeln** — je ein Zyklus pro portiertem CS-Feature                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 
 Das ursprüngliche Teilprojekt D wurde am 2026-08-30 in D1 und D2 geteilt: Laufzeitverhalten und
@@ -62,6 +63,13 @@ eine gewachsene Struktur nachgerüstet zu werden. Der Preis war, dass die Auftei
 Addons an zwei Features geprüft wurde statt an zwanzig. Der Ini-Versionsaudit ist dabei **nicht**
 mitgekommen und bleibt ruhend, siehe den Abschnitt zu D2.
 
+Das ursprüngliche Teilprojekt E wurde am 2026-08-31 in E1 und E2 geteilt. E bündelte fünf Dinge:
+Overlay-Rendering, Eingabe, Einstellungsoberfläche, Themes und Schriften, und i18n. Die ersten
+beiden bilden ein Subsystem — „können wir zeichnen und Eingaben nehmen" — und tragen sämtliche
+riskanten Unbekannten; die übrigen drei beantworten die andere Frage, „was zeigen wir". Die
+Teilung hat sich bezahlt gemacht: der größte Einzelposten in E1 war ein Problem, das in der Spec
+mit keinem Wort vorkam und vier Spielstarts zur Klärung brauchte, siehe den Abschnitt zu E1.
+
 Das ursprüngliche Teilprojekt B wurde am 2026-08-30 in B1 und B2 geteilt. B1 ist begrenzte
 Ingenieursarbeit mit klarem Ende; B2 ist offene Reverse-Engineering-Forschung, deren Aufwand sich
 vorher nicht seriös schätzen lässt. Zusammen hätte B kein vorhersagbares Ende gehabt. Die
@@ -69,7 +77,9 @@ Marker aus B1 sind zugleich das Werkzeug, mit dem sich in B2 überhaupt sinnvoll
 
 A bis C sind die eigentliche Portierungsarbeit. Für D und E galt die Annahme, sie seien
 weitgehend aus dem bestehenden Skyrim-Code übernehmbar, weil sie kaum engine-gekoppelt sind —
-**für D1 hat sich das nicht bestätigt**, siehe den Abschnitt zu D1. Die vorhandenen HLSL-Shader werden
+**für D1 und E1 hat sich das nicht bestätigt**, siehe die Abschnitte zu D1 und E1. In E1 war die
+Skyrim-Vorlage sogar dort stumm, wo sie am meisten geholfen hätte: sie enthält keine einzige
+Zeile zum Umgang mit dem Systemzeiger, weil Skyrim das Problem nicht hat. Die vorhandenen HLSL-Shader werden
 erst ab F relevant — sie sind das Ziel der Portierung, nicht ihr Anfang.
 
 ## Ausgangslage (gemessen am Skyrim-Stand, 2026-08-30)
@@ -306,6 +316,91 @@ D2 ist am 2026-08-31 abgenommen worden. Spec und Plan liegen unter `docs/superpo
 einer fehlenden Datei scheitert. Weil `_watch.Reset` in diesem Zweig nicht mehr erreicht wird,
 bleibt der Watcher für die **ganze Sitzung** leer — damit greift auch das Hot-Reload aus
 Teilprojekt C nicht mehr, sobald ein Shader beim ersten Versuch fehlte.
+
+## Aus Teilprojekt E1 bestätigt
+
+E1 ist am 2026-09-04 abgenommen worden, alle sieben Abnahmekriterien erfüllt. Spec und Plan liegen
+unter `docs/superpowers/`.
+
+| Sachverhalt         | Bestätigter Wert                                                                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ImGui               | `1.92.6` über vcpkg, `dx11-binding` und `win32-binding`. Übersetzt unter `/W4 /WX` **ohne eine einzige Unterdrückung**                              |
+| Die vier IDs        | zeigen auf das, wofür wir sie hielten. Bei offenem Overlay bewegt sich der Spieler nicht, die Kamera dreht nicht, ein Klick löst keinen Angriff aus |
+| `AllocateNewLayer`  | liefert `layerID 0` — der erste Layer. `EnableUserEvent(kAll, false, kMenu)` schaltet alles ab, `DecRef` gibt es zurück                             |
+| Aufsetzen           | erstes `Present`: `overlay ready, window 0x…, ImGui 1.92.6`, dann `window procedure chained`                                                        |
+| `SetWindowLongPtrW` | liefert als Vorgänger `0xffff19bb` — kein Codezeiger, sondern ein Server-seitiges Handle. Genau dafür gibt es `CallWindowProcW`; es trägt           |
+| D3D-Typen           | `imgui_impl_dx11.h` deklariert `ID3D11Device` und `ID3D11DeviceContext` selbst vorwärts. `<d3d11.h>` blieb draußen, `reinterpret_cast` reicht       |
+| Einstellungsdatei   | bekommt beim ersten Start einen Block `Menu` mit `toggleKey`. `112` dort öffnet nach einem Neustart mit F1, `Ende` tut dann nichts                  |
+| Host-Tests          | neun, alle grün. `MenuGateTests` prüft den Zustandsautomaten ohne Spiel, `FeatureSettingsTests` die erweiterten Einstellungen                       |
+
+**Der Systemzeiger ist gefangen, und zwar nicht über `ClipCursor`.** Das war der teuerste Befund
+des Teilprojekts und steht in keiner Spec. Solange das Spiel läuft, hält etwas den Systemzeiger in
+den **mittleren 1280×720 eines 2560×1440-Schirms** fest, also `[640, 1919] × [360, 1079]`.
+Gemessen mit gezielten Sonden:
+
+| gesetzt auf    | gelandet auf   |
+| -------------- | -------------- |
+| `(50, 50)`     | `(640, 360)`   |
+| `(2500, 1400)` | `(1919, 1079)` |
+| `(639, 359)`   | `(640, 360)`   |
+| `(1921, 1081)` | `(1919, 1079)` |
+
+Schon **ein** Pixel darüber hinaus wird korrigiert. Dabei meldet `GetClipCursor` durchgehend den
+vollen virtuellen Desktop, und ein `ClipCursor(nullptr)` in jedem Frame ändert nichts — es ist
+also keine Klemmung im Sinne von USER32. Die Engine **bewegt** den Zeiger auch nicht von selbst:
+über eine Sekunde ohne Handbewegung erzeugt keine einzige Positionsänderung. Sie korrigiert nur.
+
+Warum ausgerechnet die halbe Kantenlänge, und wer korrigiert, ist **offen**. Für die Lösung war es
+nicht nötig: `Menu::MousePointer` parkt den Systemzeiger jeden Frame in der Fenstermitte und
+verwendet nur die zurückgelegte Strecke. Von der Mitte aus erreicht eine Handbewegung pro Frame
+die Grenzen nie, also kommt der Mechanismus gar nicht zum Zug. Weil ImGui seinen Zeiger ohnehin
+selbst zeichnet (`io.MouseDrawCursor`), ist der geparkte Systemzeiger unsichtbar. Geparkt wird nur,
+solange das Spielfenster im Vordergrund ist — sonst risse es dem Spieler nach Alt-Tab die Maus aus
+dem Fenster, in das er gewechselt ist.
+
+**`REX::TJsonSetting<T>` liest für keinen Ganzzahltyp jemals aus der Datei.** Zweiter stiller
+Befund, derselben Familie wie die JSON-Pointer-Falle aus D1. `JsonSettingLoadEx` ruft
+`glz::get<T>(json, path).value_or(default)`; `glz::get` vergleicht den angeforderten Typ per
+`std::same_as` gegen die Variantenalternative (`glaze/core/seek.hpp:271`), und `glz::generic` ist
+`generic_json<num_mode::f64>`, dessen Variante eine JSON-Zahl **immer** als `double` führt
+(`glaze/json/generic.hpp:68`). `TJsonSetting<std::uint32_t>` übersetzt, linkt und läuft — und
+liefert stets den deklarierten Standardwert. Betroffen sind `uint8/16/32` und `int8/16/32`; nur
+`bool`, `double` und `std::string` funktionieren. `Features::Settings::DeclareUInt32` legt deshalb
+intern ein `TJsonSetting<double>` an und klemmt beim Lesen.
+
+**Fallstricke, die spätere Teilprojekte kennen sollten:**
+
+-   **`REX::W32`s `enum WM` endet bei `WM_CHILDACTIVATE` (`0x0022`)** und enthält keine einzige
+    Eingabemeldung — kein `WM_KEYDOWN`, keine Maus. Die `VK_`-Konstanten daneben sind vollständig.
+    Was fehlt, steht in `src/Menu/Win32.h`: dort auch `SetWindowLongPtrW`, `CallWindowProcW`,
+    `GetCursorPos`, `SetCursorPos`, `ClipCursor`, `GetClipCursor` und `GetForegroundWindow`.
+-   **`ImGui_ImplWin32_WndProcHandler` muss gegen `::HWND__` deklariert werden.** ImGui hält die
+    Deklaration in einem `#if 0`, damit der Header nicht von `<windows.h>` abhängt. Die Funktion
+    hat C++-Bindung, ihr dekorierter Name trägt also die Parametertypen:
+    `?ImGui_ImplWin32_WndProcHandler@@YA_JPEAUHWND__@@I_K_J@Z`. `REX::W32::HWND` ist
+    `REX::W32::HWND__*` — ein **anderer** Typ, der in ein Symbol dekoriert, das es nicht gibt;
+    ein `void*` dekoriert zu `PEAX`. Beides scheitert erst im Linker, mit einer Meldung, die nicht
+    auf die Ursache zeigt.
+-   **Eine bestehende Einstellungsdatei wird nie um neue Schlüssel ergänzt.** `Settings::Init`
+    schreibt nur, wenn die Datei fehlt, und REX kann keine Schlüssel anlegen (D1). Wer ein Update
+    installiert, sieht neue Einstellungen also nie — in E1 musste die Datei von Hand beiseite
+    gelegt werden, damit der `Menu`-Block überhaupt entstand. **Das gehört nach E2**, das ohnehin
+    schreibend mit der Datei umgeht.
+-   Der Systemzeiger wird beim Öffnen einmal auf den Monitor des Spiels geklemmt. Auf einem
+    Desktop mit mehr als einem Schirm ist das ein zweites, eigenständiges Ärgernis; deshalb löst
+    `MenuSystem` die Klemmung beim Öffnen einmal.
+
+**Bewusste Abweichungen von Spec und Plan:**
+
+-   Der Plan gruppierte die Standardwerte der Einstellungsdatei nach C++-Typ, wodurch die
+    Reihenfolge innerhalb eines Blocks davon abhing, welchen Typ eine Einstellung zufällig hat.
+    Jetzt entscheidet der Schlüsselname.
+-   Der Plan-Test für `Menu::Gate` widersprach sich selbst: `Check(!gate.Tick(), "and the next
+tick does not close it again")` erwartete „geschlossen", während sein Text „bleibt offen"
+    sagt. `Tick` liefert, ob das Overlay offen ist; der Test wurde korrigiert, nicht der Code.
+-   `Overlay::Draw` liefert zurück, ob der Knopf gedrückt wurde, statt selbst zu schließen. So
+    nehmen Klick und Umschalttaste denselben Weg durch das Tor, und die Eingabeschicht wird in
+    beiden Fällen gleich freigegeben — im Log als ein `acquired` und ein `released` belegt.
 
 ## Bekannte Lücken in CommonLibF4
 
