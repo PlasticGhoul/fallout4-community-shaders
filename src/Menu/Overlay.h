@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Menu/MousePointer.h"
+#include "Menu/SettingsPanel.h"
 
 #include <cstdint>
 
@@ -31,7 +32,7 @@ namespace Menu
 		/// toggle key take the same path through the gate.
 		[[nodiscard]] bool Draw(
 			bool a_visible,
-			std::uint64_t a_frame,
+			const PanelContext& a_panel,
 			MousePointer::Point a_pointer) noexcept;
 
 		[[nodiscard]] void* Window() const noexcept { return _window; }

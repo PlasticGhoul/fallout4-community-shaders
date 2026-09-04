@@ -141,7 +141,10 @@ namespace Menu
 		return true;
 	}
 
-	bool Overlay::Draw(bool a_visible, std::uint64_t a_frame, MousePointer::Point a_pointer) noexcept
+	bool Overlay::Draw(
+		bool a_visible,
+		const PanelContext& a_panel,
+		MousePointer::Point a_pointer) noexcept
 	{
 		if (!_ready) {
 			return false;
@@ -176,18 +179,7 @@ namespace Menu
 		ImGui::PushFont(Fonts::Body(), fontSize);
 
 		if (a_visible) {
-			ImGui::SetNextWindowSize(ImVec2{ 380.0f, 0.0f }, ImGuiCond_FirstUseEver);
-			if (ImGui::Begin("Community Shaders")) {
-				ImGui::Text("Frame %llu", static_cast<unsigned long long>(a_frame));
-				ImGui::Separator();
-				ImGui::TextUnformatted("The feature list arrives with subproject E2.");
-				ImGui::Separator();
-
-				// Not decoration: a button that reacts is what proves the
-				// pointer and the click path arrive where they are aimed.
-				closeWanted = ImGui::Button("Close");
-			}
-			ImGui::End();
+			closeWanted = DrawSettingsPanel(a_panel);
 		}
 
 		ImGui::PopFont();
