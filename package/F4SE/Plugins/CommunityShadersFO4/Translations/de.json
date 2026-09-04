@@ -1,0 +1,30 @@
+{
+    "_meta": {
+        "language": "Deutsch",
+        "locale": "de",
+        "note": "Handgeschrieben. Nicht von tools/extract-i18n.py erzeugt."
+    },
+    "feature.frame_counter.help": "Zählt die gezeichneten Bilder und meldet den Stand ins Log.",
+    "feature.frame_counter.name": "Bildzähler",
+    "feature.imagespace_tint.help": "Ersetzt einen Imagespace-Pixelshader durch einen eigenen.",
+    "feature.imagespace_tint.name": "Imagespace-Färbung",
+    "menu.close": "Schließen",
+    "menu.features": "Features",
+    "menu.frame": "Bild",
+    "menu.general": "Allgemein",
+    "menu.no": "Nein",
+    "menu.press_a_key": "Taste drücken …",
+    "menu.restore_confirm": "Jede Einstellung auf ihren Vorgabewert zurücksetzen?",
+    "menu.restore_defaults": "Zurücksetzen",
+    "menu.state.off": "aus",
+    "menu.state.refused": "verweigert",
+    "menu.state.running": "läuft",
+    "menu.title": "Community Shaders",
+    "menu.yes": "Ja",
+    "setting.menu.font_size": "Schriftgröße",
+    "setting.menu.font_size.help": "Größe der Schrift in dieser Oberfläche.",
+    "setting.menu.language": "Sprache",
+    "setting.menu.language.help": "Sprache dieser Oberfläche.",
+    "setting.menu.toggle_key": "Umschalttaste",
+    "setting.menu.toggle_key.help": "Öffnet und schließt diese Oberfläche."
+}

@@ -57,7 +57,8 @@ $staged = @(Get-ChildItem $stage -Recurse -File |
 $runtimeFiles = @(
     "F4SE/Plugins/CommunityShadersFO4/Fonts/IBMPlexSans-Regular.ttf",
     "F4SE/Plugins/CommunityShadersFO4/Fonts/IBMPlexSans-SemiBold.ttf",
-    "F4SE/Plugins/CommunityShadersFO4/Translations/en.json"
+    "F4SE/Plugins/CommunityShadersFO4/Translations/en.json",
+    "F4SE/Plugins/CommunityShadersFO4/Translations/de.json"
 )
 
 Check ($staged -contains "F4SE/Plugins/CommunityShadersFO4.dll") "the tree carries the plugin"
