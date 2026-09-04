@@ -466,4 +466,28 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME I18n COMMAND I18nTests)
+
+    # Header only: the arithmetic is what is worth pinning, and pulling in the
+    # USER32 half would make the test depend on the keyboard layout it runs on.
+    add_executable(KeyNamesTests "${CMAKE_SOURCE_DIR}/tests/KeyNamesTests.cpp")
+
+    target_include_directories(
+        KeyNamesTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(KeyNamesTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        KeyNamesTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(KeyNamesTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            KeyNamesTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME KeyNames COMMAND KeyNamesTests)
 endif()

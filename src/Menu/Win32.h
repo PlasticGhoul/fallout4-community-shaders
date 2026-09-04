@@ -17,13 +17,20 @@ namespace Menu::Win32
 	inline constexpr std::uint32_t WM_KEYDOWN = 0x0100u;
 	inline constexpr std::uint32_t WM_KEYFIRST = 0x0100u;
 	inline constexpr std::uint32_t WM_UNICHAR = 0x0109u;
+	inline constexpr std::uint32_t WM_NCMOUSEMOVE = 0x00A0u;
 	inline constexpr std::uint32_t WM_MOUSEFIRST = 0x0200u;
+	inline constexpr std::uint32_t WM_MOUSEMOVE = 0x0200u;
 	inline constexpr std::uint32_t WM_MOUSEHWHEEL = 0x020Eu;
 
 	// GetKeyNameTextW wants a scan code in bits 16..23 of its parameter, and
 	// what we store is a virtual key code. MapVirtualKeyW is the translation,
 	// and REX::W32 has the former but not the latter.
-	inline constexpr std::uint32_t MAPVK_VK_TO_VSC = 0u;
+	//
+	// The EX form on purpose: the plain one returns a bare scan code, and a
+	// scan code that two keys share then names the wrong one. EX puts 0xE0 in
+	// the high byte for an extended key, which is what tells End apart from the
+	// numeric keypad's 1. See Menu::KeyNameParam.
+	inline constexpr std::uint32_t MAPVK_VK_TO_VSC_EX = 4u;
 
 	extern "C"
 	{

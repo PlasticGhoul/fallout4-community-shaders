@@ -3,11 +3,9 @@
 #include "Feature/FeatureRegistry.h"
 #include "I18n/I18n.h"
 #include "Menu/Fonts.h"
-#include "Menu/Win32.h"
+#include "Menu/KeyNames.h"
 #include "Plugin.h"
 #include "Settings/Settings.h"
-
-#include <REX/W32/KERNEL32.h>
 
 #include <imgui.h>
 
@@ -24,61 +22,6 @@ namespace Menu
 		const char* Translate(std::string_view a_key, std::string_view a_english)
 		{
 			return T(a_key, a_english.empty() ? nullptr : a_english.data());
-		}
-
-		/// The name Windows gives a virtual key, in UTF-8. Empty when it has
-		/// none, which is true of a few keys and of a code that is not a key.
-		std::string KeyName(std::uint32_t a_key)
-		{
-			if (a_key == 0) {
-				return {};
-			}
-
-			// GetKeyNameTextW reads a scan code out of bits 16..23, and what we
-			// store is a virtual key code.
-			const auto scan = Win32::MapVirtualKeyW(a_key, Win32::MAPVK_VK_TO_VSC);
-			if (scan == 0) {
-				return {};
-			}
-
-			wchar_t wide[64]{};
-			const auto length = REX::W32::GetKeyNameTextW(
-				static_cast<std::int32_t>(scan << 16),
-				wide,
-				static_cast<std::int32_t>(std::size(wide)));
-
-			if (length <= 0) {
-				return {};
-			}
-
-			// Through UTF-8 rather than the A variant: a key name on a non-Latin
-			// layout is not ASCII, and the ANSI form would hand ImGui bytes it
-			// draws as mojibake.
-			const auto bytes = REX::W32::WideCharToMultiByte(
-				REX::W32::CP_UTF8,
-				0,
-				wide,
-				length,
-				nullptr,
-				0,
-				nullptr,
-				nullptr);
-
-			if (bytes <= 0) {
-				return {};
-			}
-
-			std::string name(static_cast<std::size_t>(bytes), '\0');
-			REX::W32::WideCharToMultiByte(
-				REX::W32::CP_UTF8,
-				0,
-				wide,
-				length,
-				name.data(),
-				bytes,
-				nullptr,
-				nullptr);
-			return name;
 		}
 
 		// The one rule that makes a slider write once instead of sixty times a

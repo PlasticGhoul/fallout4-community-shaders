@@ -68,7 +68,30 @@ namespace Menu
 			}
 
 			if (g_isOpen && g_isOpen()) {
-				if (ImGui_ImplWin32_WndProcHandler(
+				// Everything but a mouse move. The overlay draws its own
+				// pointer and posts its position itself, and letting the
+				// backend post the system cursor's as well is not merely
+				// redundant - it is wrong.
+				//
+				// ImGui trickles its event queue: once a frame has handled a
+				// mouse button, the next position event breaks out of the loop
+				// and is deferred (imgui.cpp, "Trickling Rule"). A frame that
+				// carries both a move and a click therefore reads
+				//
+				//     [system pos] [button] [our pos]
+				//
+				// and hit-tests the click at the system position - which
+				// MousePointer parks in the middle of the window every frame.
+				// Every click made while the mouse was moving landed in the
+				// centre of the screen instead of under the drawn pointer.
+				//
+				// Swallowed rather than passed on: it is still our message, the
+				// game must not see it either.
+				const bool mouseMove =
+					a_msg == Win32::WM_MOUSEMOVE || a_msg == Win32::WM_NCMOUSEMOVE;
+
+				if (!mouseMove &&
+					ImGui_ImplWin32_WndProcHandler(
 						reinterpret_cast<HWND__*>(a_wnd),
 						a_msg,
 						a_wParam,
