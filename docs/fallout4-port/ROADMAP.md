@@ -1,6 +1,7 @@
 # Fallout 4 Port — Roadmap
 
-Status: Umsetzung, A bis E1 abgeschlossen. Stand 2026-09-04.
+Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. Als Nächstes
+steht **F+** an: je ein Zyklus pro portiertem CS-Feature. Stand 2026-09-04.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -49,7 +50,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | D1  | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz                             | Zwei Features unabhängig an-/abschaltbar                                   | **abgeschlossen** |
 | D2  | **Paketierung** — `dist/`, Basis-, Addon- und AIO-Archive                                                              | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel               | **abgeschlossen** |
 | E1  | **Overlay und Eingabe** — ImGui-Overlay, Fensterprozedur, Eingabesperre, eigener Zeiger                                | Overlay im Spiel bedienbar, Spieleingabe steht, solange es offen ist       | **abgeschlossen** |
-| E2  | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                        | Einstellungen im Overlay ändern, sie überleben einen Neustart              | offen             |
+| E2  | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                        | Einstellungen im Overlay ändern, sie überleben einen Neustart              | **abgeschlossen** |
 | F+  | **Features einzeln** — je ein Zyklus pro portiertem CS-Feature                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 
 Das ursprüngliche Teilprojekt D wurde am 2026-08-30 in D1 und D2 geteilt: Laufzeitverhalten und
@@ -384,8 +385,8 @@ intern ein `TJsonSetting<double>` an und klemmt beim Lesen.
 -   **Eine bestehende Einstellungsdatei wird nie um neue Schlüssel ergänzt.** `Settings::Init`
     schreibt nur, wenn die Datei fehlt, und REX kann keine Schlüssel anlegen (D1). Wer ein Update
     installiert, sieht neue Einstellungen also nie — in E1 musste die Datei von Hand beiseite
-    gelegt werden, damit der `Menu`-Block überhaupt entstand. **Das gehört nach E2**, das ohnehin
-    schreibend mit der Datei umgeht.
+    gelegt werden, damit der `Menu`-Block überhaupt entstand. **In E2 erledigt:** `Init` prüft die
+    Datei und ergänzt fehlende Schlüssel, siehe den Abschnitt zu E2.
 -   Der Systemzeiger wird beim Öffnen einmal auf den Monitor des Spiels geklemmt. Auf einem
     Desktop mit mehr als einem Schirm ist das ein zweites, eigenständiges Ärgernis; deshalb löst
     `MenuSystem` die Klemmung beim Öffnen einmal.
@@ -401,6 +402,95 @@ tick does not close it again")` erwartete „geschlossen", während sein Text �
 -   `Overlay::Draw` liefert zurück, ob der Knopf gedrückt wurde, statt selbst zu schließen. So
     nehmen Klick und Umschalttaste denselben Weg durch das Tor, und die Eingabeschicht wird in
     beiden Fällen gleich freigegeben — im Log als ein `acquired` und ein `released` belegt.
+
+## Aus Teilprojekt E2 bestätigt
+
+E2 ist am 2026-09-04 abgenommen worden, alle sieben Abnahmekriterien erfüllt, sechs davon in
+einem einzigen Spiellauf. Spec und Plan liegen unter `docs/superpowers/`.
+
+| Sachverhalt      | Bestätigter Wert                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nachrüstung      | eine Datei mit nur `toggleKey` bekam `fontSize` und `language` dazu; vorhandene Werte und Feature-Schalter blieben. Im Log `is missing declared keys, extending it` |
+| Rückkopplung     | in zwei Läufen mit zusammen mehr als zehn Änderungen **kein einziges** `settings changed, reloading`                                                                |
+| Schriftgröße     | wirkt beim Ziehen, ohne Atlas-Neubau. Geschrieben wird beim Loslassen                                                                                               |
+| Sprachwechsel    | `switched to locale de` und zurück, ohne Neustart. `i18n ready, locale en, 2 locale(s) available, 23 fallback key(s)`                                               |
+| Tastenaufnahme   | `overlay toggle key rebound to 0x70`, ohne dass das Overlay dabei zuging. F1 öffnet danach                                                                          |
+| `ImagespaceTint` | ließ sich **im laufenden Spiel** abschalten — `ImagespaceTint: off`. Zeiger zurückgegeben, Watcher-Thread beendet, kein Absturz                                     |
+| Schrift          | `overlay font loaded from …/Data/F4SE/Plugins/CommunityShadersFO4`                                                                                                  |
+| Host-Tests       | zwölf, alle grün. Neu: `SettingsSchema`, `SettingsStore`, `I18n`, `KeyNames`                                                                                        |
+
+**Der teuerste Befund: ImGui wertet einen Klick an der Position aus, die zuletzt _vor_ dem
+Tastenereignis in der Warteschlange stand.** `UpdateInputEvents` rieselt die Ereignisse und bricht
+bei der ersten Positionsmeldung ab, nachdem in diesem Frame eine Maustaste verarbeitet wurde
+(`imgui.cpp:11034`, „Trickling Rule"). Unsere Warteschlange sah so aus:
+
+```
+[Systemposition aus WM_MOUSEMOVE] [Klick] [unsere virtuelle Position]
+```
+
+Der Klick wurde also an der Systemposition ausgewertet — und die parkt `Menu::MousePointer` seit
+E1 jeden Frame in der Fenstermitte. Sichtbar wurde das als vier scheinbar unabhängige Fehler:
+Fenster sprangen bei Klicks, aufgeklappte Abschnitte klappten zu, ein Häkchen brauchte mehrere
+Versuche, und die Tastenaufnahme reagierte nie.
+
+Entscheidend für das Verständnis war, **wann** es funktionierte: `SetCursorPos` erzeugt kein
+`WM_MOUSEMOVE`, wenn der Zeiger schon dort steht. Bei stillgehaltener Maus enthält die
+Warteschlange nur `[Klick] [unsere Position]`, und der Klick trifft. Wer zielt, bewegt aber — die
+Tastenaufnahme ging deshalb _nie_, das Häkchen _manchmal_.
+
+**Die Lösung ist eine Zeile Weiterleitung:** solange das Overlay offen ist, erreichen
+`WM_MOUSEMOVE` und `WM_NCMOUSEMOVE` das ImGui-Backend nicht mehr. Der Overlay besitzt seinen
+Zeiger, also darf das Backend keine Position beisteuern. E1 hat den Fehler nicht gefunden, weil
+sein einziges Bedienelement ein Knopf war und die Prüfung „reagiert er" lautete.
+
+**Weitere bestätigte Befunde:**
+
+-   **`glz::generic` benutzt `ordered_small_map`**, also Einfügereihenfolge, nicht sortiert —
+    glaze bietet `generic_sorted` ausdrücklich als sortierte Alternative an. Eine bestehende Datei
+    behält damit ihre Reihenfolge, ein neuer Schlüssel landet am Ende seines Blocks, und nichts
+    mischt sich beim Schreiben durch. Die in der Spec offen gebliebene Frage ist damit beantwortet.
+-   **ImGui 1.92 lädt Glyphen bei Bedarf und skaliert Schriften zur Laufzeit**, weil das
+    dx11-Backend `ImGuiBackendFlags_RendererHasTextures` meldet (`imgui_impl_dx11.h:7`). Folge:
+    keine Glyphenbereiche zu deklarieren, `PushFont(font, size)` statt einer festen Größe, und ein
+    Größenregler ohne Atlas-Neubau. Die einargumentige `PushFont` wurde in 1.92 **entfernt**.
+-   **`ImGuiStyle::ScaleAllSizes` multipliziert, was schon da ist.** Ein Theme, das bei jeder
+    Größenänderung erneut angewandt wird, muss den Stil vorher zurücksetzen, sonst wächst die
+    Oberfläche bei jedem Schritt weiter.
+-   **`REX::FSettingStore` lässt seine Registrierung nicht leeren.** `m_settings` ist `protected`,
+    und weder `ISettingStore` noch `FSettingStore` bieten Zugriff. Ein einmal konstruiertes
+    `TJsonSetting` muss den Prozess überleben; die Bindungen entstehen deshalb einmal und werden
+    bei einem zweiten `Init` nur auf die deklarierten Vorgabewerte zurückgesetzt.
+-   **Unsere Einstellungsdatei geht als `fileUser` in den Store, nicht als `fileBase`.**
+    `FJsonSettingStore::Load` reicht `fileBase` an `TJsonSetting::Load(…, a_isBase = true)`, und
+    das schreibt den Dateiwert in **`m_valueDefault`** — der deklarierte Vorgabewert wird also vom
+    ersten Laden überschrieben, und jeder spätere Rückfall liefert, was zufällig in der ersten
+    Datei stand. D1 hatte das umgangen, indem es den Vorgabewert separat mitführte. Als `fileUser`
+    landen die Werte in `m_value` und die Vorgaben bleiben unberührt. REX' eigenes `Save()`
+    schreibt zwar nach `fileBase`, wird aber nicht benutzt: es kann keine Schlüssel anlegen und
+    könnte unsere Datei ohnehin nie schreiben.
+-   **`MapVirtualKey` ohne die EX-Form benennt die falsche von zwei Tasten**, die sich einen
+    Scancode teilen. `Ende` und die `1` des Nummernblocks sind beide `0x4F`; unterschieden werden
+    sie allein durch Bit 24 im Parameter von `GetKeyNameText`. `MAPVK_VK_TO_VSC_EX` liefert dafür
+    `0xE0` im hohen Byte. Ohne das hieß `Ende` im Overlay „1 (Zehnertastatur)".
+
+**Bewusste Abweichungen von Spec und Plan:**
+
+-   **Ergänzen und Speichern sind zwei Vorgänge.** Der erste Entwurf des Schreibers überschrieb
+    beim Ergänzen jeden Schlüssel mit dem gebundenen Wert — und der stand zu diesem Zeitpunkt auf
+    dem Vorgabewert, wodurch eine vorhandene Tastenbelegung zerstört wurde. Vier Tests haben es
+    gefangen. `kFillMissing` fügt nur hinzu, `kOverwrite` schreibt alles.
+-   **Eine unlesbare Einstellungsdatei fällt auf die deklarierten Vorgabewerte zurück**, statt zu
+    behalten, was zufällig vorher geladen war. `Init(X)` heißt „spiegle X, und die Vorgabe überall
+    dort, wo X nichts sagt" — und eine kaputte Datei sagt über alles nichts. Der Plan-Test hatte
+    das andere Verhalten formuliert; die Spec hatte recht.
+-   **Eine Übersetzungsdatei, die sich nicht parsen lässt, wird nicht angeboten.** Die
+    Skyrim-Vorlage führt sie unter ihrem bloßen Code auf, was dem Spieler eine Sprache anbietet,
+    auf die nicht umgeschaltet werden kann.
+-   **`Util::GamePaths` ist neu und stand in keinem Plan.** Der `Data`-Pfad wäre sonst an drei
+    Stellen aus dem ausführenden Modul hergeleitet worden.
+-   **Kein Formatierer für Übersetzungen, kein `DetectSystemLocale`.** Ersterer, weil nichts
+    formatiert und ein Formatstring aus einer Übersetzungsdatei eine Angriffsfläche ist; letzteres
+    sind siebzig Zeilen Windows-`LANGID`-Abbildung für einen Wert, der bei uns eine Einstellung ist.
 
 ## Bekannte Lücken in CommonLibF4
 
