@@ -33,5 +33,18 @@ namespace Menu::Win32
 			std::uint32_t a_msg,
 			std::uintptr_t a_wParam,
 			std::intptr_t a_lParam) noexcept;
+
+		// The cursor half of USER32, none of which REX::W32 has. Returning
+		// BOOL rather than bool on purpose: BOOL is any non-zero value, and a
+		// bool return would read only its low byte.
+		std::int32_t __stdcall GetCursorPos(REX::W32::POINT* a_point) noexcept;
+		std::int32_t __stdcall SetCursorPos(std::int32_t a_x, std::int32_t a_y) noexcept;
+		std::int32_t __stdcall ClipCursor(const REX::W32::RECT* a_rect) noexcept;
+		std::int32_t __stdcall GetClipCursor(REX::W32::RECT* a_rect) noexcept;
+
+		// Needed to tell whether the game still has the focus. Parking the
+		// cursor while it does not would take the mouse away from whatever the
+		// player alt-tabbed to.
+		REX::W32::HWND __stdcall GetForegroundWindow() noexcept;
 	}
 }

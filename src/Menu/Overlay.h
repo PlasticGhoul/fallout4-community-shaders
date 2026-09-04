@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Menu/MousePointer.h"
+
 #include <cstdint>
 
 namespace Menu
@@ -19,7 +21,11 @@ namespace Menu
 
 		/// One ImGui frame. Draws nothing but the frame itself when a_visible
 		/// is false, so that ImGui keeps its input state consistent.
-		void Draw(bool a_visible, std::uint64_t a_frame) noexcept;
+		///
+		/// a_pointer overrides what the win32 backend read from the system
+		/// cursor, and is only used while visible. See MousePointer for why the
+		/// system cursor cannot be trusted here.
+		void Draw(bool a_visible, std::uint64_t a_frame, MousePointer::Point a_pointer) noexcept;
 
 		[[nodiscard]] void* Window() const noexcept { return _window; }
 

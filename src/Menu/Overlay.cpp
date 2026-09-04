@@ -133,7 +133,7 @@ namespace Menu
 		return true;
 	}
 
-	void Overlay::Draw(bool a_visible, std::uint64_t a_frame) noexcept
+	void Overlay::Draw(bool a_visible, std::uint64_t a_frame, MousePointer::Point a_pointer) noexcept
 	{
 		if (!_ready) {
 			return;
@@ -141,6 +141,14 @@ namespace Menu
 
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
+
+		// After the backend, deliberately: its NewFrame posts the system
+		// cursor's position, and this has to be the last word on where the
+		// pointer is. NewFrame below is what consumes the queue.
+		if (a_visible) {
+			ImGui::GetIO().AddMousePosEvent(a_pointer.x, a_pointer.y);
+		}
+
 		ImGui::NewFrame();
 
 		if (a_visible) {

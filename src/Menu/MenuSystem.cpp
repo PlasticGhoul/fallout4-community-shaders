@@ -3,7 +3,9 @@
 #include "Feature/FeatureSettings.h"
 #include "Menu/InputLayer.h"
 #include "Menu/MenuGate.h"
+#include "Menu/MousePointer.h"
 #include "Menu/Overlay.h"
+#include "Menu/Win32.h"
 #include "Menu/WindowHook.h"
 #include "Render/SwapChainHook.h"
 
@@ -20,6 +22,12 @@ namespace Menu
 		{
 			static InputLayer layer;
 			return layer;
+		}
+
+		MousePointer& ThePointer()
+		{
+			static MousePointer pointer;
+			return pointer;
 		}
 
 		Gate& TheGate()
@@ -59,6 +67,24 @@ namespace Menu
 			[] { TheGate().RequestToggle(); },
 			[] { return TheGate().IsOpen(); });
 
-		TheOverlay().Draw(TheGate().Tick(), Render::FrameCount());
+		const bool open = TheGate().Tick();
+
+		MousePointer::Point pointer;
+		if (open) {
+			if (!ThePointer().IsActive()) {
+				ThePointer().Acquire(TheOverlay().Window());
+
+				// The game keeps the cursor to its own monitor, which is a
+				// second problem on a desktop that has more than one. Lifted
+				// once here rather than every frame, because the measurement
+				// showed the game sets it once on entry.
+				Win32::ClipCursor(nullptr);
+			}
+			pointer = ThePointer().Update();
+		} else if (ThePointer().IsActive()) {
+			ThePointer().Release();
+		}
+
+		TheOverlay().Draw(open, Render::FrameCount(), pointer);
 	}
 }
