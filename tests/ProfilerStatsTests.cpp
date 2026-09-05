@@ -1,6 +1,7 @@
 #include "Render/PassStatistics.h"
 
 #include <cstdio>
+#include <string>
 
 namespace
 {
@@ -86,6 +87,73 @@ int main()
 		stats.Clear();
 		Check(stats.Count() == 0, "clearing empties the history");
 		Check(stats.Last() == 0.0f, "clearing forgets the last sample");
+	}
+
+	{
+		Render::PassTable table;
+		const auto frame = table.Find("Frame");
+		const auto overlay = table.Find("Overlay");
+
+		Check(frame != Render::PassTable::kNoPass, "a new name gets a slot");
+		Check(frame != overlay, "two names get two slots");
+		Check(table.Find("Frame") == frame, "a known name gets its own slot back");
+
+		table.Sample(frame, 0, 5.0f, 3.0f, 1);
+		table.Sample(overlay, 1, 0.2f, 0.1f, 1);
+
+		const auto results = table.Results();
+		Check(results.size() == 2, "both passes are reported");
+		Check(results[0].name == "Frame", "the first pass seen is reported first");
+		Check(results[0].depth == 0 && results[1].depth == 1, "the depth is carried through");
+		Check(Near(results[0].gpuMs, 5.0f), "the gpu time is carried through");
+		Check(Near(results[1].cpuMs, 0.1f), "the cpu time is carried through");
+	}
+
+	{
+		// The case that costs an afternoon when it is wrong: a pass drops out,
+		// and the pass behind it must still find its own history.
+		Render::PassTable table;
+		const auto first = table.Find("First");
+		const auto second = table.Find("Second");
+		table.Sample(first, 0, 1.0f, 1.0f, 1);
+		table.Sample(second, 0, 2.0f, 2.0f, 1);
+
+		// Only the second keeps reporting.
+		for (std::uint64_t frame = 2; frame <= Render::PassTable::kRetireFrames + 2; ++frame) {
+			table.Sample(table.Find("Second"), 0, 2.0f, 2.0f, frame);
+			table.Retire(frame);
+		}
+
+		const auto results = table.Results();
+		Check(results.size() == 1, "a pass that stopped reporting is retired");
+		Check(results.size() == 1 && results[0].name == "Second", "the right pass survived");
+		Check(Near(results[0].gpuMs, 2.0f), "the survivor kept its own history");
+
+		// Reaching the survivor is not enough to prove the index was rebuilt: a
+		// stale index still returns a number. What proves it is that a sample
+		// taken afterwards lands on the survivor's own history rather than
+		// falling off the end of the table.
+		const auto again = table.Find("Second");
+		Check(again != Render::PassTable::kNoPass, "the survivor is still addressable");
+
+		table.Sample(again, 0, 8.0f, 8.0f, Render::PassTable::kRetireFrames + 3);
+		Check(Near(table.Results()[0].gpuMs, 8.0f), "a sample after a retire lands on the survivor");
+	}
+
+	{
+		// Checked once rather than per slot: a hundred and twenty-eight lines of
+		// "ok" would bury the two checks that matter below them.
+		Render::PassTable table;
+		bool allHandedOut = true;
+		for (std::size_t i = 0; i < Render::PassTable::kMaxPasses; ++i) {
+			const auto name = std::string{ "pass" } + std::to_string(i);
+			allHandedOut = allHandedOut && table.Find(name) != Render::PassTable::kNoPass;
+		}
+
+		Check(allHandedOut, "every slot up to the cap is handed out");
+
+		Check(table.Find("one too many") == Render::PassTable::kNoPass, "the cap refuses the next name");
+		Check(table.Find("pass0") != Render::PassTable::kNoPass, "a known name still works at the cap");
 	}
 
 	std::printf("\n%s\n", g_failures == 0 ? "all checks passed" : "checks failed");
