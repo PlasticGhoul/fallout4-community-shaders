@@ -1,7 +1,7 @@
 # Fallout 4 Port — Roadmap
 
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
-Messspike in **F1…F13 aufwärts** zerlegt; als Nächstes steht **F1** an, das Performance Overlay.
+Messspike in **F1…F14 aufwärts** zerlegt; als Nächstes steht **F1** an, das Performance Overlay.
 Stand 2026-09-05.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
@@ -64,7 +64,8 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | F10  | **Dynamic Cubemaps**                                                                                                   | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | F11  | **IBL**                                                                                                                | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | F12  | **Forschung: Permutations-Cache** — Shader-Cache über die Technikkarten, belegt am kleinsten Gruppe-2-Feature          | Eine Permutation von `kDFPrepass` nachweislich durch eine eigene ersetzt   | offen             |
-| F13+ | **Objekt-Shader** — die tragenden Gruppe-2-Features, Zuschnitt und Zahl folgen aus F12                                 | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F13  | **Frame Generation** — DX12-Swapchain-Stellvertreter, FSR3 über die FidelityFX-SDK, optional DLSS über Streamline      | Mehr Bilder je Sekunde, gemessen, bei stehendem Overlay                    | offen             |
+| F14+ | **Objekt-Shader** — die tragenden Gruppe-2-Features, Zuschnitt und Zahl folgen aus F12                                 | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | Fx   | **Werkzeuge** — Screenshot, RenderDoc-Anbindung                                                                        | Werkzeug tut, was sein Name sagt                                           | offen             |
 
 Das ursprüngliche Teilprojekt D wurde am 2026-08-30 in D1 und D2 geteilt: Laufzeitverhalten und
@@ -119,10 +120,48 @@ und die ist teurer geworden — siehe unten. F2 trägt die Naht für alle folgen
 G-Buffer-Zugriff, Ergebnis zurück in die Beleuchtung.
 
 **Gruppe 2 bekommt ein eigenes Forschungs-Teilprojekt**, ausdrücklich wie B2 markiert. F12 baut den
-Permutations-Cache und belegt ihn am kleinsten Gruppe-2-Feature. Zahl und Zuschnitt von F13
+Permutations-Cache und belegt ihn am kleinsten Gruppe-2-Feature. Zahl und Zuschnitt von F14
 aufwärts werden erst danach festgelegt: vorher lässt sich nicht seriös schätzen, was ein einzelnes
 Objekt-Shader-Feature kostet, wenn es nicht übersetzt, sondern gegen `kDFPrepass` neu gedacht
 werden muss.
+
+### F13 — Frame Generation
+
+Am 2026-09-05 recherchiert und in den Zuschnitt aufgenommen, zwischen dem Forschungs-Teilprojekt
+und den Objekt-Shadern.
+
+**Warum es überhaupt geht, obwohl Fallout 4 DX11 ist.** Frame Generation gibt es weder bei AMD noch
+bei NVIDIA für DX11. Der Weg ist ein **Stellvertreter für die DXGI-Swapchain**, hinter dem eine
+echte DX12-Swapchain sitzt, mit zwischen `ID3D11Device5` und `ID3D12Device` geteilten
+Bildtexturen. Der Generator läuft auf DX12, das Spiel merkt nichts. Der Skyrim-Stand hat das als
+Feature `Upscaling`: `DX12SwapChain`, `FidelityFX`, `Streamline` und `RCAS`, zusammen 3.344 LOC
+C++ über vier Dateien plus zwei SDKs als Submodule.
+
+**Für Fallout 4 ist es bereits gebaut, vom Autor der Skyrim Community Shaders.** doodlums freie Mod
+[Frame Generation](https://www.nexusmods.com/fallout4/mods/98208) ist ein F4SE-Plugin mit FSR3
+Frame Generation über die FidelityFX-SDK und genau diesem DX12-Stellvertreter; Quelltext in
+[`doodlum/fo4test`](https://github.com/doodlum/fo4test) unter **GPL-3.0-or-later mit
+Modding-Ausnahmen**, also unter unserer eigenen Lizenz. Sie verlangt randlosen Fenstermodus, die
+Address Library und High FPS Physics Fix, und verträgt sich mit ENB. **Übernehmen statt neu
+schreiben** ist deshalb die Vorgabe für F13.
+
+**Die Eingaben liegen vor.** FSR3 FG will Farbe, Tiefe, Bewegungsvektoren und möglichst eine
+UI-Maske. Aus dem Messspike: Bewegung `FO4_RT_029`, Tiefe `FO4_DS_002`, HDR-Farbe `FO4_RT_058` /
+`FO4_RT_059`.
+
+**Warum nicht früher.** Der Stellvertreter **besitzt die Swapchain** — dasselbe Objekt, auf das
+unser Overlay seit E1 im `Present`-Hook zeichnet. F13 und das Overlay müssen zusammen entworfen
+werden, und das geht erst, wenn das Overlay steht und F1 die Zahlen liefert, an denen sich der
+Gewinn zeigen lässt. Offen und billig zu klären: ob doodlums Mod und unser Present-Hook sich
+**schon jetzt** in die Quere kommen. Ein Spielstart beantwortet das.
+
+**DLSS ja, DLSS 5 nein.** DLSS Frame Generation läuft über Streamline und braucht ebenfalls DX12 —
+derselbe Stellvertreter trägt es, und der Skyrim-Stand hat `Streamline.cpp` bereits. DLSS 5 ist am
+2026-09-03 erschienen, RTX-50-exklusiv, und scheidet aus zwei Gründen aus: es steht in keinem
+öffentlichen Streamline-Release (aktuell 2.11.1 / 2.12.0 mit DLSS 4.5), und es ist kein Upscaler
+mehr, sondern neuronale Neubeleuchtung, die **objektbezogene Masken** erwartet. Fallout 4 zeichnet
+HUD und Pip-Boy ins selbe Bild und kennt keine Semantik, die sich dem Modell reichen ließe. Zu
+prüfen, wenn F13 drankommt — nicht vorher.
 
 ## Ausgangslage (gemessen am Skyrim-Stand, 2026-08-30)
 
