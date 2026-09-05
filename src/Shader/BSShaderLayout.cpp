@@ -123,6 +123,20 @@ namespace Shader
 		return techniques;
 	}
 
+	std::size_t TotalTechniques(const void* a_shader) noexcept
+	{
+		if (a_shader == nullptr) {
+			return 0;
+		}
+
+		std::size_t total = 0;
+		for (auto stage = 0; stage < static_cast<int>(Stage::kTotal); ++stage) {
+			total += MapEntries(a_shader, StageMapOffset(static_cast<Stage>(stage))).size();
+		}
+
+		return total;
+	}
+
 	std::vector<RE::BSGraphics::PixelShader*> PixelShaderTechniques(const void* a_shader) noexcept
 	{
 		std::vector<RE::BSGraphics::PixelShader*> techniques;

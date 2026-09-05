@@ -4,6 +4,7 @@
 #include "Render/Renderer.h"
 #include "Render/VTablePatch.h"
 #include "Settings/Settings.h"
+#include "Shader/BSShaderLayout.h"
 #include "Shader/ShaderCatalog.h"
 #include "Util/ObjectRTTI.h"
 
@@ -159,14 +160,6 @@ namespace Features
 
 		constexpr auto kThunks = MakeThunks(std::make_index_sequence<kClassCount>{});
 
-		// kDFPrepass, kDFLight and kDFComposite. These are the three that
-		// decide whether a screen space feature has anywhere to put its result,
-		// so they are the ones whose bound resources are worth a snapshot.
-		[[nodiscard]] constexpr bool IsDeferredPass(std::int32_t a_shaderType) noexcept
-		{
-			return a_shaderType >= 0x4 && a_shaderType <= 0x6;
-		}
-
 		void RemoveHooks() noexcept
 		{
 			for (auto& patch : g_patches) {
@@ -199,14 +192,19 @@ namespace Features
 	bool ShaderCensus::Setup()
 	{
 		_frames = 0;
-		_reported = false;
+		_complete = false;
+		_state = {};
 
 		const auto classes = Shader::ShaderClasses();
 		std::size_t installed = 0;
 
 		for (std::size_t i = 0; i < classes.size() && i < kClassCount; ++i) {
 			g_seen[i].store(nullptr, std::memory_order_relaxed);
-			g_wantSnapshot[i].store(IsDeferredPass(classes[i].shaderType), std::memory_order_relaxed);
+
+			// Every class, not only the deferred three. What kLighting reads
+			// and writes is worth as much as what kDFLight does, and a
+			// snapshot costs one call the first time a class runs.
+			g_wantSnapshot[i].store(true, std::memory_order_relaxed);
 
 			{
 				const std::lock_guard guard{ g_snapshotMutex };
@@ -257,74 +255,147 @@ namespace Features
 		return true;
 	}
 
+	void ShaderCensus::ReportOne(std::size_t a_index, const Shader::ShaderClass& a_class) noexcept
+	{
+		auto* const shader = g_seen[a_index].load(std::memory_order_relaxed);
+
+		// The class we patched has to be the class we caught. That is the
+		// cross-check for the whole approach: it proves the vtable id named
+		// what we believed and that slot 02 really is SetupTechnique - and only
+		// once it holds is calling slot 09 for a name defensible.
+		bool confirmed = false;
+		if (shader != nullptr) {
+			const auto info = Util::DescribeObject(shader);
+			confirmed = info.has_value() &&
+			            info->className == a_class.className &&
+			            info->subobjectOffset == 0;
+
+			if (!confirmed) {
+				REX::WARN(
+					"{}: caught an object the RTTI calls {}, not what the vtable id "
+					"promised - reporting it without asking the engine for names",
+					a_class.className,
+					info.has_value() ? info->className : std::string{ "nothing" });
+			}
+		}
+
+		REX::INFO("--- census: {}, first seen at frame {} ---",
+			a_class.className,
+			_state[a_index].firstSeenFrame);
+
+		Shader::ReportShaderTechniques(
+			a_class,
+			shader,
+			Settings::GetBool("ShaderCensus/techniqueNames") && confirmed);
+
+		const std::lock_guard guard{ g_snapshotMutex };
+		if (!g_snapshots[a_index].empty()) {
+			REX::INFO("    bound while it ran:");
+			for (const auto& line : g_snapshots[a_index]) {
+				REX::INFO("             {}", line);
+			}
+		} else if (shader != nullptr) {
+			REX::INFO("    bound while it ran: nothing was, in any call");
+		}
+	}
+
 	void ShaderCensus::Frame()
 	{
-		if (_reported) {
-			return;
-		}
-
 		++_frames;
 
-		const auto classes = Shader::ShaderClasses();
-
-		std::size_t seen = 0;
-		for (std::size_t i = 0; i < classes.size() && i < kClassCount; ++i) {
-			if (g_seen[i].load(std::memory_order_relaxed) != nullptr) {
-				++seen;
-			}
-		}
-
-		if (seen < classes.size() && _frames < kSettleFrames) {
+		if (_complete || _frames % kPollInterval != 0) {
 			return;
 		}
 
-		const bool withNames = Settings::GetBool("ShaderCensus/techniqueNames");
+		const auto classes = Shader::ShaderClasses();
+		const auto total = std::min(classes.size(), kClassCount);
 
-		REX::INFO("=== shader census, frame {}, {} of {} classes seen ===",
-			_frames,
-			seen,
-			classes.size());
+		std::size_t reported = 0;
+		std::string missing;
 
-		for (std::size_t i = 0; i < classes.size() && i < kClassCount; ++i) {
+		for (std::size_t i = 0; i < total; ++i) {
+			auto& state = _state[i];
+			if (state.reported) {
+				++reported;
+				continue;
+			}
+
 			auto* const shader = g_seen[i].load(std::memory_order_relaxed);
-
-			// The class we patched has to be the class we caught. That is the
-			// cross-check for the whole approach: it proves the vtable id named
-			// what we believed and that slot 02 really is SetupTechnique - and
-			// only once it holds is calling slot 09 for a name defensible.
-			bool confirmed = false;
-			if (shader != nullptr) {
-				const auto info = Util::DescribeObject(shader);
-				confirmed = info.has_value() &&
-				            info->className == classes[i].className &&
-				            info->subobjectOffset == 0;
-
-				if (!confirmed) {
-					REX::WARN(
-						"{}: caught an object the RTTI calls {}, not what the vtable id "
-						"promised - reporting it without asking the engine for names",
-						classes[i].className,
-						info.has_value() ? info->className : std::string{ "nothing" });
-				}
+			if (shader == nullptr) {
+				missing += missing.empty() ? "" : ", ";
+				missing += classes[i].enumerator;
+				continue;
 			}
 
-			Shader::ReportShaderTechniques(classes[i], shader, withNames && confirmed);
-
-			const std::lock_guard guard{ g_snapshotMutex };
-			if (!g_snapshots[i].empty()) {
-				REX::INFO("    bound while it ran:");
-				for (const auto& line : g_snapshots[i]) {
-					REX::INFO("             {}", line);
-				}
-			} else if (IsDeferredPass(classes[i].shaderType) && shader != nullptr) {
-				REX::INFO("    bound while it ran: nothing was, in any call");
+			if (state.firstSeenFrame == 0) {
+				state.firstSeenFrame = _frames;
+				REX::INFO("ShaderCensus: {} first ran at frame {}",
+					classes[i].className,
+					_frames);
 			}
+
+			const auto count = Shader::TotalTechniques(shader);
+			if (count == state.lastCount && count > 0) {
+				++state.stablePolls;
+			} else {
+				state.lastCount = count;
+				state.stablePolls = 0;
+			}
+
+			// Settled, or out of patience. The second case is what keeps a
+			// class that never fills a map - or one whose count keeps
+			// creeping - from being lost altogether.
+			const bool settled = state.stablePolls >= kStablePolls;
+			const bool impatient = _frames - state.firstSeenFrame >= kPatienceFrames;
+			if (!settled && !impatient) {
+				continue;
+			}
+
+			if (!settled) {
+				REX::INFO(
+					"ShaderCensus: {} has not settled in {} frames, reporting it as it stands",
+					classes[i].className,
+					kPatienceFrames);
+			}
+
+			ReportOne(i, classes[i]);
+			state.reported = true;
+			static_cast<void>(g_patches[i].Restore());
+			++reported;
 		}
 
-		REX::INFO("=== end of census ===");
+		if (reported == total) {
+			REX::INFO("=== census complete, all {} classes reported ===", total);
+			_complete = true;
+			return;
+		}
 
-		_reported = true;
-		RemoveHooks();
+		if (_frames % kProgressInterval == 0) {
+			REX::INFO("ShaderCensus: {} of {} reported, still waiting for {}",
+				reported,
+				total,
+				missing.empty() ? std::string{ "none of them" } : missing);
+
+			// A reported class can still grow: the engine compiles a
+			// permutation the first time something needs it, so a count taken
+			// in Sanctuary is not the count in a vault. Saying so is cheap and
+			// is itself a finding.
+			for (std::size_t i = 0; i < total; ++i) {
+				if (!_state[i].reported) {
+					continue;
+				}
+
+				auto* const shader = g_seen[i].load(std::memory_order_relaxed);
+				const auto count = shader != nullptr ? Shader::TotalTechniques(shader) : 0;
+				if (count != _state[i].lastCount) {
+					REX::INFO("ShaderCensus: {} grew from {} to {} techniques",
+						classes[i].className,
+						_state[i].lastCount,
+						count);
+					_state[i].lastCount = count;
+				}
+			}
+		}
 	}
 
 	void ShaderCensus::Shutdown()

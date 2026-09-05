@@ -103,6 +103,12 @@ namespace Shader
 		const void* a_shader,
 		Stage a_stage) noexcept;
 
+	/// All five stages added up. Cheap enough to poll with, which is what the
+	/// census does: a count that has stopped moving is the only trustworthy
+	/// sign that the engine has finished filling a shader's maps, and it fills
+	/// them lazily.
+	[[nodiscard]] std::size_t TotalTechniques(const void* a_shader) noexcept;
+
 	/// The pixel stage as the type the engine declares for it. Kept apart from
 	/// Techniques because a replacement needs the writable slot, not a reading
 	/// of it.
