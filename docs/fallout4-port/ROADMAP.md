@@ -1,8 +1,8 @@
 # Fallout 4 Port — Roadmap
 
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
-Messspike in **F1…F14 aufwärts** zerlegt; als Nächstes steht **F1** an, das Performance Overlay.
-Stand 2026-09-05.
+Messspike in **F1…F14 aufwärts** zerlegt, und **F1 (Performance Overlay) ist abgeschlossen**.
+Als Nächstes steht **F2** an, Screen-Space Shadows. Stand 2026-09-05.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -52,7 +52,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | D2   | **Paketierung** — `dist/`, Basis-, Addon- und AIO-Archive                                                              | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel               | **abgeschlossen** |
 | E1   | **Overlay und Eingabe** — ImGui-Overlay, Fensterprozedur, Eingabesperre, eigener Zeiger                                | Overlay im Spiel bedienbar, Spieleingabe steht, solange es offen ist       | **abgeschlossen** |
 | E2   | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                        | Einstellungen im Overlay ändern, sie überleben einen Neustart              | **abgeschlossen** |
-| F1   | **Performance Overlay** — CPU- und GPU-Zeitmessung je Pass, im Overlay dargestellt                                     | Zahlen im Spiel ablesbar, die sich unter Last bewegen                      | offen             |
+| F1   | **Performance Overlay** — CPU- und GPU-Zeitmessung je Pass, im Overlay dargestellt                                     | Zahlen im Spiel ablesbar, die sich unter Last bewegen                      | **abgeschlossen** |
 | F2   | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | F3   | **Exponential Height Fog**                                                                                             | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | F4   | **Cloud Shadows**                                                                                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
@@ -600,6 +600,55 @@ Drei Spielläufe am 2026-09-05, Sanctuary und Root Cellar, AE `1.11.240`. Vollst
     gehört.** Die Ablehnung durch unseren Kartenleser ist richtig; unsere Offsets sind dadurch
     bestätigt, nicht in Frage gestellt. Die Beweisführung steht in `shader-techniques.md`,
     Abschnitt 7.
+
+## Aus Teilprojekt F1 bestätigt
+
+Vier Spielläufe am 2026-09-05. Die Grundlinie des Ports, gemessen in Sanctuary mit
+abgeschaltetem `ShaderCensus` — die ersten echten Zahlen, die dieses Projekt hat:
+
+```
+=== performance snapshot over 300 frames ===
+  pass                     gpu avg   cpu avg   gpu p95   gpu p99
+  Frame                      6.598     6.503     7.163     7.678
+    Features                 0.000     0.126     0.000     0.000
+      FrameCounter           0.000     0.003     0.000     0.000
+    Overlay                  0.001     0.051     0.001     0.001
+  150.4 fps, cpu 6.50 ms, gpu 6.65 ms, 0 frame(s) discarded
+```
+
+Ab F2 wird jedes Teilprojekt gegen diese Zeilen abgenommen.
+
+### Die fünf Annahmen der Spec
+
+-   **Timestamp-Queries stehen auf Fallout 4s Gerät zur Verfügung** — bestätigt.
+-   **Queries dürfen aus unserem `Present`-Hook heraus ausgestellt werden** — bestätigt.
+-   **Ein `NoInputs`-Fenster stört den Systemzeiger nicht** — bestätigt. Maus und Kamera
+    verhalten sich bei geschlossenem Overlay unverändert. **Die Nachbarannahme brach dafür:**
+    ImGui zeichnet seit E1 seinen eigenen Zeiger (`io.MouseDrawCursor`), und der wurde sichtbar,
+    sobald überhaupt etwas außerhalb des Overlays ausgegeben wurde. Er wird jetzt je Frame
+    geschaltet statt dauerhaft gesetzt.
+-   **Die Ausgabe der Zeichendaten bei geschlossenem Overlay kostet nichts Nennenswertes** —
+    bestätigt **mit Zahl**: 0,051 ms CPU und 0,001 ms GPU.
+-   **`Guarded` läuft auf dem Render-Thread** — bestätigt: die Pässe je Feature schachteln sich
+    korrekt in `Features` und `Frame`, was von einem anderen Thread aus nicht möglich wäre.
+
+### Was die Läufe zusätzlich ergeben haben
+
+-   **Drei Frames Latenz reichen nicht.** Ein Platz wird wiederverwendet, sobald der Schreibzeiger
+    erneut auf ihm landet — bei drei Plätzen sind das zwei Frames Gnadenfrist. Gemessen:
+    **4.664 von 9.600 Frames verworfen**. Mit sechs Plätzen: **null**. Eine GPU läuft weiter
+    hinterher, als die naheliegende Zahl vermuten lässt.
+-   **Eine Anzeige, die je Frame aktualisiert, ist bei 180 fps unlesbar.** Sie erneuert sich
+    deshalb viermal je Sekunde und zeigt Mittelwerte statt der zufällig erwischten Momentaufnahme.
+-   **GPU-Zeit allein genügt nicht.** Der erste Abnahmelauf zeigte vier von fünf Zeilen mit 0,00 —
+    zu Recht, denn Features, die nichts zeichnen, verbrauchen keine GPU-Zeit. Die CPU-Zeit wurde
+    bereits gemessen und erreichte nur keine Spalte. Beide Anzeigen führen sie jetzt.
+-   **Ein Feature koppelt sich nicht an den Renderer.** Der Versuch, `PassScope` direkt in
+    `FeatureRegistry` zu benutzen, hat `FeatureRegistryTests` zerrissen — D1 hat diese
+    Zustandsmaschine bewusst ohne Engine gebaut. Die Registry bekommt ihre Zeitmessung jetzt über
+    zwei Funktionszeiger gereicht, so wie sie schon ihre Einstellungsabfrage gereicht bekommt.
+-   **Der Frame-Wert ist Wandzeit zwischen zwei `Present`**, einschließlich einer etwaigen
+    Vsync-Wartezeit. Er steht in der Tafel mit genau diesem Hinweis. Pässe ab F2 sind exakt.
 
 ## Bekannte Lücken in CommonLibF4
 
