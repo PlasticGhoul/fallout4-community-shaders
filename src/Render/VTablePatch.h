@@ -22,6 +22,19 @@ namespace Render
 		/// protection cannot be lifted.
 		[[nodiscard]] bool Install(void* a_object, std::size_t a_index, void* a_replacement) noexcept;
 
+		/// The same, for a table known by its own address rather than through
+		/// an instance. That is the engine's case: the address library names
+		/// the vtable of a class, and the first instance is what we are trying
+		/// to find - so there is no object to dereference yet.
+		///
+		/// Patching the table reaches every instance of the class at once,
+		/// including ones created afterwards, which is what makes it a way to
+		/// catch a singleton the game never hands out.
+		[[nodiscard]] bool InstallAtTable(
+			void** a_vtable,
+			std::size_t a_index,
+			void* a_replacement) noexcept;
+
 		/// Puts the remembered entry back. Returns false when nothing is
 		/// installed or the page protection cannot be lifted.
 		bool Restore() noexcept;

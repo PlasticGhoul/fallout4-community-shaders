@@ -27,16 +27,23 @@ namespace Render
 
 	bool VTablePatch::Install(void* a_object, std::size_t a_index, void* a_replacement) noexcept
 	{
-		if (a_object == nullptr || a_replacement == nullptr || Installed()) {
+		if (a_object == nullptr) {
 			return false;
 		}
 
-		auto* const vtable = *reinterpret_cast<void***>(a_object);
-		if (vtable == nullptr) {
+		return InstallAtTable(*reinterpret_cast<void***>(a_object), a_index, a_replacement);
+	}
+
+	bool VTablePatch::InstallAtTable(
+		void** a_vtable,
+		std::size_t a_index,
+		void* a_replacement) noexcept
+	{
+		if (a_vtable == nullptr || a_replacement == nullptr || Installed()) {
 			return false;
 		}
 
-		void** const slot = vtable + a_index;
+		void** const slot = a_vtable + a_index;
 		void* const original = *slot;
 
 		if (!WithWritableSlot(slot, [&]() noexcept { *slot = a_replacement; })) {

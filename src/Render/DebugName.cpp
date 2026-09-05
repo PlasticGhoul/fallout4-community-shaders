@@ -30,4 +30,47 @@ namespace Render
 
 		return result >= 0;
 	}
+
+	std::string GetDebugName(REX::W32::ID3D11DeviceChild* a_object) noexcept
+	{
+		if (a_object == nullptr) {
+			return {};
+		}
+
+		// Asked with a null buffer, GetPrivateData reports the size it would
+		// need. A resource that was never named answers zero.
+		std::uint32_t size = 0;
+		if (a_object->GetPrivateData(kDebugObjectName, &size, nullptr) < 0 || size == 0) {
+			return {};
+		}
+
+		std::string name(size, '\0');
+		if (a_object->GetPrivateData(kDebugObjectName, &size, name.data()) < 0) {
+			return {};
+		}
+
+		// The blob carries no terminator of its own, but a name set by another
+		// tool may well carry one. Cut at the first, so a name never grows a
+		// trailing null in the log.
+		name.resize(name.find('\0') == std::string::npos ? size : name.find('\0'));
+		return name;
+	}
+
+	std::string GetViewTargetName(REX::W32::ID3D11View* a_view) noexcept
+	{
+		if (a_view == nullptr) {
+			return {};
+		}
+
+		REX::W32::ID3D11Resource* resource = nullptr;
+		a_view->GetResource(&resource);
+		if (resource == nullptr) {
+			return {};
+		}
+
+		// GetResource hands out a reference of its own.
+		auto name = GetDebugName(resource);
+		resource->Release();
+		return name;
+	}
 }

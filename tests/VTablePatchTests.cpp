@@ -73,6 +73,43 @@ int main()
 	Check(!fresh.Install(nullptr, kPresentSlot, replacement), "refuses a null object");
 	Check(!fresh.Install(&object, kPresentSlot, nullptr), "refuses a null replacement");
 
+	FakeComObject headless{ nullptr };
+	Check(!fresh.Install(&headless, kPresentSlot, replacement), "refuses an object without a vtable");
+
+	// The engine's case: the address library names the table, and the instance
+	// we are after is exactly what we do not have yet.
+	auto directSlots = std::make_unique<void*[]>(kSlotCount);
+	for (std::size_t i = 0; i < kSlotCount; ++i) {
+		directSlots[i] = Sentinel(i);
+	}
+
+	constexpr std::size_t kSetupTechniqueSlot = 2;
+
+	Render::VTablePatch direct;
+	Check(
+		direct.InstallAtTable(directSlots.get(), kSetupTechniqueSlot, replacement),
+		"installs into a table given by address");
+	Check(
+		directSlots[kSetupTechniqueSlot] == replacement,
+		"the table slot now holds the replacement");
+	Check(
+		direct.Original() == Sentinel(kSetupTechniqueSlot),
+		"remembers the table entry it replaced");
+	Check(
+		!direct.InstallAtTable(directSlots.get(), 5, replacement),
+		"refuses a second table install while active");
+	Check(direct.Restore(), "restores a table install");
+	Check(
+		directSlots[kSetupTechniqueSlot] == Sentinel(kSetupTechniqueSlot),
+		"the table entry is back");
+
+	Check(
+		!direct.InstallAtTable(nullptr, kSetupTechniqueSlot, replacement),
+		"refuses a null table");
+	Check(
+		!direct.InstallAtTable(directSlots.get(), kSetupTechniqueSlot, nullptr),
+		"refuses a null replacement for a table install");
+
 	if (g_failures != 0) {
 		std::printf("\n%d check(s) failed\n", g_failures);
 		return 1;

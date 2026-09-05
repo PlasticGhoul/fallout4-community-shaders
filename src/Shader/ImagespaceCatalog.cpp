@@ -1,10 +1,10 @@
 #include "Shader/ImagespaceCatalog.h"
 
 #include "Shader/BSShaderLayout.h"
+#include "Util/ObjectRTTI.h"
 
 #include <RE/I/ImageSpaceEffect.h>
 #include <RE/I/ImageSpaceManager.h>
-#include <REX/W32/RTTI.h>
 
 #include <format>
 #include <optional>
@@ -13,20 +13,8 @@ namespace Shader
 {
 	namespace
 	{
-		// MSVC's type descriptor: a vftable pointer, a spare, then the
-		// decorated name as a plain null terminated string.
-		struct TypeDescriptor
-		{
-			const void* vftable;
-			void* spare;
-			char name[1];
-		};
-
-		struct ObjectInfo
-		{
-			std::string className;
-			std::uint32_t subobjectOffset{ 0 };
-		};
+		using Util::DescribeObject;
+		using Util::ObjectInfo;
 
 		// Only these carry a BSShader. Everything else in the effect list is a
 		// plain ImageSpaceEffect subclass and is counted, not reported.
@@ -35,61 +23,6 @@ namespace Shader
 		// kImageSpace. Every image space shader measured in subproject C reads
 		// exactly this.
 		constexpr std::int32_t kImageSpaceShaderType = 0xC;
-
-		// MSVC stores a pointer to the complete object locator immediately
-		// before the first entry of every polymorphic vtable.
-		const REX::W32::RTTICompleteObjectLocator* LocatorOf(const void* a_object) noexcept
-		{
-			const auto* const vtable = *static_cast<const void* const*>(a_object);
-			if (vtable == nullptr) {
-				return nullptr;
-			}
-
-			return *(static_cast<const REX::W32::RTTICompleteObjectLocator* const*>(vtable) - 1);
-		}
-
-		// Reads class name and subobject offset out of the object itself.
-		//
-		// Deliberately not a comparison against RE::VTABLE ids: REL::ID::offset
-		// calls REX::FAIL for an id the address library does not know, which
-		// ends the process. With 162 imagespace classes that is a real risk and
-		// an unnecessary one - the compiler already wrote both answers into the
-		// binary.
-		std::optional<ObjectInfo> Describe(const void* a_object) noexcept
-		{
-			if (a_object == nullptr) {
-				return std::nullopt;
-			}
-
-			const auto* const locator = LocatorOf(a_object);
-			if (locator == nullptr || locator->signature != 1) {
-				return std::nullopt;
-			}
-
-			// The locator records its own RVA. Recomputing the module base from
-			// it and comparing against the game module proves the vtable really
-			// belongs to Fallout4.exe rather than to whatever the pointer
-			// happened to land in.
-			const auto base = reinterpret_cast<std::uintptr_t>(locator) - locator->self;
-			if (base != REX::FModule::GetExecutingModule().GetBaseAddress()) {
-				return std::nullopt;
-			}
-
-			const auto* const descriptor =
-				reinterpret_cast<const TypeDescriptor*>(base + locator->typeDescriptor);
-
-			std::string_view decorated{ descriptor->name };
-			if (!decorated.starts_with(".?AV")) {
-				return std::nullopt;
-			}
-
-			decorated.remove_prefix(4);
-			if (decorated.ends_with("@@")) {
-				decorated.remove_suffix(2);
-			}
-
-			return ObjectInfo{ std::string{ decorated }, locator->offset };
-		}
 
 		// Stage two of the safety net: the address computed from the subobject
 		// offset must itself carry a locator of the same class whose offset is
@@ -105,7 +38,7 @@ namespace Shader
 				reinterpret_cast<std::uintptr_t>(a_effect) - a_info.subobjectOffset;
 			auto* const candidate = reinterpret_cast<void*>(address);
 
-			const auto whole = Describe(candidate);
+			const auto whole = DescribeObject(candidate);
 			if (!whole.has_value()) {
 				return nullptr;
 			}
@@ -164,7 +97,7 @@ namespace Shader
 		for (auto* const effect : manager->effectList) {
 			++visited;
 
-			const auto info = Describe(effect);
+			const auto info = DescribeObject(effect);
 			if (!info.has_value()) {
 				++unnamed;
 				continue;

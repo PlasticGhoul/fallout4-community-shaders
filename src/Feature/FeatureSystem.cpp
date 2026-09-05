@@ -3,6 +3,7 @@
 #include "Feature/FeatureRegistry.h"
 #include "Features/FrameCounter.h"
 #include "Features/ImagespaceTint.h"
+#include "Features/ShaderCensus.h"
 #include "Settings/Settings.h"
 
 #include <memory>
@@ -16,6 +17,11 @@ namespace Features
 		void RegisterAll()
 		{
 			TheRegistry().Register(std::make_unique<FrameCounter>());
+
+			// Patches thirteen engine vtables, so it belongs ahead of the one
+			// that writes into engine memory: teardown runs in reverse, and the
+			// entries should go back after the shader pointer does.
+			TheRegistry().Register(std::make_unique<ShaderCensus>());
 
 			// Registered last so that it is torn down first: teardown runs in
 			// reverse, and the one that writes into engine memory should be the

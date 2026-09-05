@@ -36,14 +36,24 @@ CATALOGUE = (
     / "en.json"
 )
 
+LITERAL = r'"(?:[^"\\]|\\.)*"'
+
 # One pattern for all three forms, which is the whole reason the keys are
 # spelled out. \s* throughout because clang-format wraps a long call across
 # lines, and \s already matches a newline.
+#
+# The English text is one or more adjacent literals, not exactly one: a help
+# text longer than the column limit has to be split, and C++ joins the pieces
+# for us. Insisting on a single literal made the pattern miss such a call
+# entirely - and miss it silently, because the code still falls back to the
+# English default and only the translator is left without the key.
 PATTERN = re.compile(
     r'(?:\bT|\.Label|\.Help)\s*\(\s*'
-    r'"((?:[^"\\]|\\.)*)"\s*,\s*'
-    r'"((?:[^"\\]|\\.)*)"\s*\)'
+    r'(' + LITERAL + r')\s*,\s*'
+    r'((?:' + LITERAL + r'\s*)+)\)'
 )
+
+LITERAL_PATTERN = re.compile(LITERAL)
 
 META = {
     "language": "English",
@@ -59,6 +69,11 @@ def unescape(text: str) -> str:
     return text.encode("ascii", "backslashreplace").decode("unicode_escape")
 
 
+def joined(literals: str) -> str:
+    """Turn one or more adjacent C++ string literals into the text they denote."""
+    return "".join(unescape(match[1:-1]) for match in LITERAL_PATTERN.findall(literals))
+
+
 def collect() -> dict[str, str]:
     found: dict[str, str] = {}
     conflicts: list[str] = []
@@ -69,8 +84,8 @@ def collect() -> dict[str, str]:
 
         text = path.read_text(encoding="utf-8")
         for key, english in PATTERN.findall(text):
-            key = unescape(key)
-            english = unescape(english)
+            key = joined(key)
+            english = joined(english)
 
             previous = found.get(key)
             if previous is not None and previous != english:

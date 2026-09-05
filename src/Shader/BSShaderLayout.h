@@ -3,6 +3,7 @@
 #include <RE/B/BSGraphics.h>
 
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 namespace Shader
@@ -61,6 +62,33 @@ namespace Shader
 		inline constexpr std::size_t kEntrySize = 0x10;
 	}
 
+	/// The five technique maps, in the order they sit in the object.
+	enum class Stage
+	{
+		kVertex,
+		kHull,
+		kDomain,
+		kPixel,
+		kCompute,
+
+		kTotal
+	};
+
+	[[nodiscard]] std::string_view StageName(Stage a_stage) noexcept;
+	[[nodiscard]] std::uintptr_t StageMapOffset(Stage a_stage) noexcept;
+
+	/// One entry of a technique map, read the same way whatever the stage.
+	///
+	/// commonlibf4 declares a separate class per stage - VertexShader,
+	/// HullShader and so on - but all five put the technique id at offset 0 and
+	/// the D3D interface at offset 8, and only the tail beyond them differs.
+	/// The census cares about neither tail, so it reads the common head.
+	struct TechniqueEntry
+	{
+		std::uint32_t id{ 0 };
+		const void* shader{ nullptr };
+	};
+
 	[[nodiscard]] std::int32_t ShaderType(const void* a_shader) noexcept;
 	[[nodiscard]] const char* FxpFilename(const void* a_shader) noexcept;
 
@@ -71,6 +99,13 @@ namespace Shader
 	/// not a small power of two, or more used slots than the capacity allows,
 	/// means the offset is wrong and following the entries pointer would be
 	/// reading somebody else's memory.
+	[[nodiscard]] std::vector<TechniqueEntry> Techniques(
+		const void* a_shader,
+		Stage a_stage) noexcept;
+
+	/// The pixel stage as the type the engine declares for it. Kept apart from
+	/// Techniques because a replacement needs the writable slot, not a reading
+	/// of it.
 	[[nodiscard]] std::vector<RE::BSGraphics::PixelShader*> PixelShaderTechniques(
 		const void* a_shader) noexcept;
 }
