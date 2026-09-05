@@ -38,18 +38,31 @@ namespace Render
 		return true;
 	}
 
-	MarkerScope::MarkerScope(const wchar_t* a_name) noexcept
+	bool PushMarker(const wchar_t* a_name) noexcept
 	{
-		if (g_annotation != nullptr && a_name != nullptr) {
-			g_annotation->BeginEvent(a_name);
-			m_open = true;
+		if (g_annotation == nullptr || a_name == nullptr) {
+			return false;
+		}
+
+		g_annotation->BeginEvent(a_name);
+		return true;
+	}
+
+	void PopMarker() noexcept
+	{
+		if (g_annotation != nullptr) {
+			g_annotation->EndEvent();
 		}
 	}
+
+	MarkerScope::MarkerScope(const wchar_t* a_name) noexcept :
+		m_open(PushMarker(a_name))
+	{}
 
 	MarkerScope::~MarkerScope() noexcept
 	{
 		if (m_open) {
-			g_annotation->EndEvent();
+			PopMarker();
 		}
 	}
 }

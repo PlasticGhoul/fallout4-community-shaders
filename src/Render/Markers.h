@@ -7,6 +7,15 @@ namespace Render
 	/// everything else carries on.
 	bool InitMarkers() noexcept;
 
+	/// Opens a named region, and says whether it opened. Closed with PopMarker,
+	/// and only when it opened.
+	///
+	/// Laid open next to MarkerScope because PassScope has to be its own RAII
+	/// object - it closes a profiler pass as well as a marker, and in the
+	/// opposite order to construction.
+	[[nodiscard]] bool PushMarker(const wchar_t* a_name) noexcept;
+	void PopMarker() noexcept;
+
 	/// Opens a named region on construction and closes it on destruction.
 	///
 	/// Safe to leave in shipping code: with no capture tool attached the
