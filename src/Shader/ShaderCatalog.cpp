@@ -4,8 +4,10 @@
 
 #include <RE/IDs_VTABLE.h>
 
+#include <algorithm>
 #include <array>
 #include <format>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -81,6 +83,84 @@ namespace Shader
 				a_report.refusedBecause != nullptr ?
 					std::string{ "REFUSED, " } + a_report.refusedBecause :
 					std::format("{} used", a_report.techniques.size()));
+		}
+
+		// Sixteen bytes to a row, so an offset can be found by counting rows.
+		constexpr std::size_t kHexRow = 16;
+
+		std::string Hex(std::span<const std::uint8_t> a_bytes) noexcept
+		{
+			std::string text;
+			for (const auto byte : a_bytes) {
+				text += std::format("{}{:02X}", text.empty() ? "" : " ", byte);
+			}
+
+			return text;
+		}
+
+		// A refused map as the bytes it is made of.
+		//
+		// Written out only when a map refuses, and then together with a map of
+		// the same shader that walked. One of the two is a scatter table for
+		// certain, so the pair says what a good header looks like beside the
+		// bad one - which a dump of the bad one alone does not.
+		void LogMapDump(const MapDump& a_dump, Stage a_stage) noexcept
+		{
+			REX::INFO("    dump {:<8} @+0x{:03X}  map at {}  entries {}",
+				StageName(a_stage),
+				a_dump.offset,
+				a_dump.address,
+				a_dump.entries);
+
+			if (!a_dump.headerReadable) {
+				REX::INFO("             the header is not readable, so there is nothing to dump");
+				return;
+			}
+
+			const std::span header{ a_dump.header };
+			for (std::size_t row = 0; row < header.size(); row += kHexRow) {
+				REX::INFO("             header   +0x{:02X}  {}",
+					row,
+					Hex(header.subspan(row, std::min(kHexRow, header.size() - row))));
+			}
+
+			if (a_dump.prologueReadable) {
+				const std::span prologue{ a_dump.prologue };
+				for (std::size_t row = 0; row < prologue.size(); row += kHexRow) {
+					REX::INFO("             prologue -0x{:02X}  {}",
+						prologue.size() - row,
+						Hex(prologue.subspan(row, std::min(kHexRow, prologue.size() - row))));
+				}
+			} else if (a_dump.entries != nullptr) {
+				REX::INFO("             prologue unreadable, so the array opens its own page");
+			}
+
+			for (const auto& slot : a_dump.slots) {
+				REX::INFO("             slot {:>5}  value {}  next {}",
+					slot.index,
+					slot.value,
+					slot.next);
+			}
+
+			for (const auto& probe : a_dump.probes) {
+				if (!probe.readable) {
+					REX::INFO(
+						"             as if capacity {:<5} not readable that far, and nor is anything larger",
+						probe.capacity);
+					continue;
+				}
+
+				REX::INFO(
+					"             as if capacity {:<5} {:>4} used, {:>4} chained within, "
+					"{:>4} to the sentinel, {:>4} away, {:>4} valueless{}",
+					probe.capacity,
+					probe.used,
+					probe.chainsWithin,
+					probe.chainsToSentinel,
+					probe.chainsAway,
+					probe.valuelessSlots,
+					probe.agreesWithFree ? "  <- agrees with the header's free count" : "");
+			}
 		}
 
 		// The ids themselves, and their engine-given names. The count and the
@@ -165,12 +245,44 @@ namespace Shader
 			type == a_class.shaderType ? "as expected" : "MISMATCH",
 			fxp != nullptr ? fxp : "(none)");
 
+		auto refused = static_cast<int>(Stage::kTotal);
+		auto walked = static_cast<int>(Stage::kTotal);
+
 		for (auto stage = 0; stage < static_cast<int>(Stage::kTotal); ++stage) {
 			const auto which = static_cast<Stage>(stage);
 			const auto report = InspectMap(a_shader, which);
 
 			LogMapHeader(report, which);
 			LogStage(a_shader, report.techniques, a_withNames);
+
+			if (report.refusedBecause != nullptr) {
+				if (refused == static_cast<int>(Stage::kTotal)) {
+					refused = stage;
+				}
+			} else if (!report.techniques.empty() && walked == static_cast<int>(Stage::kTotal)) {
+				walked = stage;
+			}
+		}
+
+		if (refused == static_cast<int>(Stage::kTotal)) {
+			return;
+		}
+
+		// Every refused map, and one that walked beside them. The comparison is
+		// the point: both were read through the same offsets out of the same
+		// object, so whatever differs between them is what the refusal is made
+		// of.
+		for (auto stage = 0; stage < static_cast<int>(Stage::kTotal); ++stage) {
+			const auto which = static_cast<Stage>(stage);
+			if (InspectMap(a_shader, which).refusedBecause != nullptr) {
+				LogMapDump(DumpMap(a_shader, which), which);
+			}
+		}
+
+		if (walked != static_cast<int>(Stage::kTotal)) {
+			REX::INFO("    the same shader's {} map, which walked, for comparison:",
+				StageName(static_cast<Stage>(walked)));
+			LogMapDump(DumpMap(a_shader, static_cast<Stage>(walked)), static_cast<Stage>(walked));
 		}
 	}
 }

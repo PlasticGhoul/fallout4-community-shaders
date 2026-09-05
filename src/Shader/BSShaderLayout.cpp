@@ -4,6 +4,7 @@
 
 #include <array>
 #include <bit>
+#include <cstring>
 
 namespace Shader
 {
@@ -186,6 +187,122 @@ namespace Shader
 
 		report.techniques = std::move(walked);
 		return report;
+	}
+
+	MapDump DumpMap(const void* a_shader, Stage a_stage) noexcept
+	{
+		MapDump dump;
+		dump.offset = StageMapOffset(a_stage);
+
+		if (a_shader == nullptr || dump.offset == 0) {
+			return dump;
+		}
+
+		const auto* const map = reinterpret_cast<const void*>(
+			reinterpret_cast<std::uintptr_t>(a_shader) + dump.offset);
+		dump.address = map;
+
+		if (!Util::IsReadableRange(map, ScatterTableOffset::kSize)) {
+			return dump;
+		}
+
+		dump.headerReadable = true;
+		std::memcpy(dump.header.data(), map, ScatterTableOffset::kSize);
+
+		const auto capacity = ReadAt<std::uint32_t>(map, ScatterTableOffset::kCapacity);
+		const auto free = ReadAt<std::uint32_t>(map, ScatterTableOffset::kFree);
+		const auto sentinel = ReadAt<std::uintptr_t>(map, ScatterTableOffset::kSentinel);
+		dump.entries = ReadAt<const void*>(map, ScatterTableOffset::kEntries);
+
+		if (dump.entries == nullptr) {
+			return dump;
+		}
+
+		const auto first = reinterpret_cast<std::uintptr_t>(dump.entries);
+
+		// What the memory manager wrote in front of the array. Read as its own
+		// range rather than as part of the array: an allocation that begins on
+		// a page boundary has nothing readable in front of it, and that is an
+		// answer too.
+		const auto* const prologue =
+			reinterpret_cast<const void*>(first - ScatterTableOffset::kPrologue);
+		if (Util::IsReadableRange(prologue, ScatterTableOffset::kPrologue)) {
+			dump.prologueReadable = true;
+			std::memcpy(dump.prologue.data(), prologue, ScatterTableOffset::kPrologue);
+		}
+
+		// The first slots, and the slots astride the capacity the header
+		// claims. Collected as one ascending run of indices without repeats,
+		// because a small capacity makes the two ranges overlap.
+		const auto slotAt = [&](std::uint32_t a_index) noexcept {
+			const auto address =
+				reinterpret_cast<const void*>(first + a_index * ScatterTableOffset::kEntrySize);
+			if (!Util::IsReadableRange(address, ScatterTableOffset::kEntrySize)) {
+				return;
+			}
+
+			dump.slots.push_back(RawSlot{
+				a_index,
+				ReadAt<const void*>(address, 0),
+				ReadAt<const void*>(address, 8) });
+		};
+
+		const auto boundary = capacity > kDumpBoundarySlots ? capacity - kDumpBoundarySlots : 0;
+		for (std::uint32_t i = 0; i < kDumpLeadingSlots; ++i) {
+			slotAt(i);
+		}
+
+		for (std::uint32_t i = 0; i < 2 * kDumpBoundarySlots; ++i) {
+			if (const auto index = boundary + i; index >= kDumpLeadingSlots) {
+				slotAt(index);
+			}
+		}
+
+		// Every size the array plausibly has, the claimed one included. A
+		// candidate is counted, never trusted: nothing here dereferences a
+		// value or follows a chain.
+		for (std::uint32_t candidate = 8; candidate <= kMaxCapacity; candidate *= 2) {
+			CapacityProbe probe;
+			probe.capacity = candidate;
+
+			const std::size_t span =
+				static_cast<std::size_t>(candidate) * ScatterTableOffset::kEntrySize;
+			if (!Util::IsReadableRange(dump.entries, span)) {
+				dump.probes.push_back(probe);
+				break;  // Nothing larger can be readable either.
+			}
+
+			probe.readable = true;
+			const auto last = first + span;
+
+			for (std::uint32_t i = 0; i < candidate; ++i) {
+				const auto slot = first + i * ScatterTableOffset::kEntrySize;
+				const auto next = ReadAt<std::uintptr_t>(reinterpret_cast<const void*>(slot), 8);
+				if (next == 0) {
+					continue;
+				}
+
+				++probe.used;
+
+				if (next == sentinel) {
+					++probe.chainsToSentinel;
+				} else if (next >= first && next < last &&
+						   (next - first) % ScatterTableOffset::kEntrySize == 0) {
+					++probe.chainsWithin;
+				} else {
+					++probe.chainsAway;
+				}
+
+				if (ReadAt<const void*>(reinterpret_cast<const void*>(slot), 0) == nullptr) {
+					++probe.valuelessSlots;
+				}
+			}
+
+			probe.agreesWithFree = candidate > free && probe.used == candidate - free;
+			dump.probes.push_back(probe);
+		}
+
+		return dump;
 	}
 
 	std::int32_t ShaderType(const void* a_shader) noexcept

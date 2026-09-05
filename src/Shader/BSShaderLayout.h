@@ -2,6 +2,7 @@
 
 #include <RE/B/BSGraphics.h>
 
+#include <array>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -61,6 +62,12 @@ namespace Shader
 		/// has a null chain pointer; a used one points at the next entry or at
 		/// the map's sentinel.
 		inline constexpr std::size_t kEntrySize = 0x10;
+
+		/// How much of the memory in front of the entries array to carry out.
+		/// The engine allocates that array through its own memory manager,
+		/// which keeps a head immediately before what it hands out, so the size
+		/// it believes the block to have is in these bytes.
+		inline constexpr std::size_t kPrologue = 0x20;
 	}
 
 	/// The five technique maps, in the order they sit in the object.
@@ -139,6 +146,80 @@ namespace Shader
 	/// happened - BSDFPrePassShader produced a list with repeated ids and then
 	/// took the process with it.
 	[[nodiscard]] MapReport InspectMap(const void* a_shader, Stage a_stage) noexcept;
+
+	/// One candidate answer to how large the entries array really is.
+	///
+	/// A scatter table's array is read entirely through its capacity: the walk
+	/// visits that many slots and calls a chain pointer beyond them a chain
+	/// that left the table. Reading the capacity wrong therefore produces
+	/// exactly the two refusals BSDFPrePassShader gives - a slot that seems to
+	/// hold nothing, and a chain that seems to leave - and neither says which
+	/// number was wrong. Trying the neighbouring sizes does say it.
+	struct CapacityProbe
+	{
+		std::uint32_t capacity{ 0 };
+		bool readable{ false };
+
+		/// Slots with a chain pointer, which is what marks a slot used.
+		std::uint32_t used{ 0 };
+
+		std::uint32_t chainsWithin{ 0 };
+		std::uint32_t chainsToSentinel{ 0 };
+		std::uint32_t chainsAway{ 0 };
+
+		/// Used slots whose value pointer is null. A real table has none.
+		std::uint32_t valuelessSlots{ 0 };
+
+		/// Whether the used count is this capacity minus the header's free
+		/// count. The header's own consistency check, applied to a size the
+		/// header does not claim.
+		bool agreesWithFree{ false };
+	};
+
+	/// One slot as the two pointers it is made of, before any interpretation.
+	struct RawSlot
+	{
+		std::uint32_t index{ 0 };
+		const void* value{ nullptr };
+		const void* next{ nullptr };
+	};
+
+	/// A refused map as bytes rather than as a verdict.
+	///
+	/// This exists because the assumption has now missed twice, in two runs and
+	/// two builds, with identical header numbers both times - which rules out
+	/// the explanation that fit the first miss, a map being grown on another
+	/// thread. A third guess is worth less than the bytes, so these are the
+	/// bytes: the header as it sits in memory, what lies in front of the array,
+	/// the first slots, the slots astride the claimed capacity, and what the
+	/// table would look like at each plausible size.
+	struct MapDump
+	{
+		std::uintptr_t offset{ 0 };
+		const void* address{ nullptr };
+
+		bool headerReadable{ false };
+		std::array<std::uint8_t, ScatterTableOffset::kSize> header{};
+
+		const void* entries{ nullptr };
+		bool prologueReadable{ false };
+		std::array<std::uint8_t, ScatterTableOffset::kPrologue> prologue{};
+
+		std::vector<RawSlot> slots;
+		std::vector<CapacityProbe> probes;
+	};
+
+	/// How many slots from the start of the array to carry out, and how many
+	/// on either side of the capacity the header claims. The boundary is where
+	/// a table larger than its header says so shows itself: past it lie either
+	/// more of the same or something else entirely.
+	inline constexpr std::uint32_t kDumpLeadingSlots = 8;
+	inline constexpr std::uint32_t kDumpBoundarySlots = 4;
+
+	/// Reads a map without believing any of it. Never walks a chain, never
+	/// follows a value, and refuses nothing - a dump of a map that is not one
+	/// is exactly as useful as a dump of one that is.
+	[[nodiscard]] MapDump DumpMap(const void* a_shader, Stage a_stage) noexcept;
 
 	[[nodiscard]] std::int32_t ShaderType(const void* a_shader) noexcept;
 	[[nodiscard]] const char* FxpFilename(const void* a_shader) noexcept;

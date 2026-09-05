@@ -516,4 +516,31 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME KeyNames COMMAND KeyNamesTests)
+
+    add_executable(
+        ShaderLayoutTests
+        "${CMAKE_SOURCE_DIR}/tests/ShaderLayoutTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Shader/BSShaderLayout.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Util/SafeRead.cpp"
+    )
+
+    target_include_directories(
+        ShaderLayoutTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(ShaderLayoutTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        ShaderLayoutTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(ShaderLayoutTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            ShaderLayoutTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME ShaderLayout COMMAND ShaderLayoutTests)
 endif()
