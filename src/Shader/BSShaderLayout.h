@@ -52,6 +52,7 @@ namespace Shader
 	{
 		inline constexpr std::uintptr_t kCapacity = 0x0C;
 		inline constexpr std::uintptr_t kFree = 0x10;
+		inline constexpr std::uintptr_t kGood = 0x14;
 		inline constexpr std::uintptr_t kSentinel = 0x18;
 		inline constexpr std::uintptr_t kEntries = 0x28;
 		inline constexpr std::size_t kSize = 0x30;
@@ -86,8 +87,58 @@ namespace Shader
 	struct TechniqueEntry
 	{
 		std::uint32_t id{ 0 };
+
+		/// The BSGraphics::<stage>Shader the slot holds. This is the address a
+		/// replacement writes through, so it is kept rather than only read
+		/// from.
+		void* entry{ nullptr };
+
+		/// The D3D11 interface that entry currently carries.
 		const void* shader{ nullptr };
 	};
+
+	/// Everything one technique map says about itself, plus the verdict on
+	/// whether it was a technique map at all.
+	///
+	/// The raw fields are carried out rather than only logged from inside,
+	/// because being wrong about an offset twice is what this exists to end.
+	/// A reader can compare the four header numbers against BSTScatterTable in
+	/// commonlibf4 without another run of the game.
+	struct MapReport
+	{
+		std::uintptr_t offset{ 0 };
+		const void* address{ nullptr };
+
+		std::uint32_t capacity{ 0 };
+		std::uint32_t free{ 0 };
+		std::uint32_t good{ 0 };
+		const void* sentinel{ nullptr };
+		const void* entries{ nullptr };
+
+		/// The four bytes the sentinel points at, when they could be read at
+		/// all. The engine writes DE AD BE EF there, once per template
+		/// instantiation, and that is the proof subproject C used to establish
+		/// these offsets in the first place.
+		bool sentinelReadable{ false };
+		std::uint32_t sentinelBytes{ 0 };
+
+		/// Null when the table was walked. Otherwise why it was not, and
+		/// techniques is then empty by construction.
+		const char* refusedBecause{ nullptr };
+
+		std::vector<TechniqueEntry> techniques;
+	};
+
+	/// Reads a technique map's header, proves it is one, and walks it.
+	///
+	/// Refuses rather than walks whenever a proof fails. A capacity that is not
+	/// a power of two, a sentinel that does not point at DE AD BE EF, a chain
+	/// pointer that leaves the table's own array, a used count that disagrees
+	/// with capacity minus free: any of these means the address is not a
+	/// scatter table, and following it reads somebody else's memory. That
+	/// happened - BSDFPrePassShader produced a list with repeated ids and then
+	/// took the process with it.
+	[[nodiscard]] MapReport InspectMap(const void* a_shader, Stage a_stage) noexcept;
 
 	[[nodiscard]] std::int32_t ShaderType(const void* a_shader) noexcept;
 	[[nodiscard]] const char* FxpFilename(const void* a_shader) noexcept;

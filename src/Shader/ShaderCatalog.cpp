@@ -59,17 +59,40 @@ namespace Shader
 			return name;
 		}
 
+		// The header of every map, whatever the verdict on it.
+		//
+		// This is a raw dump on purpose. A layout assumption that misses twice
+		// is not worth a third guess: the four numbers plus the sentinel are
+		// what BSTScatterTable actually declares, so a reader can check them
+		// against commonlibf4 without another run of the game.
+		void LogMapHeader(const MapReport& a_report, Stage a_stage) noexcept
+		{
+			REX::INFO(
+				"    map {:<8} @+0x{:03X}  capacity {:<6} free {:<6} good {:<6} "
+				"sentinel {} [{}]  entries {}  -> {}",
+				StageName(a_stage),
+				a_report.offset,
+				a_report.capacity,
+				a_report.free,
+				a_report.good,
+				a_report.sentinel,
+				a_report.sentinelReadable ? std::format("{:08X}", a_report.sentinelBytes) : "unreadable",
+				a_report.entries,
+				a_report.refusedBecause != nullptr ?
+					std::string{ "REFUSED, " } + a_report.refusedBecause :
+					std::format("{} used", a_report.techniques.size()));
+		}
+
+		// The ids themselves, and their engine-given names. The count and the
+		// verdict are already on the header line above.
 		void LogStage(
 			const void* a_shader,
-			Stage a_stage,
 			const std::vector<TechniqueEntry>& a_techniques,
 			bool a_withNames) noexcept
 		{
 			if (a_techniques.empty()) {
 				return;  // A stage this shader does not use. The normal case.
 			}
-
-			REX::INFO("    {:<8} {} technique(s)", StageName(a_stage), a_techniques.size());
 
 			if (a_techniques.size() > kMaxListed) {
 				REX::INFO("             too many to list");
@@ -144,7 +167,10 @@ namespace Shader
 
 		for (auto stage = 0; stage < static_cast<int>(Stage::kTotal); ++stage) {
 			const auto which = static_cast<Stage>(stage);
-			LogStage(a_shader, which, Techniques(a_shader, which), a_withNames);
+			const auto report = InspectMap(a_shader, which);
+
+			LogMapHeader(report, which);
+			LogStage(a_shader, report.techniques, a_withNames);
 		}
 	}
 }

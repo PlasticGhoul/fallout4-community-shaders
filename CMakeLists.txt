@@ -360,6 +360,32 @@ if(FO4CS_BUILD_TESTS)
     add_test(NAME FeatureRegistry COMMAND FeatureRegistryTests)
 
     add_executable(
+        SafeReadTests
+        "${CMAKE_SOURCE_DIR}/tests/SafeReadTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Util/SafeRead.cpp"
+    )
+
+    target_include_directories(
+        SafeReadTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(SafeReadTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        SafeReadTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(SafeReadTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            SafeReadTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME SafeRead COMMAND SafeReadTests)
+
+    add_executable(
         MenuGateTests
         "${CMAKE_SOURCE_DIR}/tests/MenuGateTests.cpp"
         "${CMAKE_SOURCE_DIR}/src/Menu/MenuGate.cpp"
