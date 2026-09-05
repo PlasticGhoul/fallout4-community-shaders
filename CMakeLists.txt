@@ -543,4 +543,30 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME ShaderLayout COMMAND ShaderLayoutTests)
+
+    add_executable(
+        ProfilerStatsTests
+        "${CMAKE_SOURCE_DIR}/tests/ProfilerStatsTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Render/PassStatistics.cpp"
+    )
+
+    target_include_directories(
+        ProfilerStatsTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(ProfilerStatsTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        ProfilerStatsTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(ProfilerStatsTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            ProfilerStatsTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME ProfilerStats COMMAND ProfilerStatsTests)
 endif()
