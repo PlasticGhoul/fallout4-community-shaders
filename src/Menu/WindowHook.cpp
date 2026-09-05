@@ -35,6 +35,7 @@ namespace Menu
 		std::function<bool(std::uint32_t)> g_wantsToggle;
 		std::function<void()> g_onToggle;
 		std::function<bool()> g_isOpen;
+		std::function<void(std::uint32_t)> g_onKey;
 		bool g_installed = false;
 
 		bool IsInputMessage(std::uint32_t a_msg) noexcept
@@ -65,6 +66,13 @@ namespace Menu
 				g_wantsToggle(static_cast<std::uint32_t>(a_wParam))) {
 				g_onToggle();
 				return 0;
+			}
+
+			// Last of the three, and it does not swallow the press: a key bound
+			// to this as well as to something the game uses should still do
+			// both. Whoever is listening decides whether it was meant for them.
+			if (a_msg == Win32::WM_KEYDOWN && g_onKey) {
+				g_onKey(static_cast<std::uint32_t>(a_wParam));
 			}
 
 			if (g_isOpen && g_isOpen()) {
@@ -123,7 +131,8 @@ namespace Menu
 		std::function<bool(std::uint32_t)> a_offerKey,
 		std::function<bool(std::uint32_t)> a_wantsToggle,
 		std::function<void()> a_onToggle,
-		std::function<bool()> a_isOpen) noexcept
+		std::function<bool()> a_isOpen,
+		std::function<void(std::uint32_t)> a_onKey) noexcept
 	{
 		if (g_installed || a_window == nullptr) {
 			return;
@@ -133,6 +142,7 @@ namespace Menu
 		g_wantsToggle = std::move(a_wantsToggle);
 		g_onToggle = std::move(a_onToggle);
 		g_isOpen = std::move(a_isOpen);
+		g_onKey = std::move(a_onKey);
 
 		const auto previous = Win32::SetWindowLongPtrW(
 			static_cast<REX::W32::HWND>(a_window),

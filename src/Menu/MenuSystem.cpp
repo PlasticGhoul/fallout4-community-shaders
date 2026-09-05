@@ -2,6 +2,7 @@
 
 #include "I18n/I18n.h"
 #include "Menu/InputLayer.h"
+#include "Menu/KeyLatch.h"
 #include "Menu/MenuGate.h"
 #include "Menu/MousePointer.h"
 #include "Menu/Overlay.h"
@@ -62,6 +63,12 @@ namespace Menu
 		{
 			static Overlay overlay;
 			return overlay;
+		}
+
+		KeyLatch& TheLogLatch()
+		{
+			static KeyLatch latch;
+			return latch;
 		}
 
 		/// Anything else reads as the top right corner. A settings file edited
@@ -177,9 +184,18 @@ namespace Menu
 			[](std::uint32_t a_key) { return TheGate().OfferKey(a_key); },
 			[](std::uint32_t a_key) { return TheGate().IsToggleKey(a_key); },
 			[] { TheGate().RequestToggle(); },
-			[] { return TheGate().IsOpen(); });
+			[] { return TheGate().IsOpen(); },
+			[](std::uint32_t a_key) { TheLogLatch().Offer(a_key); });
+
+		// Read every frame like every other setting, so a rebind through the
+		// capture button takes effect without a restart.
+		TheLogLatch().SetKey(Settings::GetUInt32(kLogKeyPath));
 
 		const bool open = TheGate().Tick();
+
+		if (TheLogLatch().Take()) {
+			Render::Profiler::GetSingleton().LogSnapshot();
+		}
 
 		MousePointer::Point pointer;
 		if (open) {

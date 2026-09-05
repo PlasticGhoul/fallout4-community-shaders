@@ -13,11 +13,16 @@ namespace Menu
 	/// a_offerKey comes first deliberately. Asked the other way round, the
 	/// toggle key could never be rebound onto itself.
 	///
+	/// a_onKey is given every remaining key press, last and without swallowing
+	/// it, so that a hotkey somewhere else can decide for itself whether the
+	/// press was meant for it.
+	///
 	/// Safe to call once; further calls are ignored.
 	void InstallWindowHook(
 		void* a_window,
 		std::function<bool(std::uint32_t)> a_offerKey,
 		std::function<bool(std::uint32_t)> a_wantsToggle,
 		std::function<void()> a_onToggle,
-		std::function<bool()> a_isOpen) noexcept;
+		std::function<bool()> a_isOpen,
+		std::function<void(std::uint32_t)> a_onKey) noexcept;
 }
