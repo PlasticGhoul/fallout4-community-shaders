@@ -152,6 +152,7 @@ namespace Render
 				entry.gpu.Last(),
 				entry.cpu.Last(),
 				entry.gpu.Average(),
+				entry.cpu.Average(),
 				entry.gpu.Percentile(95.0f),
 				entry.gpu.Percentile(99.0f),
 				std::addressof(entry.gpu) });

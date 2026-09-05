@@ -58,8 +58,10 @@ namespace Menu
 
 		// Our own cursor rather than the system one: the game hides and warps
 		// the system cursor for its own purposes, and fighting it over that is
-		// a fight with no end.
-		io.MouseDrawCursor = true;
+		// a fight with no end. Switched per frame in Draw, not left on: since
+		// F1 there is something drawn while the overlay is closed, and a
+		// pointer painted over the game would be drawn into it.
+		io.MouseDrawCursor = false;
 
 		// No imgui.ini. The game's working directory is not ours to write in,
 		// and the overlay has no layout worth remembering yet.
@@ -155,6 +157,11 @@ namespace Menu
 
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
+
+		// Only while the overlay is open. ImGui paints this cursor into the same
+		// draw data as everything else, so leaving it on would put a pointer on
+		// screen next to the small display, over a game the player is aiming in.
+		ImGui::GetIO().MouseDrawCursor = a_visible;
 
 		// After the backend, deliberately: its NewFrame posts the system
 		// cursor's position, and this has to be the last word on where the

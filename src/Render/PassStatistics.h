@@ -53,7 +53,12 @@ namespace Render
 
 		float gpuMs{ 0.0f };
 		float cpuMs{ 0.0f };
+
+		/// Averages and percentiles are over the GPU history, except cpuAvgMs.
+		/// A display refreshed slower than the game draws needs a number that
+		/// does not depend on which frame it happened to catch.
 		float avgMs{ 0.0f };
+		float cpuAvgMs{ 0.0f };
 		float p95Ms{ 0.0f };
 		float p99Ms{ 0.0f };
 

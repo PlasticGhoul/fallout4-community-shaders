@@ -4,6 +4,7 @@
 
 #include <imgui.h>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,74 @@ namespace Menu
 	namespace
 	{
 		constexpr float kMargin = 10.0f;
+
+		/// The numbers are refreshed four times a second, not once per frame.
+		/// At 180 fps the digits change faster than anyone can read them, and a
+		/// number nobody can read is not a measurement.
+		constexpr double kRefreshSeconds = 0.25;
+
+		/// One row as it is shown, without the history pointer: a retire can
+		/// free that between two refreshes, and this outlives the frame it was
+		/// copied in.
+		struct ShownPass
+		{
+			std::string name;
+			std::uint32_t depth{ 0 };
+			float gpuMs{ 0.0f };
+			float avgMs{ 0.0f };
+			float p95Ms{ 0.0f };
+			float p99Ms{ 0.0f };
+		};
+
+		/// Held between frames on purpose, and safe to hold: everything here
+		/// runs on the render thread inside Present, one call at a time.
+		struct Shown
+		{
+			double taken{ -1.0 };
+			std::vector<ShownPass> passes;
+			float fps{ 0.0f };
+			float frameMs{ 0.0f };
+			float cpuMs{ 0.0f };
+		};
+
+		Shown g_shown;
+
+		/// The frame is the pass at depth zero. Looked up rather than assumed to
+		/// be the first row, because a retire can reorder them.
+		[[nodiscard]] const Render::PassResult* FindFrame(const PerformanceContext& a_context)
+		{
+			for (const auto& pass : a_context.passes) {
+				if (pass.depth == 0) {
+					return std::addressof(pass);
+				}
+			}
+
+			return nullptr;
+		}
+
+		void RefreshIfDue(const PerformanceContext& a_context)
+		{
+			const double now = ImGui::GetTime();
+			if (g_shown.taken >= 0.0 && now - g_shown.taken < kRefreshSeconds) {
+				return;
+			}
+
+			g_shown.taken = now;
+			g_shown.passes.clear();
+			g_shown.passes.reserve(a_context.passes.size());
+
+			for (const auto& pass : a_context.passes) {
+				g_shown.passes.push_back(
+					ShownPass{ pass.name, pass.depth, pass.gpuMs, pass.avgMs, pass.p95Ms, pass.p99Ms });
+			}
+
+			// Averages rather than the last sample: a value caught four times a
+			// second would otherwise be whichever frame the clock landed on.
+			const auto* const frame = FindFrame(a_context);
+			g_shown.frameMs = frame != nullptr ? frame->avgMs : 0.0f;
+			g_shown.cpuMs = frame != nullptr ? frame->cpuAvgMs : 0.0f;
+			g_shown.fps = g_shown.frameMs > 0.0f ? 1000.0f / g_shown.frameMs : 0.0f;
+		}
 
 		/// Bright enough to read over a bright sky, and this is the one place
 		/// the panel picks a colour rather than taking the theme's.
@@ -37,7 +106,7 @@ namespace Menu
 			ImGui::SetNextWindowBgAlpha(0.55f);
 		}
 
-		void DrawTable(const PerformanceContext& a_context)
+		void DrawTable()
 		{
 			constexpr auto flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
 			if (!ImGui::BeginTable("passes", 5, flags)) {
@@ -51,7 +120,7 @@ namespace Menu
 			ImGui::TableSetupColumn(T("performance.p99", "p99"));
 			ImGui::TableHeadersRow();
 
-			for (const auto& pass : a_context.passes) {
+			for (const auto& pass : g_shown.passes) {
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
 
@@ -122,15 +191,12 @@ namespace Menu
 				// value it had is worse than one that says it stopped.
 				ImGui::TextUnformatted(T("performance.paused", "Measurement is off"));
 			} else {
-				const float fps =
-					a_context.frameGpuMs > 0.0f ? 1000.0f / a_context.frameGpuMs : 0.0f;
-
 				ImGui::Text("%.0f fps   %.2f ms",
-					static_cast<double>(fps),
-					static_cast<double>(a_context.frameGpuMs));
+					static_cast<double>(g_shown.fps),
+					static_cast<double>(g_shown.frameMs));
 				ImGui::Text("cpu %.2f   gpu %.2f",
-					static_cast<double>(a_context.frameCpuMs),
-					static_cast<double>(a_context.frameGpuMs));
+					static_cast<double>(g_shown.cpuMs),
+					static_cast<double>(g_shown.frameMs));
 			}
 
 			ImGui::PopStyleColor();
@@ -141,6 +207,8 @@ namespace Menu
 
 	bool DrawPerformancePanel(const PerformanceContext& a_context, Detail a_detail)
 	{
+		RefreshIfDue(a_context);
+
 		if (a_detail == Detail::kCompact) {
 			return DrawCompact(a_context);
 		}
@@ -163,7 +231,7 @@ namespace Menu
 			T("performance.frame_note", "Frame is wall time between presents; passes are exact."));
 		ImGui::Separator();
 
-		DrawTable(a_context);
+		DrawTable();
 		DrawHistory(a_context);
 
 		ImGui::End();
