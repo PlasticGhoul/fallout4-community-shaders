@@ -9,6 +9,7 @@
 #include "Menu/Theme.h"
 #include "Menu/Win32.h"
 #include "Menu/WindowHook.h"
+#include "Render/Profiler.h"
 #include "Render/SwapChainHook.h"
 #include "Settings/Settings.h"
 #include "Util/GamePaths.h"
@@ -61,6 +62,23 @@ namespace Menu
 		{
 			static Overlay overlay;
 			return overlay;
+		}
+
+		/// Anything else reads as the top right corner. A settings file edited
+		/// by hand must not be able to put the display off the screen.
+		[[nodiscard]] int CornerFromSetting(std::string_view a_corner) noexcept
+		{
+			if (a_corner == "top-left") {
+				return 0;
+			}
+			if (a_corner == "bottom-left") {
+				return 2;
+			}
+			if (a_corner == "bottom-right") {
+				return 3;
+			}
+
+			return 1;
 		}
 	}
 
@@ -184,7 +202,20 @@ namespace Menu
 		panel.armCapture = [] { TheGate().ArmCapture(); };
 		panel.isCapturing = [] { return TheGate().IsCapturing(); };
 
-		if (TheOverlay().Draw(open, panel, pointer)) {
+		// Read every frame rather than cached, like every other setting: there
+		// is no change notification, so a cached corner would need refreshing
+		// by whoever cached it.
+		const auto& profiler = Render::Profiler::GetSingleton();
+
+		PerformanceContext performance;
+		performance.passes = profiler.Results();
+		performance.frameGpuMs = profiler.FrameGpuMs();
+		performance.frameCpuMs = profiler.FrameCpuMs();
+		performance.measuring = profiler.IsMeasuring();
+		performance.hud = Settings::GetBool(kHudPath);
+		performance.corner = CornerFromSetting(Settings::GetString(kCornerPath));
+
+		if (TheOverlay().Draw(open, panel, performance, pointer)) {
 			// Through the gate rather than straight to a flag, so that the
 			// button and the toggle key close the overlay the same way, input
 			// layer and all.

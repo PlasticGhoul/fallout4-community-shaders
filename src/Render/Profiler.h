@@ -25,9 +25,16 @@ namespace Render
 	class Profiler
 	{
 	public:
-		/// Three frames in flight is what a GPU is usually behind by. Asking for
-		/// a result sooner would mean waiting for it.
-		static constexpr std::size_t kFrameLatency = 3;
+		/// A slot is reused when the write cursor comes round to it again, so
+		/// the ring length is the grace a result gets: six slots give five
+		/// frames, about 28 ms at 180 fps.
+		///
+		/// Three was the obvious number and it was wrong. Measured in the first
+		/// run: 4664 of 9600 frames were dropped because their results had not
+		/// come back within the two frames three slots allow. A GPU runs one to
+		/// three frames behind and the driver may queue more, so the ring has to
+		/// outlast that rather than match it.
+		static constexpr std::size_t kFrameLatency = 6;
 
 		[[nodiscard]] static Profiler& GetSingleton() noexcept;
 

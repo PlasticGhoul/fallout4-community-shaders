@@ -144,6 +144,7 @@ namespace Menu
 	bool Overlay::Draw(
 		bool a_visible,
 		const PanelContext& a_panel,
+		const PerformanceContext& a_performance,
 		MousePointer::Point a_pointer) noexcept
 	{
 		if (!_ready) {
@@ -178,8 +179,12 @@ namespace Menu
 		// size than the thing it belongs to.
 		ImGui::PushFont(Fonts::Body(), fontSize);
 
+		bool drewHud = false;
 		if (a_visible) {
 			closeWanted = DrawSettingsPanel(a_panel);
+			static_cast<void>(DrawPerformancePanel(a_performance, Detail::kFull));
+		} else if (a_performance.hud) {
+			drewHud = DrawPerformancePanel(a_performance, Detail::kCompact);
 		}
 
 		ImGui::PopFont();
@@ -188,7 +193,10 @@ namespace Menu
 		// state forward and does not open with a frame from the past.
 		ImGui::Render();
 
-		if (a_visible && BindBackBuffer()) {
+		// Also when only the small display was drawn. Before F1 nothing outside
+		// the overlay drew anything, so the draw data was built every frame and
+		// thrown away; now there is something in it worth handing over.
+		if ((a_visible || drewHud) && BindBackBuffer()) {
 			ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 		}
 

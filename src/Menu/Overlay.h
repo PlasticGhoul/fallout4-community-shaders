@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Menu/MousePointer.h"
+#include "Menu/PerformancePanel.h"
 #include "Menu/SettingsPanel.h"
 
 #include <cstdint>
@@ -33,6 +34,7 @@ namespace Menu
 		[[nodiscard]] bool Draw(
 			bool a_visible,
 			const PanelContext& a_panel,
+			const PerformanceContext& a_performance,
 			MousePointer::Point a_pointer) noexcept;
 
 		[[nodiscard]] void* Window() const noexcept { return _window; }
