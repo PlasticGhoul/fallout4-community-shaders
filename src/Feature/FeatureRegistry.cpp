@@ -6,6 +6,36 @@ namespace Features
 {
 	namespace
 	{
+		void (*g_beginTiming)(std::string_view) = nullptr;
+		void (*g_endTiming)() = nullptr;
+
+		/// RAII, because Frame is called through Guarded and an exception on the
+		/// way out would otherwise leave a pass open forever.
+		class FrameTimingScope
+		{
+		public:
+			explicit FrameTimingScope(std::string_view a_name) noexcept :
+				_open(g_beginTiming != nullptr)
+			{
+				if (_open) {
+					g_beginTiming(a_name);
+				}
+			}
+
+			~FrameTimingScope() noexcept
+			{
+				if (_open && g_endTiming != nullptr) {
+					g_endTiming();
+				}
+			}
+
+			FrameTimingScope(const FrameTimingScope&) = delete;
+			FrameTimingScope& operator=(const FrameTimingScope&) = delete;
+
+		private:
+			bool _open{ false };
+		};
+
 		// Every call into a feature goes through here. An exception escaping
 		// into our Present hook would land in the engine, and what Fallout 4
 		// does with that is not worth finding out. Costs nothing until it
@@ -72,6 +102,12 @@ namespace Features
 		}
 	}
 
+	void SetFrameTiming(void (*a_begin)(std::string_view), void (*a_end)()) noexcept
+	{
+		g_beginTiming = a_begin;
+		g_endTiming = a_end;
+	}
+
 	void Registry::ClearRefusals() noexcept
 	{
 		for (auto& entry : _entries) {
@@ -120,7 +156,16 @@ namespace Features
 	{
 		const auto name = a_entry.feature->Name();
 
-		if (Guarded(name, "Frame", [&] { a_entry.feature->Frame(); })) {
+		// The one place every feature is measured from. A feature contributes
+		// nothing for this, and gets nested passes of its own for free from F2
+		// on, because the profiler keeps a stack.
+		//
+		// Only Frame is bracketed. Setup and Shutdown do not run per frame, and
+		// a rolling history over single events says nothing.
+		if (Guarded(name, "Frame", [&] {
+				const FrameTimingScope timing{ name };
+				a_entry.feature->Frame();
+			})) {
 			return;
 		}
 

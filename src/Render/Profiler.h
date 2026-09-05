@@ -73,6 +73,10 @@ namespace Render
 			REX::W32::ID3D11Query* end{ nullptr };
 			std::int64_t cpuBegin{ 0 };
 			float cpuMs{ 0.0f };
+
+			/// Whether a RenderDoc region was opened for it, so that exactly the
+			/// ones that opened are closed again.
+			bool marked{ false };
 		};
 
 		struct Slot
@@ -114,10 +118,12 @@ namespace Render
 		bool _frameOpen{ false };
 	};
 
-	/// Opens a pass on construction and closes it on destruction, and opens a
-	/// RenderDoc marker of the same name alongside - so a capture and the
-	/// overlay call the same thing by the same name, without anyone keeping two
-	/// lists in step.
+	/// Opens a pass on construction and closes it on destruction.
+	///
+	/// The RenderDoc region belongs to the profiler rather than to this class,
+	/// because the feature registry opens its passes through two function
+	/// pointers rather than through a scope - and a region only half the passes
+	/// carry would be worse than none.
 	class PassScope
 	{
 	public:
@@ -126,8 +132,5 @@ namespace Render
 
 		PassScope(const PassScope&) = delete;
 		PassScope& operator=(const PassScope&) = delete;
-
-	private:
-		bool _marked{ false };
 	};
 }

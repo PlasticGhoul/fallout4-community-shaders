@@ -4,6 +4,7 @@
 #include "Features/FrameCounter.h"
 #include "Features/ImagespaceTint.h"
 #include "Features/ShaderCensus.h"
+#include "Render/Profiler.h"
 #include "Settings/Settings.h"
 
 #include <memory>
@@ -32,6 +33,13 @@ namespace Features
 
 	void StartSystem() noexcept
 	{
+		// Handed in here rather than reached for by the registry: the registry
+		// has to stay buildable and testable without the renderer, and this is
+		// the first place that knows both.
+		SetFrameTiming(
+			[](std::string_view a_name) { Render::Profiler::GetSingleton().BeginPass(a_name); },
+			[] { Render::Profiler::GetSingleton().EndPass(); });
+
 		// Registering is also declaring: the registry calls Declare on every
 		// feature it takes, which has to happen before Init because a REX
 		// setting registers with its store at construction and Init is what

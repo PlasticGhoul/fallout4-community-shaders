@@ -3,9 +3,11 @@
 #include "Feature/FeatureSystem.h"
 #include "Menu/MenuSystem.h"
 #include "Render/Markers.h"
+#include "Render/Profiler.h"
 #include "Render/Renderer.h"
 #include "Render/TargetInventory.h"
 #include "Render/VTablePatch.h"
+#include "Settings/Settings.h"
 
 #include <atomic>
 #include <format>
@@ -37,13 +39,30 @@ namespace Render
 				REX::DEBUG("frame {}", frame);
 			}
 
+			auto& profiler = Profiler::GetSingleton();
+			profiler.SetMeasuring(Settings::GetBool("Performance/measure"));
+
+			// The order is the design. A frame is Present to Present, so the
+			// slot opened at the last Present is complete only now; collecting
+			// then leaves a fresh slot for everything below, and for the game's
+			// own drawing after we chain.
+			profiler.EndFrame();
+			profiler.Collect();
+			profiler.BeginFrame();
+
 			// Ours runs inside the named block, so a capture shows it under
 			// the marker rather than loose between frames.
-			Features::TickSystem();
+			{
+				const PassScope pass{ "Features"sv };
+				Features::TickSystem();
+			}
 
 			// After the features: the overlay belongs on top of whatever they
 			// drew.
-			Menu::TickSystem();
+			{
+				const PassScope pass{ "Overlay"sv };
+				Menu::TickSystem();
+			}
 
 			const auto name = std::format(L"CommunityShadersFO4 Frame {}", frame);
 

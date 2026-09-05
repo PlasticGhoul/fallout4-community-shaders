@@ -237,6 +237,12 @@ namespace Render
 		// queries and would be rejected here.
 		GetContext()->End(timing.begin);
 
+		// Widened on the stack: BeginEvent copies the string, so it does not
+		// have to outlive this call. Every pass name comes from our own source
+		// and is ASCII; a name out of a translation file never reaches here.
+		const std::wstring wide{ a_name.begin(), a_name.end() };
+		timing.marked = PushMarker(wide.c_str());
+
 		slot.timings.push_back(std::move(timing));
 		_open.push_back(slot.timings.size() - 1);
 	}
@@ -253,6 +259,10 @@ namespace Render
 
 		GetContext()->End(timing.end);
 		timing.cpuMs = static_cast<float>(static_cast<double>(Now() - timing.cpuBegin) * _ticksToMs);
+
+		if (timing.marked) {
+			PopMarker();
+		}
 	}
 
 	void Profiler::Collect() noexcept
@@ -362,20 +372,10 @@ namespace Render
 	PassScope::PassScope(std::string_view a_name) noexcept
 	{
 		Profiler::GetSingleton().BeginPass(a_name);
-
-		// Widened on the stack: BeginEvent copies the string, so it does not
-		// have to outlive this call. Every pass name comes from our own source
-		// and is ASCII; a name out of a translation file never reaches here.
-		const std::wstring wide{ a_name.begin(), a_name.end() };
-		_marked = PushMarker(wide.c_str());
 	}
 
 	PassScope::~PassScope() noexcept
 	{
-		if (_marked) {
-			PopMarker();
-		}
-
 		Profiler::GetSingleton().EndPass();
 	}
 }

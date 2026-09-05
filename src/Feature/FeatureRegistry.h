@@ -25,6 +25,15 @@ namespace Features
 	/// what makes the whole state machine testable without a game.
 	using EnabledQuery = std::function<bool(std::string_view a_name)>;
 
+	/// Called around each running feature's Frame, so that every feature is
+	/// measured from one place and none of them has to ask for it.
+	///
+	/// Two plain function pointers, empty until something installs them, for
+	/// the same reason EnabledQuery is a callback: the registry has to build
+	/// and run without the renderer, which is what keeps its state machine
+	/// testable without a game.
+	void SetFrameTiming(void (*a_begin)(std::string_view), void (*a_end)()) noexcept;
+
 	class Registry
 	{
 	public:
