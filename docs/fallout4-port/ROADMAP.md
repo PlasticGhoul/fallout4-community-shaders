@@ -1,7 +1,8 @@
 # Fallout 4 Port — Roadmap
 
-Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. Als Nächstes
-steht **F+** an: je ein Zyklus pro portiertem CS-Feature. Stand 2026-09-04.
+Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
+Messspike in **F1…F13 aufwärts** zerlegt; als Nächstes steht **F1** an, das Performance Overlay.
+Stand 2026-09-05.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -41,17 +42,30 @@ RE-Header und laut eigenem README unfertige NG-Unterstützung) sowie
 Reihenfolge ist bindend, solange nichts anderes vereinbart wird: jedes Teilprojekt setzt auf dem
 vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem beschreibt.
 
-| #   | Teilprojekt                                                                                                            | Abnahmekriterium                                                           | Status            |
-| --- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------- |
-| A   | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab       | **abgeschlossen** |
-| B1  | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                     | **abgeschlossen** |
-| B2  | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle | **abgeschlossen** |
-| C   | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt   | **abgeschlossen** |
-| D1  | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz                             | Zwei Features unabhängig an-/abschaltbar                                   | **abgeschlossen** |
-| D2  | **Paketierung** — `dist/`, Basis-, Addon- und AIO-Archive                                                              | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel               | **abgeschlossen** |
-| E1  | **Overlay und Eingabe** — ImGui-Overlay, Fensterprozedur, Eingabesperre, eigener Zeiger                                | Overlay im Spiel bedienbar, Spieleingabe steht, solange es offen ist       | **abgeschlossen** |
-| E2  | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                        | Einstellungen im Overlay ändern, sie überleben einen Neustart              | **abgeschlossen** |
-| F+  | **Features einzeln** — je ein Zyklus pro portiertem CS-Feature                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| #    | Teilprojekt                                                                                                            | Abnahmekriterium                                                           | Status            |
+| ---- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------- |
+| A    | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab       | **abgeschlossen** |
+| B1   | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                     | **abgeschlossen** |
+| B2   | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle | **abgeschlossen** |
+| C    | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt   | **abgeschlossen** |
+| D1   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz                             | Zwei Features unabhängig an-/abschaltbar                                   | **abgeschlossen** |
+| D2   | **Paketierung** — `dist/`, Basis-, Addon- und AIO-Archive                                                              | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel               | **abgeschlossen** |
+| E1   | **Overlay und Eingabe** — ImGui-Overlay, Fensterprozedur, Eingabesperre, eigener Zeiger                                | Overlay im Spiel bedienbar, Spieleingabe steht, solange es offen ist       | **abgeschlossen** |
+| E2   | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                        | Einstellungen im Overlay ändern, sie überleben einen Neustart              | **abgeschlossen** |
+| F1   | **Performance Overlay** — CPU- und GPU-Zeitmessung je Pass, im Overlay dargestellt                                     | Zahlen im Spiel ablesbar, die sich unter Last bewegen                      | offen             |
+| F2   | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F3   | **Exponential Height Fog**                                                                                             | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F4   | **Cloud Shadows**                                                                                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F5   | **Skylighting**                                                                                                        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F6   | **Volumetric Lighting**                                                                                                | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F7   | **Volumetric Shadows**                                                                                                 | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F8   | **Screen Space GI**                                                                                                    | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F9   | **Subsurface Scattering**                                                                                              | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F10  | **Dynamic Cubemaps**                                                                                                   | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F11  | **IBL**                                                                                                                | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F12  | **Forschung: Permutations-Cache** — Shader-Cache über die Technikkarten, belegt am kleinsten Gruppe-2-Feature          | Eine Permutation von `kDFPrepass` nachweislich durch eine eigene ersetzt   | offen             |
+| F13+ | **Objekt-Shader** — die tragenden Gruppe-2-Features, Zuschnitt und Zahl folgen aus F12                                 | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| Fx   | **Werkzeuge** — Screenshot, RenderDoc-Anbindung                                                                        | Werkzeug tut, was sein Name sagt                                           | offen             |
 
 Das ursprüngliche Teilprojekt D wurde am 2026-08-30 in D1 und D2 geteilt: Laufzeitverhalten und
 Auslieferung sind zwei Subsysteme ohne Berührung. Das Abnahmekriterium von D1 heißt „zwei
@@ -82,6 +96,33 @@ weitgehend aus dem bestehenden Skyrim-Code übernehmbar, weil sie kaum engine-ge
 Skyrim-Vorlage sogar dort stumm, wo sie am meisten geholfen hätte: sie enthält keine einzige
 Zeile zum Umgang mit dem Systemzeiger, weil Skyrim das Problem nicht hat. Die vorhandenen HLSL-Shader werden
 erst ab F relevant — sie sind das Ziel der Portierung, nicht ihr Anfang.
+
+### Wie F+ in F1…Fn zerfallen ist
+
+Am 2026-09-05 zerlegt, nachdem ein Messspike die Ausgangslage geklärt hatte. Die Befunde stehen in
+`shader-techniques.md`, die Entscheidungen sind diese:
+
+**Kuratierte Auswahl statt aller 39.** Gruppe 1 (Bildschirmraum) vollständig, aus Gruppe 2
+(Objekt-Shader) die tragenden, aus Gruppe 5 die billigen Werkzeuge. Die Gruppen 3 (Skyrim-Weltdaten),
+4 (Light Limit Fix, braucht `BSLight`, `ShadowSceneNode` und `BSRenderPass`) und 6 (Effects11, und
+ENB gilt für FO4 ohnehin als inkompatibel) bleiben draußen.
+
+**Das Messwerkzeug steht vorn.** Jedes F hat als Abnahmekriterium „sichtbarer Effekt plus
+CPU-/GPU-Zahlen", und Zahlen gibt es bislang keine — der `FrameCounter` zählt Frames. Das
+Performance Overlay ist deshalb F1 und kein Feature unter vielen: es macht die siebzehn folgenden
+Teilprojekte überhaupt abnehmbar.
+
+**Gruppe 1 vor der Forschung.** Der Spike hat gezeigt, dass Bildschirmraum-Features den
+Permutations-Cache nicht brauchen: sie sind eigene Pässe, die den G-Buffer lesen. Kompilieren und
+Einschleusen liegen seit C vor, die Targets seit B2. Der Cache wird erst für Gruppe 2 gebraucht,
+und die ist teurer geworden — siehe unten. F2 trägt die Naht für alle folgenden: eigener Pass,
+G-Buffer-Zugriff, Ergebnis zurück in die Beleuchtung.
+
+**Gruppe 2 bekommt ein eigenes Forschungs-Teilprojekt**, ausdrücklich wie B2 markiert. F12 baut den
+Permutations-Cache und belegt ihn am kleinsten Gruppe-2-Feature. Zahl und Zuschnitt von F13
+aufwärts werden erst danach festgelegt: vorher lässt sich nicht seriös schätzen, was ein einzelnes
+Objekt-Shader-Feature kostet, wenn es nicht übersetzt, sondern gegen `kDFPrepass` neu gedacht
+werden muss.
 
 ## Ausgangslage (gemessen am Skyrim-Stand, 2026-08-30)
 
@@ -491,6 +532,35 @@ sein einziges Bedienelement ein Knopf war und die Prüfung „reagiert er" laute
 -   **Kein Formatierer für Übersetzungen, kein `DetectSystemLocale`.** Ersterer, weil nichts
     formatiert und ein Formatstring aus einer Übersetzungsdatei eine Angriffsfläche ist; letzteres
     sind siebzig Zeilen Windows-`LANGID`-Abbildung für einen Wert, der bei uns eine Einstellung ist.
+
+## Aus dem Messspike vor F bestätigt
+
+Drei Spielläufe am 2026-09-05, Sanctuary und Root Cellar, AE `1.11.240`. Vollständig in
+`shader-techniques.md`; hier das, was den Zuschnitt bestimmt hat.
+
+-   **Fallout 4 zeichnet seine Welt über `kDFPrepass`, nicht über `kLighting`.** `BSLightingShader`
+    hat in keinem Lauf gezeichnet, innen wie außen, und trägt 18 Techniken mit Skyrim-Vokabular in
+    den Namen — bis hin zu `BSLightingVcMenu`. Der Prepass trägt 315 Vertex- und 470 Pixel-Techniken
+    und bindet den G-Buffer. **Folge:** die gesamte Gruppe der Objekt-Shader-Features der Vorlage
+    hängt an `BSLightingShader` und ist nicht übersetzbar.
+-   **Der Zeiger-Tausch aus C trägt nicht über Imagespace hinaus.** Ein Imagespace-Pass hat eine
+    Technik mit ID 0; die zwölf Weltshader haben zusammen 3.445, und die IDs sind
+    Permutations-Bitmasken.
+-   **Die Technikmengen stehen beim Laden fest.** Über drei Läufe und über Innen- wie Außenzelle
+    bitgleich, keine Karte ist zur Laufzeit gewachsen. Ein Cache kann vollständig aufgebaut werden,
+    statt nachziehen zu müssen.
+-   **Die Engine hält zwölf Shader-Singletons nebeneinander im Datenbereich von `Fallout4.exe`**, in
+    fester Reihenfolge. Ein bekannter Zeiger erschließt alle übrigen, ohne vtable-Patch und ohne auf
+    einen Aufruf zu warten. Vier Klassen waren anders gar nicht messbar.
+-   **Der G-Buffer ist bestätigt:** `RT_022 RT_020 RT_057 RT_024 RT_023 RT_029` auf `DS_002`, davon
+    `RT_020` die Normalen und `RT_029` die Bewegung — zwei offene Vermutungen aus B2 sind damit
+    erledigt.
+-   **`BSDFLightShader` meldet `shaderType` 4, nicht 5**, und teilt den Wert mit
+    `BSDFPrePassShader`. Wer über `shaderType` unterscheidet, unterscheidet diese beiden nicht.
+-   **Die Hull- und Domain-Karten von `kDFPrepass` zeigen auf Speicher, der ihnen nicht mehr
+    gehört.** Die Ablehnung durch unseren Kartenleser ist richtig; unsere Offsets sind dadurch
+    bestätigt, nicht in Frage gestellt. Die Beweisführung steht in `shader-techniques.md`,
+    Abschnitt 7.
 
 ## Bekannte Lücken in CommonLibF4
 
