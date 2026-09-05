@@ -6,7 +6,9 @@
 #include "Settings/Settings.h"
 #include "Shader/BSShaderLayout.h"
 #include "Shader/ShaderCatalog.h"
+#include "Util/ModuleScan.h"
 #include "Util/ObjectRTTI.h"
+#include "Util/SafeRead.h"
 
 #include <algorithm>
 #include <array>
@@ -299,6 +301,63 @@ namespace Features
 		}
 	}
 
+	void ShaderCensus::AdoptFromEngineTable() noexcept
+	{
+		const auto classes = Shader::ShaderClasses();
+		const auto total = std::min(classes.size(), kClassCount);
+
+		void* anchor = nullptr;
+		std::string_view anchorName;
+		for (std::size_t i = 0; i < total; ++i) {
+			if (auto* const shader = g_seen[i].load(std::memory_order_relaxed); shader != nullptr) {
+				anchor = shader;
+				anchorName = classes[i].className;
+				break;
+			}
+		}
+
+		if (anchor == nullptr) {
+			REX::WARN("ShaderCensus: nothing caught yet, so there is no anchor to look up");
+			return;
+		}
+
+		const auto places = Util::FindPointerInModuleData(anchor);
+		REX::INFO("=== census: {} at {} sits in {} place(s) of the module's data ===",
+			anchorName,
+			anchor,
+			places.size());
+
+		for (auto* const* const place : places) {
+			REX::INFO("  slot {}", static_cast<const void*>(place));
+
+			for (int offset = -kNeighbourhood; offset <= kNeighbourhood; ++offset) {
+				auto* const* const slot = place + offset;
+				if (!Util::IsReadableRange(slot, sizeof(void*))) {
+					continue;
+				}
+
+				auto* const candidate = *slot;
+				const auto info = Util::DescribeObject(candidate);
+				if (!info.has_value() || info->subobjectOffset != 0) {
+					continue;
+				}
+
+				REX::INFO("    [{:+3}] {} at {}", offset, info->className, candidate);
+
+				for (std::size_t i = 0; i < total; ++i) {
+					if (info->className != classes[i].className ||
+						g_seen[i].load(std::memory_order_relaxed) != nullptr) {
+						continue;
+					}
+
+					g_seen[i].store(candidate, std::memory_order_relaxed);
+					REX::INFO("ShaderCensus: adopted {} without ever seeing it run",
+						classes[i].className);
+				}
+			}
+		}
+	}
+
 	void ShaderCensus::Frame()
 	{
 		++_frames;
@@ -334,11 +393,15 @@ namespace Features
 					_frames);
 			}
 
-			const auto count = Shader::TotalTechniques(shader);
-			if (count == state.lastCount && count > 0) {
+			// A refused map is almost always a map the engine is in the middle
+			// of growing, so it counts as not settled rather than as a finding.
+			// Patience is what turns a lasting refusal back into one.
+			const auto totals = Shader::SummariseMaps(shader);
+			if (totals.techniques == state.lastCount && totals.techniques > 0 &&
+				totals.refused == 0) {
 				++state.stablePolls;
 			} else {
-				state.lastCount = count;
+				state.lastCount = totals.techniques;
 				state.stablePolls = 0;
 			}
 
@@ -376,6 +439,13 @@ namespace Features
 				total,
 				missing.empty() ? std::string{ "none of them" } : missing);
 
+			// One look in the engine's own table, once a class has had a full
+			// interval to turn up on its own.
+			if (!_adopted && !missing.empty()) {
+				_adopted = true;
+				AdoptFromEngineTable();
+			}
+
 			// A reported class can still grow: the engine compiles a
 			// permutation the first time something needs it, so a count taken
 			// in Sanctuary is not the count in a vault. Saying so is cheap and
@@ -386,7 +456,7 @@ namespace Features
 				}
 
 				auto* const shader = g_seen[i].load(std::memory_order_relaxed);
-				const auto count = shader != nullptr ? Shader::TotalTechniques(shader) : 0;
+				const auto count = Shader::SummariseMaps(shader).techniques;
 				if (count != _state[i].lastCount) {
 					REX::INFO("ShaderCensus: {} grew from {} to {} techniques",
 						classes[i].className,

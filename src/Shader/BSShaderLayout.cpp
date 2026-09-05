@@ -203,18 +203,20 @@ namespace Shader
 		return InspectMap(a_shader, a_stage).techniques;
 	}
 
-	std::size_t TotalTechniques(const void* a_shader) noexcept
+	MapTotals SummariseMaps(const void* a_shader) noexcept
 	{
+		MapTotals totals;
 		if (a_shader == nullptr) {
-			return 0;
+			return totals;
 		}
 
-		std::size_t total = 0;
 		for (auto stage = 0; stage < static_cast<int>(Stage::kTotal); ++stage) {
-			total += InspectMap(a_shader, static_cast<Stage>(stage)).techniques.size();
+			const auto report = InspectMap(a_shader, static_cast<Stage>(stage));
+			totals.techniques += report.techniques.size();
+			totals.refused += report.refusedBecause != nullptr ? 1 : 0;
 		}
 
-		return total;
+		return totals;
 	}
 
 	std::vector<RE::BSGraphics::PixelShader*> PixelShaderTechniques(const void* a_shader) noexcept

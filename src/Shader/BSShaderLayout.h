@@ -154,11 +154,24 @@ namespace Shader
 		const void* a_shader,
 		Stage a_stage) noexcept;
 
-	/// All five stages added up. Cheap enough to poll with, which is what the
-	/// census does: a count that has stopped moving is the only trustworthy
-	/// sign that the engine has finished filling a shader's maps, and it fills
-	/// them lazily.
-	[[nodiscard]] std::size_t TotalTechniques(const void* a_shader) noexcept;
+	/// All five stages added up.
+	struct MapTotals
+	{
+		std::size_t techniques{ 0 };
+
+		/// Maps that could not prove themselves. A map is refused while the
+		/// engine is growing it - the header still describes the old array
+		/// while the new one is half filled and its chains still point into
+		/// the old - so a refusal is usually a moment rather than a fault, and
+		/// worth waiting out.
+		std::size_t refused{ 0 };
+	};
+
+	/// Cheap enough to poll with, which is what the census does: a count that
+	/// has stopped moving, with nothing refused, is the only trustworthy sign
+	/// that the engine has finished filling a shader's maps. It fills them
+	/// lazily, and grows them while the game runs.
+	[[nodiscard]] MapTotals SummariseMaps(const void* a_shader) noexcept;
 
 	/// The pixel stage as the type the engine declares for it. Kept apart from
 	/// Techniques because a replacement needs the writable slot, not a reading

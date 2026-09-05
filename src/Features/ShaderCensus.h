@@ -51,6 +51,23 @@ namespace Features
 		/// asking the engine for technique names.
 		void ReportOne(std::size_t a_index, const Shader::ShaderClass& a_class) noexcept;
 
+		/// Finds the classes a hook cannot catch, by looking them up in the
+		/// engine's own table rather than waiting for them to run.
+		///
+		/// Two of the thirteen can never arrive through a vtable patch.
+		/// BSImagespaceShader is a base class whose hundred and sixty concrete
+		/// subclasses each carry their own table, so the base's entry is never
+		/// called. And a class the deferred pipeline does not use - which
+		/// BSLightingShader may well be, given that kDFPrepass draws the world -
+		/// simply never runs. Both are reachable all the same: the engine keeps
+		/// its shaders together, so an object we already hold locates the table
+		/// and its neighbours are the rest.
+		void AdoptFromEngineTable() noexcept;
+
+		/// How far either way from a known slot to look. The table holds
+		/// thirteen shaders; twice that covers it from any position in it.
+		static constexpr int kNeighbourhood = 26;
+
 		/// How often the technique maps are counted. Walking five scatter
 		/// tables for thirteen classes is not free, and nothing about this
 		/// needs to happen every frame.
@@ -80,6 +97,7 @@ namespace Features
 
 		std::uint64_t _frames{ 0 };
 		bool _complete{ false };
+		bool _adopted{ false };
 		std::array<ClassState, 13> _state{};
 	};
 }
