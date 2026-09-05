@@ -10,7 +10,7 @@
     "feature.frame_counter.name": "Frame Counter",
     "feature.imagespace_tint.help": "Replaces an imagespace pixel shader with one of our own.",
     "feature.imagespace_tint.name": "Imagespace Tint",
-    "feature.shader_census.help": "Counts the techniques of the engine's thirteen shader classes and reports what the deferred passes have bound. A measurement for the port, with no effect on the picture.",
+    "feature.shader_census.help": "Counts the techniques of the engine's thirteen shader classes and reports what the deferred passes have bound. A diagnostic with no effect on the picture: it patches the engine's shader tables while it runs, and it has nothing left to say once it has reported.",
     "feature.shader_census.name": "Shader Census",
     "feature.shader_census.names": "Ask the engine for technique names",
     "feature.shader_census.names_help": "Calls the engine's own GetTechniqueName for every technique found, which is a call into the game rather than a read of it. Turn it off if the census does not survive a run.",

@@ -174,13 +174,19 @@ namespace Features
 
 	void ShaderCensus::Declare()
 	{
-		Settings::DeclareFeature("ShaderCensus", true)
+		// Off unless asked for. It patches thirteen engine vtables while it runs,
+		// which is defensible for a measurement and not for something that
+		// starts with every game. What it measured is written down in
+		// docs/fallout4-port/shader-techniques.md; it stays because the
+		// permutation cache will need to read the same maps.
+		Settings::DeclareFeature("ShaderCensus", false)
 			.Label("feature.shader_census.name", "Shader Census")
 			.Help(
 				"feature.shader_census.help",
 				"Counts the techniques of the engine's thirteen shader classes and reports "
-				"what the deferred passes have bound. A measurement for the port, with no "
-				"effect on the picture.");
+				"what the deferred passes have bound. A diagnostic with no effect on the "
+				"picture: it patches the engine's shader tables while it runs, and it has "
+				"nothing left to say once it has reported.");
 
 		Settings::DeclareBool("ShaderCensus/techniqueNames", true)
 			.Label("feature.shader_census.names", "Ask the engine for technique names")
