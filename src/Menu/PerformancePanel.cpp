@@ -26,8 +26,8 @@ namespace Menu
 		{
 			std::string name;
 			std::uint32_t depth{ 0 };
-			float gpuMs{ 0.0f };
-			float avgMs{ 0.0f };
+			float gpuAvgMs{ 0.0f };
+			float cpuAvgMs{ 0.0f };
 			float p95Ms{ 0.0f };
 			float p99Ms{ 0.0f };
 		};
@@ -70,8 +70,8 @@ namespace Menu
 			g_shown.passes.reserve(a_context.passes.size());
 
 			for (const auto& pass : a_context.passes) {
-				g_shown.passes.push_back(
-					ShownPass{ pass.name, pass.depth, pass.gpuMs, pass.avgMs, pass.p95Ms, pass.p99Ms });
+				g_shown.passes.push_back(ShownPass{
+					pass.name, pass.depth, pass.avgMs, pass.cpuAvgMs, pass.p95Ms, pass.p99Ms });
 			}
 
 			// Averages rather than the last sample: a value caught four times a
@@ -114,8 +114,8 @@ namespace Menu
 			}
 
 			ImGui::TableSetupColumn(T("performance.pass", "Pass"), ImGuiTableColumnFlags_WidthStretch);
-			ImGui::TableSetupColumn(T("performance.ms", "ms"));
-			ImGui::TableSetupColumn(T("performance.avg", "avg"));
+			ImGui::TableSetupColumn(T("performance.gpu", "gpu"));
+			ImGui::TableSetupColumn(T("performance.cpu", "cpu"));
 			ImGui::TableSetupColumn(T("performance.p95", "p95"));
 			ImGui::TableSetupColumn(T("performance.p99", "p99"));
 			ImGui::TableHeadersRow();
@@ -130,7 +130,10 @@ namespace Menu
 					std::string(static_cast<std::size_t>(pass.depth) * 4, ' ') + pass.name;
 				ImGui::TextUnformatted(indented.c_str());
 
-				for (const float value : { pass.gpuMs, pass.avgMs, pass.p95Ms, pass.p99Ms }) {
+				// Averages, not the sample this refresh happened to catch. A
+				// pass that does no GPU work reads zero there and its real cost
+				// on the CPU beside it, which is the whole point of the column.
+				for (const float value : { pass.gpuAvgMs, pass.cpuAvgMs, pass.p95Ms, pass.p99Ms }) {
 					ImGui::TableNextColumn();
 					ImGui::Text("%.3f", static_cast<double>(value));
 				}

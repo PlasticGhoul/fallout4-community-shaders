@@ -347,16 +347,21 @@ namespace Render
 			results.front().history != nullptr ? results.front().history->Count() : std::size_t{ 0 };
 
 		REX::INFO("=== performance snapshot over {} frames ===", samples);
-		REX::INFO("  {:<22} {:>7} {:>8} {:>8} {:>8}", "pass", "ms", "avg", "p95", "p99");
+
+		// Averages rather than the sample the key press happened to catch, and
+		// three decimals rather than two: a pass that costs five microseconds
+		// is a real answer, and two decimals would report it as nothing.
+		REX::INFO("  {:<22} {:>9} {:>9} {:>9} {:>9}",
+			"pass", "gpu avg", "cpu avg", "gpu p95", "gpu p99");
 
 		for (const auto& result : results) {
 			const std::string indented =
 				std::string(static_cast<std::size_t>(result.depth) * 2, ' ') + result.name;
 
-			REX::INFO("  {:<22} {:>7.2f} {:>8.2f} {:>8.2f} {:>8.2f}",
+			REX::INFO("  {:<22} {:>9.3f} {:>9.3f} {:>9.3f} {:>9.3f}",
 				indented,
-				result.gpuMs,
 				result.avgMs,
+				result.cpuAvgMs,
 				result.p95Ms,
 				result.p99Ms);
 		}
