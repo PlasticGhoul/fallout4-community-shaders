@@ -27,6 +27,15 @@ namespace Menu
 		// VK_END. Unbound in Fallout 4 and common among its plugins.
 		constexpr std::uint32_t kDefaultToggleKey = 0x23;
 
+		constexpr auto kMeasurePath = "Performance/measure"sv;
+		constexpr auto kHudPath = "Performance/hud"sv;
+		constexpr auto kCornerPath = "Performance/corner"sv;
+		constexpr auto kLogKeyPath = "Performance/logKey"sv;
+
+		// VK_F11. Fallout 4 takes F5 and F9 for quick save and load, and Steam
+		// sits on F12.
+		constexpr std::uint32_t kDefaultLogKey = 0x7A;
+
 		InputLayer& TheInputLayer()
 		{
 			static InputLayer layer;
@@ -80,6 +89,33 @@ namespace Menu
 		Settings::DeclareKey(kToggleKeyPath, kDefaultToggleKey)
 			.Label("setting.menu.toggle_key", "Toggle key")
 			.Help("setting.menu.toggle_key.help", "Opens and closes this overlay.");
+
+		// A block with no feature of that name, so the panel draws it as a
+		// general setting without knowing what it is for.
+		Settings::DeclareBool(kMeasurePath, true)
+			.Label("setting.performance.measure", "Measure performance")
+			.Help(
+				"setting.performance.measure.help",
+				"Times each pass on the CPU and the GPU. Off issues no queries at all.");
+
+		Settings::DeclareBool(kHudPath, true)
+			.Label("setting.performance.hud", "Show while playing")
+			.Help(
+				"setting.performance.hud.help",
+				"Draws a small display while this overlay is closed.");
+
+		Settings::DeclareChoice(
+			kCornerPath,
+			"top-right",
+			std::vector<std::string>{ "top-left", "top-right", "bottom-left", "bottom-right" })
+			.Label("setting.performance.corner", "Corner")
+			.Help("setting.performance.corner.help", "Where the small display sits.");
+
+		Settings::DeclareKey(kLogKeyPath, kDefaultLogKey)
+			.Label("setting.performance.log_key", "Write to log")
+			.Help(
+				"setting.performance.log_key.help",
+				"Writes the current numbers to the plugin log.");
 	}
 
 	void TickSystem() noexcept

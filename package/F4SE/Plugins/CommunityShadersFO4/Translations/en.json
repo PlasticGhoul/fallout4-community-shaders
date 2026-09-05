@@ -32,5 +32,13 @@
     "setting.menu.language": "Language",
     "setting.menu.language.help": "Language of this overlay.",
     "setting.menu.toggle_key": "Toggle key",
-    "setting.menu.toggle_key.help": "Opens and closes this overlay."
+    "setting.menu.toggle_key.help": "Opens and closes this overlay.",
+    "setting.performance.corner": "Corner",
+    "setting.performance.corner.help": "Where the small display sits.",
+    "setting.performance.hud": "Show while playing",
+    "setting.performance.hud.help": "Draws a small display while this overlay is closed.",
+    "setting.performance.log_key": "Write to log",
+    "setting.performance.log_key.help": "Writes the current numbers to the plugin log.",
+    "setting.performance.measure": "Measure performance",
+    "setting.performance.measure.help": "Times each pass on the CPU and the GPU. Off issues no queries at all."
 }
