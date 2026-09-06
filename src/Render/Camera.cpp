@@ -3,6 +3,7 @@
 #include "Render/Renderer.h"
 
 #include <RE/B/BSGraphics.h>
+#include <RE/M/Main.h>
 #include <RE/N/NiCamera.h>
 
 #include <REX/W32/DXGI.h>
@@ -253,6 +254,28 @@ namespace Render
 
 		bool g_loggedPerspective = false;
 
+		/// Three rows that are unit length and mutually perpendicular. A camera
+		/// basis is, and a half-written or foreign matrix is not - so this is
+		/// the cheapest thing that can tell them apart.
+		[[nodiscard]] bool IsOrthonormal(const float (&a_axes)[3][3]) noexcept
+		{
+			const auto dot = [&a_axes](int a_lhs, int a_rhs) {
+				return a_axes[a_lhs][0] * a_axes[a_rhs][0] +
+				       a_axes[a_lhs][1] * a_axes[a_rhs][1] +
+				       a_axes[a_lhs][2] * a_axes[a_rhs][2];
+			};
+
+			for (int row = 0; row < 3; ++row) {
+				const auto length = dot(row, row);
+				if (!std::isfinite(length) || length < 0.99f || length > 1.01f) {
+					return false;
+				}
+			}
+
+			return std::abs(dot(0, 1)) < 0.01f && std::abs(dot(0, 2)) < 0.01f &&
+			       std::abs(dot(1, 2)) < 0.01f;
+		}
+
 		/// Fallout 4's fDefaultWorldFOV, horizontal, in degrees. Only used when
 		/// the frustum cannot be trusted, and said so in the log when it is.
 		constexpr float kFallbackHorizontalFov = 70.0f;
@@ -322,35 +345,69 @@ namespace Render
 			return std::nullopt;
 		}
 
-		const auto& camera = state->cameraState;
-		const auto& view = camera.camViewData;
+		// Not BSGraphics::State::cameraState. At the point in the frame where
+		// this runs, that describes the sun's shadow camera and not the
+		// player's: its viewDir and the sun light's direction agree to four
+		// places, which is why every light direction came out along the view
+		// axis and the sweep never moved. Main::WorldRootCamera is the camera
+		// the picture is drawn with, and it is a call into the game rather than
+		// a field to be guessed at. Its id was checked offline against
+		// version-1-11-240-0.bin.
+		auto* const world = RE::Main::WorldRootCamera();
+		if (world == nullptr) {
+			return std::nullopt;
+		}
 
-		float viewMatrix[16]{};
-		std::memcpy(viewMatrix, std::addressof(view.viewMat), sizeof(viewMatrix));
-		if (!IsPlausibleViewProjection(viewMatrix)) {
+		// Rows of worldToCam are the camera's axes in world space; the
+		// translation sits in the fourth column and a direction ignores it.
+		float axes[3][3]{};
+		for (int row = 0; row < 3; ++row) {
+			for (int column = 0; column < 3; ++column) {
+				axes[row][column] = world->worldToCam[row][column];
+			}
+		}
+
+		if (!IsOrthonormal(axes)) {
+			return std::nullopt;
+		}
+
+		// The check that is not circular. Reading viewDir out of the same
+		// struct as the matrix it belongs to proves nothing - it lands in the
+		// centre by construction, whichever camera it is. This asks something
+		// the failure would fail: the camera we draw with must not be looking
+		// straight down the sun, and the shadow camera does exactly that.
+		const auto& shadowView = state->cameraState.camViewData;
+		float sunAxis[3]{};
+		std::memcpy(sunAxis, std::addressof(shadowView.viewDir), sizeof(sunAxis));
+
+		const auto alignment =
+			axes[2][0] * sunAxis[0] + axes[2][1] * sunAxis[1] + axes[2][2] * sunAxis[2];
+
+		if (alignment > 0.999f || alignment < -0.999f) {
+			if (!g_loggedPerspective) {
+				g_loggedPerspective = true;
+				REX::ERROR(
+					"world camera looks straight down the sun ({:.4f}) - this is the shadow "
+					"camera again, refusing it",
+					alignment);
+			}
 			return std::nullopt;
 		}
 
 		const auto aspect = static_cast<float>(a_width) / static_cast<float>(a_height);
 
 		Perspective perspective;
-		bool fromFrustum = false;
-		if (camera.referenceCamera != nullptr) {
-			fromFrustum = FromFrustum(camera.referenceCamera->viewFrustum, aspect, perspective);
-		}
-
+		const bool fromFrustum = FromFrustum(world->viewFrustum, aspect, perspective);
 		if (!fromFrustum) {
 			perspective = FromFallbackFov(aspect);
 		}
 
-		// A direction, so w is zero going in and the view's translation row
-		// never contributes.
-		const auto toView = [&viewMatrix](const float (&a_world)[3], float (&a_out)[3]) {
-			for (int column = 0; column < 3; ++column) {
-				a_out[column] =
-					a_world[0] * viewMatrix[0 * 4 + column] +
-					a_world[1] * viewMatrix[1 * 4 + column] +
-					a_world[2] * viewMatrix[2 * 4 + column];
+		const auto toView = [&axes](const float (&a_world)[3], float (&a_out)[3]) {
+			for (int row = 0; row < 3; ++row) {
+				a_out[row] =
+					axes[row][0] * a_world[0] +
+					axes[row][1] * a_world[1] +
+					axes[row][2] * a_world[2];
 			}
 		};
 
@@ -370,40 +427,28 @@ namespace Render
 		if (!g_loggedPerspective) {
 			g_loggedPerspective = true;
 
-			// The self-check. Whatever the frustum said, the camera's own view
-			// direction has to come out at the centre of the screen - that is
-			// what proves the view matrix and this construction, and it is the
-			// test that should have been written before any of the rest.
-			float forward[3]{};
-			std::memcpy(forward, std::addressof(view.viewDir), sizeof(forward));
-
-			float forwardView[3]{};
-			toView(forward, forwardView);
-
-			std::array<float, 4> forwardClip{};
-			toClip(forwardView, forwardClip);
-
-			const auto x = forwardClip[3] != 0.0f ?
-			                   ((forwardClip[0] / forwardClip[3]) * 0.5f + 0.5f) *
-			                       static_cast<float>(a_width) :
-			                   -1.0f;
-			const auto y = forwardClip[3] != 0.0f ?
-			                   ((forwardClip[1] / forwardClip[3]) * -0.5f + 0.5f) *
-			                       static_cast<float>(a_height) :
-			                   -1.0f;
+			// No self-check here any more. The one that was here asked whether
+			// viewDir lands in the centre, and viewDir is the third column of
+			// the very matrix it was tested against, so it always did - a
+			// tautology dressed as a test. What is worth writing down is what
+			// was actually used, and the sun's place on screen, which the
+			// player can check against the sky.
+			REX::INFO(
+				"camera basis right [{:.3f} {:.3f} {:.3f}] up [{:.3f} {:.3f} {:.3f}] "
+				"forward [{:.3f} {:.3f} {:.3f}], sun alignment {:.3f}",
+				axes[0][0], axes[0][1], axes[0][2],
+				axes[1][0], axes[1][1], axes[1][2],
+				axes[2][0], axes[2][1], axes[2][2],
+				alignment);
 
 			REX::INFO(
-				"projection built {}: scale [{:.4f} {:.4f}], shear [{:.4f} {:.4f}] - "
-				"viewDir lands at [{:.0f} {:.0f}], centre is [{} {}]",
-				fromFrustum ? "from the camera frustum" : "from the fallback field of view",
+				"projection built {}: scale [{:.4f} {:.4f}], shear [{:.4f} {:.4f}], near {:.1f}",
+				fromFrustum ? "from the world camera frustum" : "from the fallback field of view",
 				perspective.scaleX,
 				perspective.scaleY,
 				perspective.shearX,
 				perspective.shearY,
-				x,
-				y,
-				a_width / 2,
-				a_height / 2);
+				world->viewFrustum.near);
 		}
 
 		return clip;
