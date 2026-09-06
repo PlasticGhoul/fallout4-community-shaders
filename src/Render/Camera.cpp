@@ -373,12 +373,23 @@ namespace Render
 		float screenX = 0.0f;
 		float screenY = 0.0f;
 		float depth = 0.0f;
-		const auto inFront = world->WorldPtToScreenPt3(far, screenX, screenY, depth, 1.0e-5f);
 
-		// Bend divides by w and takes its sign for "in front or behind", so a
-		// unit w and the normalised coordinates scaled by it carry exactly the
-		// same information with none of the arithmetic repeated.
-		const auto w = inFront ? 1.0f : -1.0f;
+		// The bool is not "in front" - it reports only that the projection
+		// divided without trouble, and it reads true with the sun squarely
+		// behind the camera. What separates the two is the sign of the depth:
+		// it comes back at about +1 ahead and about -1 behind. Reading the bool
+		// for it left Bend thinking a light behind the player was in front of
+		// them, at a mirrored position, and the sweep collapsed to a single
+		// dispatch - shadows that vanished the moment you turned away from the
+		// sun.
+		static_cast<void>(world->WorldPtToScreenPt3(far, screenX, screenY, depth, 1.0e-5f));
+
+		// Bend divides by w and takes its sign for ahead or behind, so a unit w
+		// and the normalised coordinates scaled by it carry exactly the same
+		// information with none of the arithmetic repeated. Behind the camera,
+		// the coordinates the engine returns are already mirrored through the
+		// centre, which is what Bend expects beside a negative w.
+		const auto w = depth >= 0.0f ? 1.0f : -1.0f;
 
 		return std::array<float, 4>{
 			(screenX * 2.0f - 1.0f) * w,
@@ -423,14 +434,14 @@ namespace Render
 		float ex = 0.0f;
 		float ey = 0.0f;
 		float ez = 0.0f;
-		const auto onScreen = world->WorldPtToScreenPt3(far, ex, ey, ez, 1.0e-5f);
+		static_cast<void>(world->WorldPtToScreenPt3(far, ex, ey, ez, 1.0e-5f));
 
 		REX::INFO(
-			"engine says the sun is at [{:.3f} {:.3f}] depth {:.4f}, in front: {}",
+			"engine says the sun is at [{:.3f} {:.3f}] depth {:.4f}, so it is {}",
 			ex,
 			ey,
 			ez,
-			onScreen ? "yes" : "no");
+			ez >= 0.0f ? "ahead" : "behind");
 	}
 
 	std::optional<std::array<float, 4>> ProjectDirection(
