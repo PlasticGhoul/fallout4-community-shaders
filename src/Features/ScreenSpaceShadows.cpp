@@ -404,53 +404,33 @@ namespace Features
 			0.0f
 		};
 
-		const auto camera = Render::ViewProjection();
-		if (!camera) {
-			return false;
-		}
-
-		const auto& matrix = *camera;
-		for (int column = 0; column < 4; ++column) {
-			a_out.lightProjection[column] =
-				light4[0] * matrix[0 * 4 + column] +
-				light4[1] * matrix[1 * 4 + column] +
-				light4[2] * matrix[2 * 4 + column] +
-				light4[3] * matrix[3 * 4 + column];
-		}
-
 		const int viewport[2] = {
 			static_cast<int>(_mask.Width()),
 			static_cast<int>(_mask.Height())
 		};
 
+		// Built from the view matrix and the camera frustum rather than read
+		// from a projection matrix: Fallout 4 keeps none for the camera it
+		// draws the world with. See Render::ProjectDirection.
+		const auto clip = Render::ProjectDirection(
+			{ light4[0], light4[1], light4[2] }, _mask.Width(), _mask.Height());
+		if (!clip) {
+			return false;
+		}
+
+		for (int column = 0; column < 4; ++column) {
+			a_out.lightProjection[column] = (*clip)[column];
+		}
+
 		a_out.plan = Bend::BuildPlan(a_out.lightProjection, viewport);
 
-		// The sun as a pixel position is what settles whether the matrix is
-		// read the right way round: with the sun on screen it has to land where
-		// the sun is seen. Once a second while the feature is young.
+		// One line a second while the feature is young. The pixel position is
+		// what says the projection is built right: with the sun on screen it
+		// has to land where the sun is seen.
 		if (_draws % kStallInterval == 0) {
-			// Both answers side by side. The field says the sun sits at the
-			// exact centre of the screen every frame with w at zero, whatever
-			// the direction - which cannot be right. The product of the view
-			// and the projection is the other candidate, and one line comparing
-			// them settles which to use without a further run.
-			float computedProjection[4]{};
-			if (const auto computed = Render::ViewProjectionComputed(); computed) {
-				for (int column = 0; column < 4; ++column) {
-					computedProjection[column] =
-						light4[0] * (*computed)[0 * 4 + column] +
-						light4[1] * (*computed)[1 * 4 + column] +
-						light4[2] * (*computed)[2 * 4 + column] +
-						light4[3] * (*computed)[3 * 4 + column];
-				}
-			}
-
-			const auto alternative = Bend::BuildPlan(computedProjection, viewport);
-
 			REX::INFO(
-				"towards sun [{:.3f} {:.3f} {:.3f}], elevation {:.1f} deg | "
-				"field: pixel [{:.0f} {:.0f}] w {:.6f} {} dispatch(es) | "
-				"computed: pixel [{:.0f} {:.0f}] w {:.6f} {} dispatch(es)",
+				"towards sun [{:.3f} {:.3f} {:.3f}], elevation {:.1f} deg, "
+				"at pixel [{:.0f} {:.0f}], w {:.4f}, {} dispatch(es)",
 				light4[0],
 				light4[1],
 				light4[2],
@@ -458,19 +438,7 @@ namespace Features
 				a_out.plan.lightCoordinate[0],
 				a_out.plan.lightCoordinate[1],
 				a_out.lightProjection[3],
-				a_out.plan.count,
-				alternative.lightCoordinate[0],
-				alternative.lightCoordinate[1],
-				computedProjection[3],
-				alternative.count);
-
-			// Periodically, not once. Logging this a single time has now
-			// caught the wrong moment twice - the first draw of a session is
-			// a loading screen, where the sun has no rotation and the camera
-			// no transform, and one sample of a value that changes is not a
-			// measurement. The lesson cost two runs before it stuck.
-			Render::LogCameraMatrices();
-			Render::ProbeCameraMatrices(_mask.Width(), _mask.Height());
+				a_out.plan.count);
 		}
 
 		return a_out.plan.count > 0;

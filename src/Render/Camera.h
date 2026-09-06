@@ -71,4 +71,27 @@ namespace Render
 	/// candidate that does is the one; every candidate that does not is out,
 	/// whatever its entries look like.
 	void ProbeCameraMatrices(std::uint32_t a_width, std::uint32_t a_height) noexcept;
+
+	/// A world direction in homogeneous clip space, which is what Bend's
+	/// dispatch builder wants for a directional light.
+	///
+	/// Built here from the camera's view matrix and its view frustum rather
+	/// than read from a projection matrix, because Fallout 4 keeps none for the
+	/// camera it draws the world with. Everything cameraState offers has a zero
+	/// row where the depth belongs, and the projections in its cache expect a
+	/// different axis order - they answer with the view direction's y where a
+	/// depth should be.
+	///
+	/// The view matrix is sound and was checked: viewDir times it gives
+	/// (0, 0, 1) to four places. The frustum supplies the rest, and left,
+	/// right, top and bottom are far harder for a header to misdescribe than
+	/// sixteen anonymous floats.
+	///
+	/// Returns nothing when neither the frustum nor the fallback can be
+	/// trusted. The first success logs what it used and where it puts the
+	/// camera's own view direction, which has to be the centre of the screen.
+	[[nodiscard]] std::optional<std::array<float, 4>> ProjectDirection(
+		const float (&a_direction)[3],
+		std::uint32_t a_width,
+		std::uint32_t a_height) noexcept;
 }

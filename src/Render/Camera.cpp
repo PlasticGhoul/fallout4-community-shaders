@@ -236,6 +236,179 @@ namespace Render
 		}
 	}
 
+	namespace
+	{
+		/// The four numbers a perspective projection needs, however they were
+		/// arrived at. Scale is the diagonal, shear the off-centre term, which
+		/// is zero for a symmetric frustum and not for a split-screen or a
+		/// jittered one.
+		struct Perspective
+		{
+			float scaleX{ 0.0f };
+			float scaleY{ 0.0f };
+			float shearX{ 0.0f };
+			float shearY{ 0.0f };
+			float depthScale{ 1.0f };
+		};
+
+		bool g_loggedPerspective = false;
+
+		/// Fallout 4's fDefaultWorldFOV, horizontal, in degrees. Only used when
+		/// the frustum cannot be trusted, and said so in the log when it is.
+		constexpr float kFallbackHorizontalFov = 70.0f;
+
+		[[nodiscard]] bool FromFrustum(
+			const RE::NiFrustum& a_frustum,
+			float a_aspect,
+			Perspective& a_out) noexcept
+		{
+			const float values[6]{
+				a_frustum.left, a_frustum.right, a_frustum.top,
+				a_frustum.bottom, a_frustum.near, a_frustum.far
+			};
+
+			for (const auto value : values) {
+				if (!std::isfinite(value)) {
+					return false;
+				}
+			}
+
+			const auto width = a_frustum.right - a_frustum.left;
+			const auto height = a_frustum.top - a_frustum.bottom;
+
+			if (a_frustum.ortho || a_frustum.near <= 0.0f || a_frustum.far <= a_frustum.near ||
+				width <= 0.0f || height <= 0.0f) {
+				return false;
+			}
+
+			// The frustum has to describe the picture we are drawing. An aspect
+			// that disagrees with the render target means this is somebody
+			// else's camera, and that is the whole failure this code exists to
+			// avoid repeating.
+			const auto frustumAspect = width / height;
+			if (frustumAspect < a_aspect * 0.98f || frustumAspect > a_aspect * 1.02f) {
+				return false;
+			}
+
+			a_out.scaleX = 2.0f * a_frustum.near / width;
+			a_out.scaleY = 2.0f * a_frustum.near / height;
+			a_out.shearX = (a_frustum.right + a_frustum.left) / width;
+			a_out.shearY = (a_frustum.top + a_frustum.bottom) / height;
+			a_out.depthScale = a_frustum.far / (a_frustum.far - a_frustum.near);
+
+			return true;
+		}
+
+		[[nodiscard]] Perspective FromFallbackFov(float a_aspect) noexcept
+		{
+			constexpr auto kDegreesToRadians = 0.01745329252f;
+			const auto tanHalf = std::tan(kFallbackHorizontalFov * 0.5f * kDegreesToRadians);
+
+			Perspective perspective;
+			perspective.scaleX = 1.0f / tanHalf;
+			perspective.scaleY = perspective.scaleX * a_aspect;
+
+			return perspective;
+		}
+	}
+
+	std::optional<std::array<float, 4>> ProjectDirection(
+		const float (&a_direction)[3],
+		std::uint32_t a_width,
+		std::uint32_t a_height) noexcept
+	{
+		auto* const state = RE::BSGraphics::State::GetSingleton();
+		if (state == nullptr || g_refused || a_width == 0 || a_height == 0) {
+			return std::nullopt;
+		}
+
+		const auto& camera = state->cameraState;
+		const auto& view = camera.camViewData;
+
+		float viewMatrix[16]{};
+		std::memcpy(viewMatrix, std::addressof(view.viewMat), sizeof(viewMatrix));
+		if (!IsPlausibleViewProjection(viewMatrix)) {
+			return std::nullopt;
+		}
+
+		const auto aspect = static_cast<float>(a_width) / static_cast<float>(a_height);
+
+		Perspective perspective;
+		bool fromFrustum = false;
+		if (camera.referenceCamera != nullptr) {
+			fromFrustum = FromFrustum(camera.referenceCamera->viewFrustum, aspect, perspective);
+		}
+
+		if (!fromFrustum) {
+			perspective = FromFallbackFov(aspect);
+		}
+
+		// A direction, so w is zero going in and the view's translation row
+		// never contributes.
+		const auto toView = [&viewMatrix](const float (&a_world)[3], float (&a_out)[3]) {
+			for (int column = 0; column < 3; ++column) {
+				a_out[column] =
+					a_world[0] * viewMatrix[0 * 4 + column] +
+					a_world[1] * viewMatrix[1 * 4 + column] +
+					a_world[2] * viewMatrix[2 * 4 + column];
+			}
+		};
+
+		const auto toClip = [&perspective](const float (&a_view)[3], std::array<float, 4>& a_out) {
+			a_out[0] = a_view[0] * perspective.scaleX + a_view[2] * perspective.shearX;
+			a_out[1] = a_view[1] * perspective.scaleY + a_view[2] * perspective.shearY;
+			a_out[2] = a_view[2] * perspective.depthScale;
+			a_out[3] = a_view[2];
+		};
+
+		float inView[3]{};
+		toView(a_direction, inView);
+
+		std::array<float, 4> clip{};
+		toClip(inView, clip);
+
+		if (!g_loggedPerspective) {
+			g_loggedPerspective = true;
+
+			// The self-check. Whatever the frustum said, the camera's own view
+			// direction has to come out at the centre of the screen - that is
+			// what proves the view matrix and this construction, and it is the
+			// test that should have been written before any of the rest.
+			float forward[3]{};
+			std::memcpy(forward, std::addressof(view.viewDir), sizeof(forward));
+
+			float forwardView[3]{};
+			toView(forward, forwardView);
+
+			std::array<float, 4> forwardClip{};
+			toClip(forwardView, forwardClip);
+
+			const auto x = forwardClip[3] != 0.0f ?
+			                   ((forwardClip[0] / forwardClip[3]) * 0.5f + 0.5f) *
+			                       static_cast<float>(a_width) :
+			                   -1.0f;
+			const auto y = forwardClip[3] != 0.0f ?
+			                   ((forwardClip[1] / forwardClip[3]) * -0.5f + 0.5f) *
+			                       static_cast<float>(a_height) :
+			                   -1.0f;
+
+			REX::INFO(
+				"projection built {}: scale [{:.4f} {:.4f}], shear [{:.4f} {:.4f}] - "
+				"viewDir lands at [{:.0f} {:.0f}], centre is [{} {}]",
+				fromFrustum ? "from the camera frustum" : "from the fallback field of view",
+				perspective.scaleX,
+				perspective.scaleY,
+				perspective.shearX,
+				perspective.shearY,
+				x,
+				y,
+				a_width / 2,
+				a_height / 2);
+		}
+
+		return clip;
+	}
+
 	std::optional<std::array<float, 16>> ViewProjectionComputed() noexcept
 	{
 		auto* const state = RE::BSGraphics::State::GetSingleton();
