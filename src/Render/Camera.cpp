@@ -399,42 +399,42 @@ namespace Render
 			return;
 		}
 
-		const RE::NiPoint3 direction{ a_direction[0], a_direction[1], a_direction[2] };
 		const auto& transform = world->GetWorldTransform();
-		const auto inverted = transform.Invert().rotate * direction;
-		const auto plain = transform.rotate * direction;
+		const auto& rotate = transform.rotate;
 
-		float projection[16]{};
-		for (int row = 0; row < 4; ++row) {
-			for (int column = 0; column < 4; ++column) {
-				projection[row * 4 + column] = world->worldToCam[row][column];
-			}
-		}
+		// A rotation that only permutes a vector is an axis convention, not an
+		// orientation. Aiming at the sun produced exactly that - the world
+		// direction came back with its components cycled - so this says plainly
+		// whether the camera node carries the player's heading at all.
+		REX::INFO(
+			"world camera rotate: [{:.3f} {:.3f} {:.3f}] [{:.3f} {:.3f} {:.3f}] "
+			"[{:.3f} {:.3f} {:.3f}], at [{:.1f} {:.1f} {:.1f}]",
+			rotate.entry[0][0], rotate.entry[0][1], rotate.entry[0][2],
+			rotate.entry[1][0], rotate.entry[1][1], rotate.entry[1][2],
+			rotate.entry[2][0], rotate.entry[2][1], rotate.entry[2][2],
+			transform.translate.x, transform.translate.y, transform.translate.z);
 
-		const auto screen = [&projection](const RE::NiPoint3& a_camera) {
-			float out[4]{};
-			for (int row = 0; row < 4; ++row) {
-				out[row] =
-					projection[row * 4 + 0] * a_camera.x +
-					projection[row * 4 + 1] * a_camera.y +
-					projection[row * 4 + 2] * a_camera.z;
-			}
-
-			return out[3] != 0.0f ?
-			           std::pair{ out[0] / out[3] * 0.5f + 0.5f, out[1] / out[3] * -0.5f + 0.5f } :
-			           std::pair{ -9.0f, -9.0f };
+		// The engine's own routine, as the arbiter. It uses the same matrix and
+		// the same port the game does, with the game's conventions, so its
+		// answer settles what ours should be without another convention to
+		// guess at. A point far along the direction stands in for the sun.
+		const RE::NiPoint3 far{
+			transform.translate.x + a_direction[0] * 100000.0f,
+			transform.translate.y + a_direction[1] * 100000.0f,
+			transform.translate.z + a_direction[2] * 100000.0f
 		};
 
-		const auto [ix, iy] = screen(inverted);
-		const auto [px, py] = screen(plain);
+		float ex = 0.0f;
+		float ey = 0.0f;
+		float ez = 0.0f;
+		const auto onScreen = world->WorldPtToScreenPt3(far, ex, ey, ez, 1.0e-5f);
 
-		// Logged from the caller's own periodic tick, never once. Three
-		// one-shot logs in this file have now sampled a loading screen and said
-		// nothing; a value that changes has to be watched, not glimpsed.
 		REX::INFO(
-			"sun on screen: inverted [{:.3f} {:.3f}], plain [{:.3f} {:.3f}] - "
-			"looking at the sun, the right one reads 0.5 0.5",
-			ix, iy, px, py);
+			"engine says the sun is at [{:.3f} {:.3f}] depth {:.4f}, in front: {}",
+			ex,
+			ey,
+			ez,
+			onScreen ? "yes" : "no");
 	}
 
 	std::optional<std::array<float, 4>> ProjectDirection(
