@@ -338,7 +338,7 @@ namespace Render
 		}
 	}
 
-	std::optional<std::array<float, 4>> ProjectPoint(const float (&a_point)[3]) noexcept
+	std::optional<std::array<float, 4>> ProjectPoint(const float (&a_direction)[3]) noexcept
 	{
 		auto* const world = RE::Main::WorldRootCamera();
 		if (world == nullptr) {
@@ -349,12 +349,15 @@ namespace Render
 			return std::nullopt;
 		}
 
-		// worldToCam carries no rotation - it is the projection alone, camera
-		// space to clip, in Bethesda's axis order: x to x, z to y, y to depth,
-		// with the near plane at 15. Whatever its name says. The orientation
-		// lives where every NiAVObject keeps it, in the camera node's own world
-		// transform, and inverting that is the library's own arithmetic rather
-		// than a convention for this code to guess at a sixth time.
+		// A direction, never a point. The camera node reads as being at
+		// [0 0 128] while the sun's node sits at eighty thousand units out:
+		// Fallout 4 rebases the world around the camera, so those two are not
+		// in the same space and subtracting one from the other carries the
+		// player's absolute position in as an error the size of the signal.
+		//
+		// A direction is immune to all of it. With the fourth component zero
+		// every translation term of the projection drops out, and what is left
+		// is the rotation and the two scales.
 		float projection[16]{};
 		for (int row = 0; row < 4; ++row) {
 			for (int column = 0; column < 4; ++column) {
@@ -370,77 +373,68 @@ namespace Render
 			return std::nullopt;
 		}
 
-		const RE::NiPoint3 point{ a_point[0], a_point[1], a_point[2] };
-		const auto inCamera = world->GetWorldTransform().Invert() * point;
+		// worldToCam holds no rotation - it is camera space to clip, in
+		// Bethesda's axis order with the near plane at 15. The orientation
+		// lives in the camera node's own world transform, and inverting it is
+		// the library's arithmetic rather than a convention to guess at.
+		const RE::NiPoint3 direction{ a_direction[0], a_direction[1], a_direction[2] };
+		const auto inverse = world->GetWorldTransform().Invert();
+		const auto inCamera = inverse.rotate * direction;
 
-		const auto toClip = [&projection](const RE::NiPoint3& a_camera) {
-			const float v[4]{ a_camera.x, a_camera.y, a_camera.z, 1.0f };
-
-			std::array<float, 4> out{};
-			for (int row = 0; row < 4; ++row) {
-				out[static_cast<std::size_t>(row)] =
-					projection[row * 4 + 0] * v[0] +
-					projection[row * 4 + 1] * v[1] +
-					projection[row * 4 + 2] * v[2] +
-					projection[row * 4 + 3] * v[3];
-			}
-
-			return out;
-		};
-
-		const auto clip = toClip(inCamera);
-
-		if (!g_loggedPerspective) {
-			g_loggedPerspective = true;
-
-			// Both readings, once. The library's Invert is the one in use; the
-			// other is the rotation applied without inverting, which is the
-			// mistake this code would otherwise make silently. Aiming at the
-			// sun makes the right one read as the centre of the screen, and
-			// that is a check nothing here can fake.
-			const auto& transform = world->GetWorldTransform();
-			const RE::NiPoint3 offset{
-				point.x - transform.translate.x,
-				point.y - transform.translate.y,
-				point.z - transform.translate.z
-			};
-
-			const auto alternative = toClip(transform.rotate * offset);
-
-			const auto pixel = [](const std::array<float, 4>& a_clip) {
-				return a_clip[3] != 0.0f ?
-				           std::pair{ (a_clip[0] / a_clip[3] * 0.5f + 0.5f),
-							   (a_clip[1] / a_clip[3] * -0.5f + 0.5f) } :
-				           std::pair{ -9.0f, -9.0f };
-			};
-
-			const auto [ix, iy] = pixel(clip);
-			const auto [ax, ay] = pixel(alternative);
-
-			REX::INFO(
-				"worldToCam rows: [{:.4f} {:.4f} {:.4f} {:.1f}] [{:.4f} {:.4f} {:.4f} {:.1f}] "
-				"[{:.4f} {:.4f} {:.4f} {:.1f}] [{:.4f} {:.4f} {:.4f} {:.1f}]",
-				projection[0], projection[1], projection[2], projection[3],
-				projection[4], projection[5], projection[6], projection[7],
-				projection[8], projection[9], projection[10], projection[11],
-				projection[12], projection[13], projection[14], projection[15]);
-
-			REX::INFO(
-				"camera at [{:.1f} {:.1f} {:.1f}], sun in camera space [{:.1f} {:.1f} {:.1f}]",
-				transform.translate.x,
-				transform.translate.y,
-				transform.translate.z,
-				inCamera.x,
-				inCamera.y,
-				inCamera.z);
-
-			REX::INFO(
-				"sun in normalised screen: inverted [{:.3f} {:.3f}] w {:.1f}, "
-				"not inverted [{:.3f} {:.3f}] w {:.1f} - aim at the sun, the right one reads 0.5 0.5",
-				ix, iy, clip[3], ax, ay, alternative[3]);
+		std::array<float, 4> clip{};
+		for (int row = 0; row < 4; ++row) {
+			clip[static_cast<std::size_t>(row)] =
+				projection[row * 4 + 0] * inCamera.x +
+				projection[row * 4 + 1] * inCamera.y +
+				projection[row * 4 + 2] * inCamera.z;
 		}
 
 		return clip;
+	}
+
+	void LogProjectionSample(const float (&a_direction)[3]) noexcept
+	{
+		auto* const world = RE::Main::WorldRootCamera();
+		if (world == nullptr) {
+			return;
+		}
+
+		const RE::NiPoint3 direction{ a_direction[0], a_direction[1], a_direction[2] };
+		const auto& transform = world->GetWorldTransform();
+		const auto inverted = transform.Invert().rotate * direction;
+		const auto plain = transform.rotate * direction;
+
+		float projection[16]{};
+		for (int row = 0; row < 4; ++row) {
+			for (int column = 0; column < 4; ++column) {
+				projection[row * 4 + column] = world->worldToCam[row][column];
+			}
+		}
+
+		const auto screen = [&projection](const RE::NiPoint3& a_camera) {
+			float out[4]{};
+			for (int row = 0; row < 4; ++row) {
+				out[row] =
+					projection[row * 4 + 0] * a_camera.x +
+					projection[row * 4 + 1] * a_camera.y +
+					projection[row * 4 + 2] * a_camera.z;
+			}
+
+			return out[3] != 0.0f ?
+			           std::pair{ out[0] / out[3] * 0.5f + 0.5f, out[1] / out[3] * -0.5f + 0.5f } :
+			           std::pair{ -9.0f, -9.0f };
+		};
+
+		const auto [ix, iy] = screen(inverted);
+		const auto [px, py] = screen(plain);
+
+		// Logged from the caller's own periodic tick, never once. Three
+		// one-shot logs in this file have now sampled a loading screen and said
+		// nothing; a value that changes has to be watched, not glimpsed.
+		REX::INFO(
+			"sun on screen: inverted [{:.3f} {:.3f}], plain [{:.3f} {:.3f}] - "
+			"looking at the sun, the right one reads 0.5 0.5",
+			ix, iy, px, py);
 	}
 
 	std::optional<std::array<float, 4>> ProjectDirection(

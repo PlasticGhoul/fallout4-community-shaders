@@ -422,14 +422,14 @@ namespace Features
 			static_cast<int>(_mask.Height())
 		};
 
-		// The sun's own billboard, projected through the world camera's
-		// worldToCam. That is where the engine draws the sun, so it is where
-		// the sun is on screen - by construction rather than by a chain of
-		// assumptions about axes and fields of view. Bend takes a point as
-		// readily as a direction, and at this distance the difference does not
-		// arise.
-		const float sunPoint[3]{ sunPosition.x, sunPosition.y, sunPosition.z };
-		const auto clip = Render::ProjectPoint(sunPoint);
+		// The direction towards the sun, not its billboard's position. Fallout 4
+		// rebases the world around the camera - the camera node reads as being
+		// at [0 0 128] while the sun's node sits eighty thousand units out - so
+		// the two are not in the same space and the difference between them
+		// carries the player's absolute position as an error. A direction is
+		// immune to that, and to the translation terms of the projection.
+		const float sunDirection[3]{ light4[0], light4[1], light4[2] };
+		const auto clip = Render::ProjectPoint(sunDirection);
 		if (!clip) {
 			return false;
 		}
@@ -444,6 +444,7 @@ namespace Features
 		// what says the projection is built right: with the sun on screen it
 		// has to land where the sun is seen.
 		if (_draws % kStallInterval == 0) {
+			Render::LogProjectionSample(sunDirection);
 			REX::INFO(
 				"towards sun [{:.3f} {:.3f} {:.3f}], elevation {:.1f} deg, "
 				"at pixel [{:.0f} {:.0f}], w {:.4f}, {} dispatch(es)",

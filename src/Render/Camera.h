@@ -111,5 +111,12 @@ namespace Render
 	/// the sun, a hundred and twenty thousand units out, behaves as a
 	/// directional light regardless.
 	[[nodiscard]] std::optional<std::array<float, 4>> ProjectPoint(
-		const float (&a_point)[3]) noexcept;
+		const float (&a_direction)[3]) noexcept;
+
+	/// Writes where the sun lands on screen under both readings of the camera
+	/// rotation, the inverted one and the plain one.
+	///
+	/// Called from the caller's own periodic tick, never once: three one-shot
+	/// logs in this file have sampled a loading screen and said nothing.
+	void LogProjectionSample(const float (&a_direction)[3]) noexcept;
 }
