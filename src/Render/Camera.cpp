@@ -384,12 +384,44 @@ namespace Render
 		// sun.
 		static_cast<void>(world->WorldPtToScreenPt3(far, screenX, screenY, depth, 1.0e-5f));
 
-		// Bend divides by w and takes its sign for ahead or behind, so a unit w
-		// and the normalised coordinates scaled by it carry exactly the same
-		// information with none of the arithmetic repeated. Behind the camera,
-		// the coordinates the engine returns are already mirrored through the
-		// centre, which is what Bend expects beside a negative w.
-		const auto w = depth >= 0.0f ? 1.0f : -1.0f;
+		// The real w, not just its sign. Bend clamps this very value away from
+		// zero so that the divide stays finite as a light crosses the plane of
+		// the screen; handed a fixed plus or minus one it has nothing to clamp,
+		// and the light coordinate jumps from one end of the world to the other
+		// in a single frame. That is the dark flash at the moment the sun
+		// passes from in front of the player to behind.
+		//
+		// For a direction, w is the cosine between it and the camera's forward
+		// axis: continuous, and it changes sign exactly where the flash was.
+		// Camera space has y forward - worldToCam's fourth row is (0, 1, 0) -
+		// so forward in world space is the second column of the rotation.
+		const auto& rotate = world->GetWorldTransform().rotate;
+		const float forward[3]{
+			rotate.entry[0][1],
+			rotate.entry[1][1],
+			rotate.entry[2][1]
+		};
+
+		const auto w =
+			a_direction[0] * forward[0] +
+			a_direction[1] * forward[1] +
+			a_direction[2] * forward[2];
+
+		// Its sign has to agree with the depth the engine reported. They are
+		// worked out from different things - a dot product here, the engine's
+		// own projection there - so a disagreement means the forward axis is
+		// the wrong column, and that is worth saying rather than drawing.
+		if ((w >= 0.0f) != (depth >= 0.0f)) {
+			if (!g_loggedRefusal) {
+				g_loggedRefusal = true;
+				REX::ERROR(
+					"camera forward disagrees with the engine: cosine {:.4f} against depth "
+					"{:.4f} - the forward axis is not this column",
+					w,
+					depth);
+			}
+			return std::nullopt;
+		}
 
 		return std::array<float, 4>{
 			(screenX * 2.0f - 1.0f) * w,
