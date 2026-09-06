@@ -257,6 +257,10 @@ namespace Render
 		bool g_loggedPerspective = false;
 		bool g_loggedRefusal = false;
 
+		/// Far enough that the sun behaves as a directional light and near
+		/// enough to stay well inside the range of a float.
+		constexpr float kSunDistance = 100000.0f;
+
 		/// Three rows that are unit length and mutually perpendicular. A camera
 		/// basis is, and a half-written or foreign matrix is not - so this is
 		/// the cheapest thing that can tell them apart.
@@ -349,47 +353,39 @@ namespace Render
 			return std::nullopt;
 		}
 
-		// A direction, never a point. The camera node reads as being at
-		// [0 0 128] while the sun's node sits at eighty thousand units out:
-		// Fallout 4 rebases the world around the camera, so those two are not
-		// in the same space and subtracting one from the other carries the
-		// player's absolute position in as an error the size of the signal.
+		// The engine's own routine, not ours. Five attempts at doing this by
+		// hand each failed on a different convention - which matrix, which
+		// axis order, which way round the rotation, which space the position
+		// was in - and NiCamera::WorldPtToScreenPt3 knows all of them because
+		// it is what the game uses. Aiming at the sun, it answered 0.502
+		// across, and the height it reports follows the sun as it rises.
 		//
-		// A direction is immune to all of it. With the fourth component zero
-		// every translation term of the projection drops out, and what is left
-		// is the rotation and the two scales.
-		float projection[16]{};
-		for (int row = 0; row < 4; ++row) {
-			for (int column = 0; column < 4; ++column) {
-				projection[row * 4 + column] = world->worldToCam[row][column];
-			}
-		}
+		// A point far along the direction stands in for the sun. Starting from
+		// the camera keeps it clear of the rebasing that makes the sun node's
+		// own position unusable here.
+		const auto& origin = world->GetWorldTransform().translate;
+		const RE::NiPoint3 far{
+			origin.x + a_direction[0] * kSunDistance,
+			origin.y + a_direction[1] * kSunDistance,
+			origin.z + a_direction[2] * kSunDistance
+		};
 
-		if (!IsPlausibleViewProjection(projection)) {
-			if (!g_loggedRefusal) {
-				g_loggedRefusal = true;
-				REX::ERROR("world camera: worldToCam is empty or not finite");
-			}
-			return std::nullopt;
-		}
+		float screenX = 0.0f;
+		float screenY = 0.0f;
+		float depth = 0.0f;
+		const auto inFront = world->WorldPtToScreenPt3(far, screenX, screenY, depth, 1.0e-5f);
 
-		// worldToCam holds no rotation - it is camera space to clip, in
-		// Bethesda's axis order with the near plane at 15. The orientation
-		// lives in the camera node's own world transform, and inverting it is
-		// the library's arithmetic rather than a convention to guess at.
-		const RE::NiPoint3 direction{ a_direction[0], a_direction[1], a_direction[2] };
-		const auto inverse = world->GetWorldTransform().Invert();
-		const auto inCamera = inverse.rotate * direction;
+		// Bend divides by w and takes its sign for "in front or behind", so a
+		// unit w and the normalised coordinates scaled by it carry exactly the
+		// same information with none of the arithmetic repeated.
+		const auto w = inFront ? 1.0f : -1.0f;
 
-		std::array<float, 4> clip{};
-		for (int row = 0; row < 4; ++row) {
-			clip[static_cast<std::size_t>(row)] =
-				projection[row * 4 + 0] * inCamera.x +
-				projection[row * 4 + 1] * inCamera.y +
-				projection[row * 4 + 2] * inCamera.z;
-		}
-
-		return clip;
+		return std::array<float, 4>{
+			(screenX * 2.0f - 1.0f) * w,
+			(screenY * 2.0f - 1.0f) * w,
+			depth * w,
+			w
+		};
 	}
 
 	void LogProjectionSample(const float (&a_direction)[3]) noexcept
