@@ -5,6 +5,7 @@
 #include <RE/B/BSGraphics.h>
 #include <RE/M/Main.h>
 #include <RE/N/NiCamera.h>
+#include <RE/N/NiTransform.h>
 
 #include <REX/W32/DXGI.h>
 
@@ -12,6 +13,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace Render
 {
@@ -347,42 +349,95 @@ namespace Render
 			return std::nullopt;
 		}
 
-		float matrix[16]{};
+		// worldToCam carries no rotation - it is the projection alone, camera
+		// space to clip, in Bethesda's axis order: x to x, z to y, y to depth,
+		// with the near plane at 15. Whatever its name says. The orientation
+		// lives where every NiAVObject keeps it, in the camera node's own world
+		// transform, and inverting that is the library's own arithmetic rather
+		// than a convention for this code to guess at a sixth time.
+		float projection[16]{};
 		for (int row = 0; row < 4; ++row) {
 			for (int column = 0; column < 4; ++column) {
-				matrix[row * 4 + column] = world->worldToCam[row][column];
+				projection[row * 4 + column] = world->worldToCam[row][column];
 			}
 		}
 
-		if (!IsPlausibleViewProjection(matrix)) {
+		if (!IsPlausibleViewProjection(projection)) {
 			if (!g_loggedRefusal) {
 				g_loggedRefusal = true;
-				REX::ERROR("world camera: worldToCam is empty or carries a value that is not finite");
+				REX::ERROR("world camera: worldToCam is empty or not finite");
 			}
 			return std::nullopt;
 		}
 
-		// Column vector on the right, which is what the translation sitting in
-		// the fourth column says it is, and what the engine's own
-		// WorldPtToScreenPt3 does with the same matrix.
-		std::array<float, 4> clip{};
-		for (int row = 0; row < 4; ++row) {
-			clip[static_cast<std::size_t>(row)] =
-				matrix[row * 4 + 0] * a_point[0] +
-				matrix[row * 4 + 1] * a_point[1] +
-				matrix[row * 4 + 2] * a_point[2] +
-				matrix[row * 4 + 3];
-		}
+		const RE::NiPoint3 point{ a_point[0], a_point[1], a_point[2] };
+		const auto inCamera = world->GetWorldTransform().Invert() * point;
+
+		const auto toClip = [&projection](const RE::NiPoint3& a_camera) {
+			const float v[4]{ a_camera.x, a_camera.y, a_camera.z, 1.0f };
+
+			std::array<float, 4> out{};
+			for (int row = 0; row < 4; ++row) {
+				out[static_cast<std::size_t>(row)] =
+					projection[row * 4 + 0] * v[0] +
+					projection[row * 4 + 1] * v[1] +
+					projection[row * 4 + 2] * v[2] +
+					projection[row * 4 + 3] * v[3];
+			}
+
+			return out;
+		};
+
+		const auto clip = toClip(inCamera);
 
 		if (!g_loggedPerspective) {
 			g_loggedPerspective = true;
+
+			// Both readings, once. The library's Invert is the one in use; the
+			// other is the rotation applied without inverting, which is the
+			// mistake this code would otherwise make silently. Aiming at the
+			// sun makes the right one read as the centre of the screen, and
+			// that is a check nothing here can fake.
+			const auto& transform = world->GetWorldTransform();
+			const RE::NiPoint3 offset{
+				point.x - transform.translate.x,
+				point.y - transform.translate.y,
+				point.z - transform.translate.z
+			};
+
+			const auto alternative = toClip(transform.rotate * offset);
+
+			const auto pixel = [](const std::array<float, 4>& a_clip) {
+				return a_clip[3] != 0.0f ?
+				           std::pair{ (a_clip[0] / a_clip[3] * 0.5f + 0.5f),
+							   (a_clip[1] / a_clip[3] * -0.5f + 0.5f) } :
+				           std::pair{ -9.0f, -9.0f };
+			};
+
+			const auto [ix, iy] = pixel(clip);
+			const auto [ax, ay] = pixel(alternative);
+
 			REX::INFO(
 				"worldToCam rows: [{:.4f} {:.4f} {:.4f} {:.1f}] [{:.4f} {:.4f} {:.4f} {:.1f}] "
 				"[{:.4f} {:.4f} {:.4f} {:.1f}] [{:.4f} {:.4f} {:.4f} {:.1f}]",
-				matrix[0], matrix[1], matrix[2], matrix[3],
-				matrix[4], matrix[5], matrix[6], matrix[7],
-				matrix[8], matrix[9], matrix[10], matrix[11],
-				matrix[12], matrix[13], matrix[14], matrix[15]);
+				projection[0], projection[1], projection[2], projection[3],
+				projection[4], projection[5], projection[6], projection[7],
+				projection[8], projection[9], projection[10], projection[11],
+				projection[12], projection[13], projection[14], projection[15]);
+
+			REX::INFO(
+				"camera at [{:.1f} {:.1f} {:.1f}], sun in camera space [{:.1f} {:.1f} {:.1f}]",
+				transform.translate.x,
+				transform.translate.y,
+				transform.translate.z,
+				inCamera.x,
+				inCamera.y,
+				inCamera.z);
+
+			REX::INFO(
+				"sun in normalised screen: inverted [{:.3f} {:.3f}] w {:.1f}, "
+				"not inverted [{:.3f} {:.3f}] w {:.1f} - aim at the sun, the right one reads 0.5 0.5",
+				ix, iy, clip[3], ax, ay, alternative[3]);
 		}
 
 		return clip;
