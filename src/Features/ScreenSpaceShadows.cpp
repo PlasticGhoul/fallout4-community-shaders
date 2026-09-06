@@ -99,12 +99,21 @@ namespace Features
 				"Multiplier for the number of samples along a ray. Higher reaches further and "
 				"costs more. Scales with the render resolution.");
 
-		Settings::DeclareSlider("ScreenSpaceShadows/surfaceThickness", 0.02, 0.005, 0.05)
+		// Bend's own recommendation is 0.005, and the range runs well below it.
+		// The 0.02 default and the 0.005 floor the Skyrim version uses are
+		// tuned for Skyrim's depth distribution, and Fallout 4's is not the
+		// same: the projection puts the near plane at 15 with no far plane, so
+		// z is 1 - 15/d and everything past a few hundred units is already
+		// crowded against 1. Bend measures this thickness against the distance
+		// from the sample to the far value, and caps its depth scale at
+		// 1/thickness - 33 at the Skyrim default against 200 at Bend's - so a
+		// value tuned elsewhere turns most of the scene into an occluder.
+		Settings::DeclareSlider("ScreenSpaceShadows/surfaceThickness", 0.005, 0.0005, 0.05)
 			.Label("feature.screen_space_shadows.surface_thickness", "Surface Thickness")
 			.Help(
 				"feature.screen_space_shadows.surface_thickness_help",
 				"How thick surfaces are assumed to be. Lower gives thinner, more precise "
-				"shadows.");
+				"shadows; too high and everything casts one.");
 
 		Settings::DeclareSlider("ScreenSpaceShadows/bilinearThreshold", 0.02, 0.02, 1.0)
 			.Label("feature.screen_space_shadows.bilinear_threshold", "Bilinear Threshold")

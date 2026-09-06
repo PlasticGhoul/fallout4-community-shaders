@@ -19,7 +19,7 @@
     "feature.screen_space_shadows.shadow_contrast": "Shadow Contrast",
     "feature.screen_space_shadows.shadow_contrast_help": "How hard the transition into shadow is. Higher gives sharper edges.",
     "feature.screen_space_shadows.surface_thickness": "Surface Thickness",
-    "feature.screen_space_shadows.surface_thickness_help": "How thick surfaces are assumed to be. Lower gives thinner, more precise shadows.",
+    "feature.screen_space_shadows.surface_thickness_help": "How thick surfaces are assumed to be. Lower gives thinner, more precise shadows; too high and everything casts one.",
     "feature.shader_census.help": "Counts the techniques of the engine's thirteen shader classes and reports what the deferred passes have bound. A diagnostic with no effect on the picture: it patches the engine's shader tables while it runs, and it has nothing left to say once it has reported.",
     "feature.shader_census.name": "Shader Census",
     "feature.shader_census.names": "Ask the engine for technique names",
