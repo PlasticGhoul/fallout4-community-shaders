@@ -44,4 +44,19 @@ namespace Render
 	/// combined view projection because the view rotation would bury the two
 	/// terms that carry the answer.
 	void LogProjection() noexcept;
+
+	/// The view projection worked out here from the view and the projection,
+	/// rather than read from the field that claims to hold it already.
+	///
+	/// It exists because the field does not hold it. A light direction
+	/// multiplied by what viewProjMat contains comes out zero in x, y and w
+	/// whatever the direction is, which puts the light at the exact centre of
+	/// the screen every frame and makes the sweep independent of where the sun
+	/// actually is.
+	[[nodiscard]] std::optional<std::array<float, 16>> ViewProjectionComputed() noexcept;
+
+	/// Writes all four matrices ViewData carries - view, projection, the
+	/// combined one and the unjittered combined one - so that which of them is
+	/// filled can be read off rather than guessed at.
+	void LogCameraMatrices() noexcept;
 }

@@ -70,6 +70,82 @@ namespace Render
 		return anyNonZero;
 	}
 
+	namespace
+	{
+		void LogMatrix(const char* a_what, const void* a_rows) noexcept
+		{
+			float m[16]{};
+			std::memcpy(m, a_rows, sizeof(m));
+
+			REX::INFO(
+				"{}: [{:.4f} {:.4f} {:.4f} {:.4f}] [{:.4f} {:.4f} {:.4f} {:.4f}] "
+				"[{:.4f} {:.4f} {:.4f} {:.4f}] [{:.4f} {:.4f} {:.4f} {:.4f}]",
+				a_what,
+				m[0], m[1], m[2], m[3],
+				m[4], m[5], m[6], m[7],
+				m[8], m[9], m[10], m[11],
+				m[12], m[13], m[14], m[15]);
+		}
+
+		/// Row vector convention: a point goes in on the left, so the view is
+		/// applied before the projection and the product is view * proj.
+		void Multiply(const float (&a_lhs)[16], const float (&a_rhs)[16], float (&a_out)[16])
+		{
+			for (int row = 0; row < 4; ++row) {
+				for (int column = 0; column < 4; ++column) {
+					float sum = 0.0f;
+					for (int k = 0; k < 4; ++k) {
+						sum += a_lhs[row * 4 + k] * a_rhs[k * 4 + column];
+					}
+					a_out[row * 4 + column] = sum;
+				}
+			}
+		}
+	}
+
+	void LogCameraMatrices() noexcept
+	{
+		auto* const state = RE::BSGraphics::State::GetSingleton();
+		if (state == nullptr) {
+			return;
+		}
+
+		const auto& view = state->cameraState.camViewData;
+		LogMatrix("camera view", std::addressof(view.viewMat));
+		LogMatrix("camera proj", std::addressof(view.projMat));
+		LogMatrix("camera viewProj", std::addressof(view.viewProjMat));
+		LogMatrix("camera viewProjUnjittered", std::addressof(view.viewProjUnjittered));
+	}
+
+	std::optional<std::array<float, 16>> ViewProjectionComputed() noexcept
+	{
+		auto* const state = RE::BSGraphics::State::GetSingleton();
+		if (state == nullptr || g_refused) {
+			return std::nullopt;
+		}
+
+		const auto& view = state->cameraState.camViewData;
+
+		float viewMatrix[16]{};
+		float projMatrix[16]{};
+		std::memcpy(viewMatrix, std::addressof(view.viewMat), sizeof(viewMatrix));
+		std::memcpy(projMatrix, std::addressof(view.projMat), sizeof(projMatrix));
+
+		if (!IsPlausibleViewProjection(viewMatrix) || !IsPlausibleViewProjection(projMatrix)) {
+			return std::nullopt;
+		}
+
+		float product[16]{};
+		Multiply(viewMatrix, projMatrix, product);
+
+		std::array<float, 16> result{};
+		for (std::size_t i = 0; i < result.size(); ++i) {
+			result[i] = product[i];
+		}
+
+		return result;
+	}
+
 	void LogProjection() noexcept
 	{
 		auto* const state = RE::BSGraphics::State::GetSingleton();
