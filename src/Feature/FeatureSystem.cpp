@@ -3,6 +3,7 @@
 #include "Feature/FeatureRegistry.h"
 #include "Features/FrameCounter.h"
 #include "Features/ImagespaceTint.h"
+#include "Features/ScreenSpaceShadows.h"
 #include "Features/ShaderCensus.h"
 #include "Render/Profiler.h"
 #include "Settings/Settings.h"
@@ -23,6 +24,11 @@ namespace Features
 			// that writes into engine memory: teardown runs in reverse, and the
 			// entries should go back after the shader pointer does.
 			TheRegistry().Register(std::make_unique<ShaderCensus>());
+
+			// Subscribes to the frame phase and owns D3D resources of its own,
+			// but writes into no engine memory - so it goes back after the
+			// shader pointer does.
+			TheRegistry().Register(std::make_unique<ScreenSpaceShadows>());
 
 			// Registered last so that it is torn down first: teardown runs in
 			// reverse, and the one that writes into engine memory should be the
