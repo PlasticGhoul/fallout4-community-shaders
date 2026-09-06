@@ -330,18 +330,26 @@ namespace Features
 		// the world had not been placed yet. One sample of a value that
 		// changes is not a measurement.
 		if (_draws % kStallInterval == 0) {
+			// All twelve floats, not the nine a 3x3 would have. Two readings of
+			// this structure have now missed: the column this code takes gives
+			// a direction with no vertical component at all, and rows one and
+			// two read as an exact identity that cannot be orthonormal beside
+			// row zero. Once an assumption about a layout is wrong twice, the
+			// answer is a raw dump rather than a third guess - the lesson C
+			// paid for. NiMatrix3 is NiPoint4 entry[3], so the fourth column
+			// is in here as well.
+			const auto& transform = light->GetWorldTransform();
 			REX::INFO(
-				"sun light rows: [{:.3f} {:.3f} {:.3f}] [{:.3f} {:.3f} {:.3f}] "
-				"[{:.3f} {:.3f} {:.3f}]",
-				rotate.entry[0][0],
-				rotate.entry[0][1],
-				rotate.entry[0][2],
-				rotate.entry[1][0],
-				rotate.entry[1][1],
-				rotate.entry[1][2],
-				rotate.entry[2][0],
-				rotate.entry[2][1],
-				rotate.entry[2][2]);
+				"sun light rotate raw: "
+				"[{:.4f} {:.4f} {:.4f} {:.4f}] [{:.4f} {:.4f} {:.4f} {:.4f}] "
+				"[{:.4f} {:.4f} {:.4f} {:.4f}] translate [{:.1f} {:.1f} {:.1f}] scale {:.3f}",
+				rotate.entry[0][0], rotate.entry[0][1], rotate.entry[0][2], rotate.entry[0][3],
+				rotate.entry[1][0], rotate.entry[1][1], rotate.entry[1][2], rotate.entry[1][3],
+				rotate.entry[2][0], rotate.entry[2][1], rotate.entry[2][2], rotate.entry[2][3],
+				transform.translate.x,
+				transform.translate.y,
+				transform.translate.z,
+				transform.scale);
 
 			// Same trick as the light: read the node through NiAVObject, which
 			// is at offset zero of NiBillboardNode. Its own type is forward
@@ -436,6 +444,16 @@ namespace Features
 		auto* const uav = _mask.UAV();
 		auto* const buffer = _constants.Buffer();
 		auto* const sampler = _pointBorder;
+
+		// White is "nothing in the way", and the mask has to start there every
+		// frame. Bend's sweep writes only the pixels its dispatch quadrants
+		// cover; whatever it does not reach keeps what the texture held, which
+		// on a fresh one is zero - fully shadowed. Left out, it shows as a
+		// stable dark band around the edges of the picture, thickest where the
+		// quadrants reach least. The reference implementation clears here too,
+		// and this is the line of it that went missing in translation.
+		const float unshadowed[4]{ 1.0f, 1.0f, 1.0f, 1.0f };
+		a_context.ClearUnorderedAccessViewFloat(uav, unshadowed);
 
 		a_context.CSSetShader(_raymarch, nullptr, 0);
 		a_context.CSSetShaderResources(0, 1, std::addressof(a_depth));
