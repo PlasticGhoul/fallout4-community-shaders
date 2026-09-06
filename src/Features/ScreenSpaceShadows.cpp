@@ -85,7 +85,11 @@ namespace Features
 
 	void ScreenSpaceShadows::Declare()
 	{
-		Settings::DeclareFeature("ScreenSpaceShadows", true)
+		// Off until the sun's place on screen is right. The pass works, the
+		// mask is drawn and the modulation lands where it should, but the light
+		// coordinate it sweeps from is still wrong, and a feature that is known
+		// to draw the wrong thing has no business defaulting to on.
+		Settings::DeclareFeature("ScreenSpaceShadows", false)
 			.Label("feature.screen_space_shadows.name", "Screen-Space Shadows")
 			.Help(
 				"feature.screen_space_shadows.help",
