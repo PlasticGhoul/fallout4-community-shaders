@@ -70,6 +70,36 @@ namespace Render
 		return anyNonZero;
 	}
 
+	void LogProjection() noexcept
+	{
+		auto* const state = RE::BSGraphics::State::GetSingleton();
+		if (state == nullptr || g_refused) {
+			return;
+		}
+
+		const auto& view = state->cameraState.camViewData;
+
+		float projection[16]{};
+		std::memcpy(projection, std::addressof(view.projMat), sizeof(projection));
+
+		REX::INFO(
+			"projection rows: [{:.4f} {:.4f} {:.4f} {:.4f}] [{:.4f} {:.4f} {:.4f} {:.4f}] "
+			"[{:.4f} {:.4f} {:.4f} {:.4f}] [{:.4f} {:.4f} {:.4f} {:.4f}]",
+			projection[0], projection[1], projection[2], projection[3],
+			projection[4], projection[5], projection[6], projection[7],
+			projection[8], projection[9], projection[10], projection[11],
+			projection[12], projection[13], projection[14], projection[15]);
+
+		REX::INFO(
+			"view depth range [{:.4f} {:.4f}], viewport [{:.1f} {:.1f} {:.1f} {:.1f}]",
+			view.viewDepthRange.x,
+			view.viewDepthRange.y,
+			view.viewPort.left,
+			view.viewPort.top,
+			view.viewPort.right,
+			view.viewPort.bottom);
+	}
+
 	std::optional<std::array<float, 16>> ViewProjection() noexcept
 	{
 		if (g_refused) {

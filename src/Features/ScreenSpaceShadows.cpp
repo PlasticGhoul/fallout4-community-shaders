@@ -324,8 +324,12 @@ namespace Features
 		const auto* const light = reinterpret_cast<const RE::NiLight*>(a_sky.sun->light.get());
 		const auto& rotate = light->GetWorldRotate();
 
-		if (!_loggedDirection) {
-			_loggedDirection = true;
+		// Logged once a second rather than once a session. The first version
+		// wrote it a single time and caught the one moment where it was
+		// meaningless - an identity rotation and a sun at the origin, because
+		// the world had not been placed yet. One sample of a value that
+		// changes is not a measurement.
+		if (_draws % kStallInterval == 0) {
 			REX::INFO(
 				"sun light rows: [{:.3f} {:.3f} {:.3f}] [{:.3f} {:.3f} {:.3f}] "
 				"[{:.3f} {:.3f} {:.3f}]",
@@ -349,6 +353,14 @@ namespace Features
 				const auto& position = node->GetWorldTranslate();
 				REX::INFO(
 					"sun node at [{:.1f} {:.1f} {:.1f}]", position.x, position.y, position.z);
+			}
+
+			// Once per session is enough for this one: the projection changes
+			// only with the field of view, and what is being asked of it -
+			// which end of the depth buffer is near - does not change at all.
+			if (!_loggedDirection) {
+				_loggedDirection = true;
+				Render::LogProjection();
 			}
 		}
 

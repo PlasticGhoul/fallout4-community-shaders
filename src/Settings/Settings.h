@@ -93,6 +93,20 @@ namespace Settings
 	/// marked as the block's feature switch.
 	Handle DeclareFeature(std::string_view a_name, bool a_default);
 
+	/// The printf format a slider of this range should be drawn and rounded
+	/// with, chosen from the span between min and max.
+	///
+	/// It is not cosmetic. ImGui rounds a slider's value to its display format
+	/// unless told otherwise, so a format too coarse for the range turns the
+	/// slider into a switch between the two ends. A hard-coded "%.1f" did
+	/// exactly that to the first setting declared with a span below one:
+	/// 0.005 to 0.05 was drawn as "0.0" to "0.1" and could take no value in
+	/// between.
+	///
+	/// Lives here rather than in the menu because it follows from min and max,
+	/// which are schema, and because here it can be tested without ImGui.
+	[[nodiscard]] const char* SliderFormat(double a_min, double a_max) noexcept;
+
 	/// Blocks in declaration order, entries within a block in declaration
 	/// order. Deterministic, so the written file does not reshuffle itself.
 	void ForEachBlock(const std::function<void(std::string_view a_block)>& a_visit);

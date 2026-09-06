@@ -32,4 +32,16 @@ namespace Render
 	/// device: a wrong pointer that happens to be readable is far worse than a
 	/// null one.
 	[[nodiscard]] std::optional<std::array<float, 16>> ViewProjection() noexcept;
+
+	/// Writes the projection matrix and the engine's own depth range to the
+	/// log, once per call.
+	///
+	/// This is the measurement that settles which end of the depth buffer is
+	/// near. Bend's raymarch has to be told, and getting it backwards makes a
+	/// ray that leaves the screen read the border colour as a surface right in
+	/// front of the camera - a shadow around the edge of the picture, which is
+	/// what the first run showed. The projection is logged rather than the
+	/// combined view projection because the view rotation would bury the two
+	/// terms that carry the answer.
+	void LogProjection() noexcept;
 }

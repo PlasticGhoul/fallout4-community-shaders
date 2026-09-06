@@ -55,12 +55,17 @@ namespace Menu
 		void DrawSlider(const Settings::Entry& a_entry, const char* a_label)
 		{
 			auto value = static_cast<float>(Settings::GetDouble(a_entry.path));
+
+			// The format comes from the declared range. ImGui rounds the value
+			// to it, so a fixed one turns a slider whose span is smaller than
+			// its precision into a switch between the two ends - which is what
+			// a hard-coded "%.1f" did to the first setting that had one.
 			if (ImGui::SliderFloat(
 					a_label,
 					std::addressof(value),
 					static_cast<float>(a_entry.min),
 					static_cast<float>(a_entry.max),
-					"%.1f")) {
+					Settings::SliderFormat(a_entry.min, a_entry.max))) {
 				Settings::SetDouble(a_entry.path, value);
 			}
 			CommitOnRelease();

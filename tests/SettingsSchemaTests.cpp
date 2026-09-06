@@ -132,6 +132,33 @@ int main()
 		});
 	}
 
+	{
+		// The format a slider is drawn and rounded with follows from its range.
+		// Not cosmetic: ImGui rounds the value to the format, so one too coarse
+		// for the span turns the slider into a switch between the two ends.
+		const auto same = [](const char* a_lhs, const char* a_rhs) {
+			return std::string_view{ a_lhs } == a_rhs;
+		};
+
+		Check(same(Settings::SliderFormat(0.0, 4.0), "%.2f"), "a span of four gets two decimals");
+		Check(same(Settings::SliderFormat(10.0, 30.0), "%.1f"), "a span of twenty gets one");
+		Check(same(Settings::SliderFormat(0.0, 500.0), "%.0f"), "a span of five hundred gets none");
+
+		// The case that started it: 0.005 to 0.05 was drawn as "0.0" to "0.1"
+		// and could take no value in between.
+		Check(
+			same(Settings::SliderFormat(0.005, 0.05), "%.4f"),
+			"and a span of a twentieth gets four");
+		Check(
+			same(Settings::SliderFormat(0.02, 1.0), "%.3f"),
+			"a span just under one gets three");
+
+		// A range declared the wrong way round is still a range.
+		Check(
+			same(Settings::SliderFormat(0.05, 0.005), "%.4f"),
+			"the span is a distance, not a subtraction");
+	}
+
 	std::printf("%d failure(s)\n", g_failures);
 	return g_failures == 0 ? 0 : 1;
 }

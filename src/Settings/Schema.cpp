@@ -94,6 +94,30 @@ namespace Settings
 		return Handle{ record };
 	}
 
+	const char* SliderFormat(double a_min, double a_max) noexcept
+	{
+		const auto span = a_max > a_min ? a_max - a_min : a_min - a_max;
+
+		// Roughly three significant figures across the range, which is as fine
+		// as a slider a few hundred pixels wide can be aimed anyway. Four
+		// decimals is the floor: past that the number is longer than the
+		// control and still not adjustable by hand.
+		if (span >= 100.0) {
+			return "%.0f";
+		}
+		if (span >= 10.0) {
+			return "%.1f";
+		}
+		if (span >= 1.0) {
+			return "%.2f";
+		}
+		if (span >= 0.1) {
+			return "%.3f";
+		}
+
+		return "%.4f";
+	}
+
 	Handle DeclareChoice(
 		std::string_view a_path,
 		std::string_view a_default,
