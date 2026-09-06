@@ -1,6 +1,7 @@
 #include "Feature/FeatureSystem.h"
 #include "Menu/MenuSystem.h"
 #include "Plugin.h"
+#include "Render/FramePhase.h"
 #include "Render/SwapChainHook.h"
 #include "Runtime.h"
 
@@ -26,6 +27,14 @@ namespace
 			// settings file, and a setting has to be declared before that.
 			Menu::StartSystem();
 			Features::StartSystem();
+
+			// Before the Present hook, and therefore before any feature's Setup
+			// can run: ShaderCensus patches the same vtable slot while it
+			// counts and restores it when it is done. Underneath it our thunk
+			// survives that restore; on top of it, it would be overwritten and
+			// the phase would go silent without a word.
+			static_cast<void>(Render::InstallFramePhase());
+
 			Render::InstallSwapChainHook();
 			break;
 		default:
