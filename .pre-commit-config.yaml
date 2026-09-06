@@ -15,7 +15,10 @@ repos:
             args: [--style=file]
             types_or: [file]
             files: \.(h|hpp|c|cpp|hlsl|hlsli)$
-            exclude: ^(extern|include)/
+            # Third-party source kept verbatim is excluded by name: bend_sss_*
+            # is Sony Bend's screen space shadow code under Apache-2.0, and
+            # reformatting it would make it ours to maintain.
+            exclude: ^(extern|include)/|bend_sss_
 
     - repo: https://github.com/pre-commit/mirrors-prettier
       rev: v4.0.0-alpha.8
