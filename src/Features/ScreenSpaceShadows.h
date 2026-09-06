@@ -87,6 +87,11 @@ namespace Features
 		/// second.
 		std::uint64_t _lastHits{ 0 };
 		std::uint64_t _frames{ 0 };
+
+		/// Whether the phase has ever fired. Before it has, silence is the
+		/// normal state rather than a fault: the composite does not run in the
+		/// main menu or on a loading screen.
+		bool _everFired{ false };
 		bool _reportedStall{ false };
 
 		/// Logged once rather than per frame: a sun that is not there is the

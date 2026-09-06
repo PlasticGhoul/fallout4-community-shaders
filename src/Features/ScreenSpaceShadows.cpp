@@ -1,5 +1,6 @@
 #include "Features/ScreenSpaceShadows.h"
 
+#include "Render/Camera.h"
 #include "Render/DebugName.h"
 #include "Render/FramePhase.h"
 #include "Render/FullscreenPass.h"
@@ -123,6 +124,7 @@ namespace Features
 		_reportedNoSun = false;
 		_reportedNoTargets = false;
 		_reportedStall = false;
+		_everFired = false;
 		_draws = 0;
 		_frames = 0;
 		_lastHits = Render::FramePhaseHits();
@@ -185,19 +187,29 @@ namespace Features
 			static_cast<void>(CompileRaymarch(wanted));
 		}
 
-		// A hit count that stands still while we are subscribed means the
-		// vtable entry has been overwritten - see the ordering note in
-		// FramePhase.h. There is no other symptom, so it is worth asking.
+		// A hit count that stops moving means the vtable entry has been
+		// overwritten - see the ordering note in FramePhase.h. There is no
+		// other symptom, so it is worth asking once a second.
+		//
+		// Only once it has moved at all, though. Before the first hit, silence
+		// is the normal state: in the main menu and on a loading screen the
+		// composite legitimately does not run, and the first version of this
+		// check reported a stall there every time. A diagnostic that cannot
+		// tell "not started" from "stopped" is worse than none, because it
+		// teaches whoever reads the log to ignore it.
 		if (_frames % kStallInterval == 0) {
 			const auto hits = Render::FramePhaseHits();
-			if (hits == _lastHits && !_reportedStall) {
+
+			if (hits != _lastHits) {
+				_everFired = true;
+				_reportedStall = false;
+			} else if (_everFired && !_reportedStall) {
 				REX::ERROR(
-					"ScreenSpaceShadows: the frame phase has not fired in {} frames, "
-					"something has taken the vtable entry back",
+					"ScreenSpaceShadows: the frame phase fired {} times and has now stopped "
+					"for {} frames, something has taken the vtable entry back",
+					hits,
 					kStallInterval);
 				_reportedStall = true;
-			} else if (hits != _lastHits) {
-				_reportedStall = false;
 			}
 
 			_lastHits = hits;
@@ -368,17 +380,12 @@ namespace Features
 			0.0f
 		};
 
-		const auto* const data = RE::BSGraphics::GetRendererData();
-		if (data == nullptr || data->shadowState == nullptr) {
+		const auto camera = Render::ViewProjection();
+		if (!camera) {
 			return false;
 		}
 
-		// viewProjMat is four __m128 rows. Read as floats rather than through
-		// an SSE intrinsic: this runs once a frame, and sixteen loads are
-		// easier to be sure about than a shuffle.
-		const auto* const matrix =
-			reinterpret_cast<const float*>(data->shadowState->cameraData.viewProjMat);
-
+		const auto& matrix = *camera;
 		for (int column = 0; column < 4; ++column) {
 			a_out.lightProjection[column] =
 				light4[0] * matrix[0 * 4 + column] +

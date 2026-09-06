@@ -647,4 +647,33 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME BendDispatch COMMAND BendDispatchTests)
+
+    # Only the plausibility check is linked in. The rest of Camera.cpp reaches
+    # for the engine's singleton, which is exactly what cannot be tested here.
+    add_executable(
+        CameraTests
+        "${CMAKE_SOURCE_DIR}/tests/CameraTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Render/Camera.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Render/Renderer.cpp"
+    )
+
+    target_include_directories(
+        CameraTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(CameraTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        CameraTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(CameraTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            CameraTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME Camera COMMAND CameraTests)
 endif()
