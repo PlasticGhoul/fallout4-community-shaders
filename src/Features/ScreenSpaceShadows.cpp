@@ -372,14 +372,18 @@ namespace Features
 			}
 		}
 
-		// Bethesda points its objects down local Y, so the forward axis is
-		// column one of the world rotation. Which column it really is has not
-		// been established for Fallout 4 - the rows are logged above, and a
-		// shadow falling the wrong way says which to try next.
+		// Row zero, and only row zero. The engine does not keep a rotation here
+		// at all: rows one and two read as an untouched identity in every
+		// sample, while row zero is a unit vector that drifts with the time of
+		// day and tilts about 38 degrees downward - a sun direction. Taking a
+		// column instead mixed row zero's second entry with the 1.0 of the
+		// identity below it and produced a direction lying exactly in the
+		// horizontal plane, which is both wrong and the grazing angle Bend
+		// names as its own worst case for edge artefacts.
 		const float direction[3] = {
+			rotate.entry[0][0],
 			rotate.entry[0][1],
-			rotate.entry[1][1],
-			rotate.entry[2][1]
+			rotate.entry[0][2]
 		};
 
 		const auto length = std::sqrt(
@@ -426,7 +430,12 @@ namespace Features
 		// the sun is seen. Once a second while the feature is young.
 		if (_draws % kStallInterval == 0) {
 			REX::INFO(
-				"sun at pixel [{:.0f} {:.0f}], w {:.3f}, {} dispatch(es)",
+				"towards sun [{:.3f} {:.3f} {:.3f}], elevation {:.1f} deg, "
+				"at pixel [{:.0f} {:.0f}], w {:.6f}, {} dispatch(es)",
+				light4[0],
+				light4[1],
+				light4[2],
+				std::asin(light4[2]) * 57.2957795f,
 				a_out.plan.lightCoordinate[0],
 				a_out.plan.lightCoordinate[1],
 				a_out.lightProjection[3],
