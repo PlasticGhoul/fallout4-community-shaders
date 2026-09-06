@@ -57,6 +57,18 @@ namespace
 		"    return float4(float(id), 0.0, 0.0, 1.0);\n"
 		"}\n";
 
+	// The same implicit truncation as kTruncating, but shaped as a compute
+	// shader, so that the strictness can be checked on that profile without the
+	// compile failing for an unrelated reason.
+	constexpr std::string_view kTruncatingCompute =
+		"RWTexture2D<float> Output : register(u0);\n"
+		"[numthreads(8, 8, 1)]\n"
+		"void main(uint3 id : SV_DispatchThreadID)\n"
+		"{\n"
+		"    float3 value = float4(1.0, 2.0, 3.0, 4.0);\n"
+		"    Output[id.xy] = value.x;\n"
+		"}\n";
+
 	// Refuses to compile unless WANTED is defined, so the define is proven to
 	// arrive rather than merely to be accepted.
 	constexpr std::string_view kNeedsDefine =
@@ -122,11 +134,10 @@ int main()
 	}
 
 	{
-		const auto strict = Shader::Compile(kTruncating, "warn.hlsl", "main", "ps_5_0", {}, true);
-		Check(!strict.Succeeded(), "warnings are errors by default");
-
-		const auto lenient = Shader::Compile(kTruncating, "warn.hlsl", "main", "ps_5_0", {}, false);
-		Check(lenient.Succeeded(), "and can be relaxed for foreign source");
+		// Every profile is held to it, not only the pixel wrapper the original
+		// check went through.
+		const auto compute = Shader::Compile(kTruncatingCompute, "warn.hlsl", "main", "cs_5_0");
+		Check(!compute.Succeeded(), "warnings are errors for compute too");
 	}
 
 	{

@@ -118,11 +118,13 @@ ImGui-freies Feature, HLSL `cs_5_0` / `vs_5_0` / `ps_5_0`, Bend SSS (Apache-2.0)
     }
     ```
 
-**Warum `a_warningsAsErrors`:** Bends `bend_sss_gpu.hlsli` ist fremder Quelltext, rechnet durchgehend
-in `half` und wird unter `D3DCOMPILE_WARNINGS_ARE_ERRORS` mit hoher Wahrscheinlichkeit nicht
-übersetzen. Das ist dieselbe Lage wie ein fremder C++-Header unter `/W4 /WX`, und die Regel ist
-dieselbe: eng abschalten, an genau der Aufrufstelle, mit einem Kommentar, der den fremden Quelltext
-nennt — nicht die Voreinstellung für alle senken.
+**`a_warningsAsErrors` ist bei der Umsetzung entfallen.** Die Begründung war, Bends
+`bend_sss_gpu.hlsli` rechne durchgehend in `half` und werde unter
+`D3DCOMPILE_WARNINGS_ARE_ERRORS` nicht übersetzen. Gemessen mit `fxc` gegen genau unsere Fahnen
+(`/Ges /WX /O3`) und bei `SAMPLE_COUNT` 8, 64, 128 und 256: es übersetzt **sauber**. Ein Parameter,
+dessen einziger vorgesehener Anwender wegfällt, ist spekulative Verallgemeinerung und kommt weg.
+Warnungen sind damit für jeden Shader Fehler, ohne Ausnahme, und der Test dafür prüft es auf zwei
+Profilen statt auf einem.
 
 -   [ ] **Step 1: Die fehlschlagenden Tests schreiben**
 
@@ -2526,10 +2528,13 @@ fxc /T ps_5_0 /E main `
 fxc /T vs_5_0 /E main package/Shaders/FO4/Fullscreen.hlsl /Fo $env:TEMP\fullscreen.cso
 ```
 
-Ist `fxc` nicht auf dem PATH, entfällt der Schritt und die Übersetzung wird im Spiel belegt — das
-Log führt Compilerfehler mit Datei und Zeile. **Erwartet:** `Fullscreen` und `Modulate` ohne
-Warnung; `RaymarchCS` möglicherweise mit Warnungen aus `bend_sss_gpu.hlsli`, was genau der Grund
-für `a_warningsAsErrors = false` an dieser einen Aufrufstelle ist.
+`fxc` liegt nicht auf dem PATH, aber im Windows-SDK unter
+`C:\Program Files (x86)\Windows Kits\10\bin\<version>\x64\fxc.exe`. Aus einer Bash-Shell brauchen
+die Schalter zwei Schrägstriche (`//T`), sonst übersetzt MSYS sie in Pfade.
+
+**Gemessen:** alle drei übersetzen. `RaymarchCS` auch mit `/Ges /WX /O3` — also genau unseren
+Fahnen — bei `SAMPLE_COUNT` 8, 64, 128 und 256, ohne eine einzige Warnung. Damit ist die Annahme
+widerlegt, Bends HLSL brauche eine Ausnahme, und `a_warningsAsErrors` aus Task 1 ist entfallen.
 
 -   [ ] **Step 5: Commit**
 

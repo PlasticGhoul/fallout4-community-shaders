@@ -38,10 +38,11 @@ namespace Shader
 	/// refused with a diagnostic naming it rather than handed to D3DCompile,
 	/// where a typo would come back as an unrecognisable HRESULT.
 	///
-	/// a_warningsAsErrors is true for everything we write ourselves, the same
-	/// standard /W4 /WX holds our C++ to. It exists to be passed false at the
-	/// one call site that compiles third-party source - Bend's raymarch in
-	/// ScreenSpaceShadows - and nowhere else.
+	/// Warnings are errors, for every shader without exception - the same
+	/// standard /W4 /WX holds our C++ to. There was to be a way of relaxing it
+	/// for third-party HLSL, on the assumption that Bend's raymarch would need
+	/// one; measured against these exact flags at four sample counts, it does
+	/// not, so the escape hatch has no user and is not here.
 	///
 	/// No include handler is passed: REX::W32 declares ID3DInclude as deriving
 	/// from IUnknown, while the real interface (d3dcommon.h, DECLARE_INTERFACE)
@@ -53,8 +54,7 @@ namespace Shader
 		const std::string& a_sourceName,
 		const std::string& a_entryPoint,
 		const std::string& a_profile,
-		std::span<const ShaderDefine> a_defines = {},
-		bool a_warningsAsErrors = true);
+		std::span<const ShaderDefine> a_defines = {});
 
 	[[nodiscard]] CompileResult CompilePixelShader(
 		std::string_view a_source,
@@ -70,6 +70,5 @@ namespace Shader
 		std::string_view a_source,
 		const std::string& a_sourceName,
 		const std::string& a_entryPoint,
-		std::span<const ShaderDefine> a_defines = {},
-		bool a_warningsAsErrors = true);
+		std::span<const ShaderDefine> a_defines = {});
 }

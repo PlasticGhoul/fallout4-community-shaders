@@ -7,11 +7,13 @@ namespace Shader
 {
 	namespace
 	{
-		// Level 3 because this code runs per pixel. Warnings as errors is not
-		// in here: it is the default of Compile, and the one call site that
-		// compiles foreign source turns it off for itself.
-		constexpr std::uint32_t kBaseFlags =
+		// Strictness plus warnings as errors is the same standard we hold our
+		// own C++ to with /W4 /WX, and it holds for third-party HLSL too: Bend's
+		// raymarch was measured against these exact flags and needs no exception.
+		// Level 3 because this code runs per pixel.
+		constexpr std::uint32_t kFlags =
 			REX::W32::D3DCOMPILE_ENABLE_STRICTNESS |
+			REX::W32::D3DCOMPILE_WARNINGS_ARE_ERRORS |
 			REX::W32::D3DCOMPILE_OPTIMIZATION_LEVEL3;
 
 		bool IsSupportedProfile(std::string_view a_profile) noexcept
@@ -58,11 +60,9 @@ namespace Shader
 		std::string_view a_source,
 		const std::string& a_sourceName,
 		const std::string& a_entryPoint,
-		std::span<const ShaderDefine> a_defines,
-		bool a_warningsAsErrors)
+		std::span<const ShaderDefine> a_defines)
 	{
-		return Compile(
-			a_source, a_sourceName, a_entryPoint, "cs_5_0", a_defines, a_warningsAsErrors);
+		return Compile(a_source, a_sourceName, a_entryPoint, "cs_5_0", a_defines);
 	}
 
 	CompileResult Compile(
@@ -70,8 +70,7 @@ namespace Shader
 		const std::string& a_sourceName,
 		const std::string& a_entryPoint,
 		const std::string& a_profile,
-		std::span<const ShaderDefine> a_defines,
-		bool a_warningsAsErrors)
+		std::span<const ShaderDefine> a_defines)
 	{
 		CompileResult result;
 
@@ -90,10 +89,6 @@ namespace Shader
 		}
 		macros.push_back({ nullptr, nullptr });
 
-		const std::uint32_t flags =
-			kBaseFlags |
-			(a_warningsAsErrors ? REX::W32::D3DCOMPILE_WARNINGS_ARE_ERRORS : 0u);
-
 		REX::W32::ID3DBlob* code = nullptr;
 		REX::W32::ID3DBlob* errors = nullptr;
 
@@ -105,7 +100,7 @@ namespace Shader
 			nullptr,  // no include handler, see the header for why
 			a_entryPoint.c_str(),
 			a_profile.c_str(),
-			flags,
+			kFlags,
 			0,
 			std::addressof(code),
 			std::addressof(errors));
