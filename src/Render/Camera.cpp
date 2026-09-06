@@ -336,6 +336,58 @@ namespace Render
 		}
 	}
 
+	std::optional<std::array<float, 4>> ProjectPoint(const float (&a_point)[3]) noexcept
+	{
+		auto* const world = RE::Main::WorldRootCamera();
+		if (world == nullptr) {
+			if (!g_loggedRefusal) {
+				g_loggedRefusal = true;
+				REX::ERROR("world camera: Main::WorldRootCamera returned nothing");
+			}
+			return std::nullopt;
+		}
+
+		float matrix[16]{};
+		for (int row = 0; row < 4; ++row) {
+			for (int column = 0; column < 4; ++column) {
+				matrix[row * 4 + column] = world->worldToCam[row][column];
+			}
+		}
+
+		if (!IsPlausibleViewProjection(matrix)) {
+			if (!g_loggedRefusal) {
+				g_loggedRefusal = true;
+				REX::ERROR("world camera: worldToCam is empty or carries a value that is not finite");
+			}
+			return std::nullopt;
+		}
+
+		// Column vector on the right, which is what the translation sitting in
+		// the fourth column says it is, and what the engine's own
+		// WorldPtToScreenPt3 does with the same matrix.
+		std::array<float, 4> clip{};
+		for (int row = 0; row < 4; ++row) {
+			clip[static_cast<std::size_t>(row)] =
+				matrix[row * 4 + 0] * a_point[0] +
+				matrix[row * 4 + 1] * a_point[1] +
+				matrix[row * 4 + 2] * a_point[2] +
+				matrix[row * 4 + 3];
+		}
+
+		if (!g_loggedPerspective) {
+			g_loggedPerspective = true;
+			REX::INFO(
+				"worldToCam rows: [{:.4f} {:.4f} {:.4f} {:.1f}] [{:.4f} {:.4f} {:.4f} {:.1f}] "
+				"[{:.4f} {:.4f} {:.4f} {:.1f}] [{:.4f} {:.4f} {:.4f} {:.1f}]",
+				matrix[0], matrix[1], matrix[2], matrix[3],
+				matrix[4], matrix[5], matrix[6], matrix[7],
+				matrix[8], matrix[9], matrix[10], matrix[11],
+				matrix[12], matrix[13], matrix[14], matrix[15]);
+		}
+
+		return clip;
+	}
+
 	std::optional<std::array<float, 4>> ProjectDirection(
 		const float (&a_direction)[3],
 		std::uint32_t a_width,

@@ -328,6 +328,17 @@ namespace Features
 		const auto* const light = reinterpret_cast<const RE::NiLight*>(a_sky.sun->light.get());
 		const auto& rotate = light->GetWorldRotate();
 
+		// Where the engine draws the sun. Read through NiAVObject, which sits
+		// at offset zero of NiBillboardNode - its own type is forward declared
+		// only, the same trick as the light above.
+		const auto* const node =
+			reinterpret_cast<const RE::NiAVObject*>(a_sky.sun->sunBaseNode.get());
+		if (node == nullptr) {
+			return false;
+		}
+
+		const auto& sunPosition = node->GetWorldTranslate();
+
 		// Logged once a second rather than once a session. The first version
 		// wrote it a single time and caught the one moment where it was
 		// meaningless - an identity rotation and a sun at the origin, because
@@ -359,13 +370,11 @@ namespace Features
 			// is at offset zero of NiBillboardNode. Its own type is forward
 			// declared only. The position is the fallback answer if the
 			// rotation above turns out not to carry the direction.
-			if (const auto* const node = reinterpret_cast<const RE::NiAVObject*>(
-					a_sky.sun->sunBaseNode.get());
-				node != nullptr) {
-				const auto& position = node->GetWorldTranslate();
-				REX::INFO(
-					"sun node at [{:.1f} {:.1f} {:.1f}]", position.x, position.y, position.z);
-			}
+			REX::INFO(
+				"sun node at [{:.1f} {:.1f} {:.1f}]",
+				sunPosition.x,
+				sunPosition.y,
+				sunPosition.z);
 
 			// Once per session is enough for this one: the projection changes
 			// only with the field of view, and what is being asked of it -
@@ -413,11 +422,14 @@ namespace Features
 			static_cast<int>(_mask.Height())
 		};
 
-		// Built from the view matrix and the camera frustum rather than read
-		// from a projection matrix: Fallout 4 keeps none for the camera it
-		// draws the world with. See Render::ProjectDirection.
-		const auto clip = Render::ProjectDirection(
-			{ light4[0], light4[1], light4[2] }, _mask.Width(), _mask.Height());
+		// The sun's own billboard, projected through the world camera's
+		// worldToCam. That is where the engine draws the sun, so it is where
+		// the sun is on screen - by construction rather than by a chain of
+		// assumptions about axes and fields of view. Bend takes a point as
+		// readily as a direction, and at this distance the difference does not
+		// arise.
+		const float sunPoint[3]{ sunPosition.x, sunPosition.y, sunPosition.z };
+		const auto clip = Render::ProjectPoint(sunPoint);
 		if (!clip) {
 			return false;
 		}

@@ -94,4 +94,22 @@ namespace Render
 		const float (&a_direction)[3],
 		std::uint32_t a_width,
 		std::uint32_t a_height) noexcept;
+
+	/// A world point in homogeneous clip space, through the world camera's own
+	/// worldToCam.
+	///
+	/// That matrix is world to clip, not world to camera - its top left is a
+	/// projection with Bethesda's axis order, x to x, z to y and y to depth,
+	/// and the ratio of its two scales is the aspect of the screen exactly.
+	/// Reading its three by three corner as a camera basis was a mistake; it
+	/// was never one, and the engine's own WorldPtToScreenPt3 takes the whole
+	/// thing for precisely this purpose.
+	///
+	/// Applying all sixteen entries to a point needs no basis, no frustum and
+	/// no field of view, and gets the perspective divide right by construction.
+	/// Bend takes a point as readily as a direction - float4(position, 1) - and
+	/// the sun, a hundred and twenty thousand units out, behaves as a
+	/// directional light regardless.
+	[[nodiscard]] std::optional<std::array<float, 4>> ProjectPoint(
+		const float (&a_point)[3]) noexcept;
 }
