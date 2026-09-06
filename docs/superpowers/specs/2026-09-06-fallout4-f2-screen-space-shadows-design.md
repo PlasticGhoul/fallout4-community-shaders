@@ -181,8 +181,10 @@ CompileResult Compile(
 mit drei dünnen Hüllen für `ps_5_0`, `vs_5_0` und `cs_5_0`. Die bestehende Pixel-Hülle behält ihre
 Signatur, damit `ImagespaceTint` unverändert bleibt.
 
-Die Defines sind nicht Bequemlichkeit: Bend trägt `SAMPLE_COUNT` und `WAVE_SIZE` als
-Übersetzungskonstanten, nicht in einem Puffer. `D3DCompile` erwartet ein
+Die Defines sind nicht Bequemlichkeit: Bend trägt `SAMPLE_COUNT` als Übersetzungskonstante, nicht
+in einem Puffer — der Shader baut daraus `READ_COUNT` und daraus die Größe seines
+`groupshared`-Feldes. (`WAVE_SIZE` ist dagegen kein Define von außen: `bend_sss_gpu.hlsli` setzt es
+selbst auf `64`, und der CPU-Teil muß mit demselben Wert gerufen werden.) `D3DCompile` erwartet ein
 `REX::W32::D3D_SHADER_MACRO`-Feld mit einem Nullabschluß; die Zeichenketten müssen den Aufruf
 überleben. Beide Typen sind in `REX::W32` deklariert (`D3D.h`, `D3D11.h`); `<d3d11.h>` bleibt wie
 im ganzen Projekt draußen.
@@ -267,8 +269,15 @@ gehört — siehe 7.2.
 
 ### 5.6 `Render::FramePhase`
 
-Besitzt den vtable-Patch aus Abschnitt 4, wird einmal installiert und bleibt für die Prozeßlaufzeit
-stehen. Schnittstelle:
+Zwei Klassen, nicht eine — aus demselben Grund, aus dem F1 die Zeitmessung als zwei Funktionszeiger
+in `Features::Registry` reicht, statt dort nach dem Profiler zu greifen:
+
+-   **`Render::PhaseDispatcher`** hält, wer einmal je Frame gerufen wird, und kennt weder D3D noch
+    die Engine. Damit ist er ohne Spiel prüfbar.
+-   **`Render::FramePhase`** besitzt den vtable-Patch aus Abschnitt 4, wird einmal installiert und
+    bleibt für die Prozeßlaufzeit stehen. Er reicht die Framenummer aus B1 an den Dispatcher.
+
+Schnittstelle:
 
 ```cpp
 using Token = std::uint32_t;
@@ -276,9 +285,15 @@ Token Subscribe(std::string_view a_name, std::function<void()> a_callback);
 void  Unsubscribe(Token) noexcept;
 ```
 
-Ein Rückruf läuft in einem `Render::PassScope` mit seinem Namen, damit F1 ihn ohne Zutun des
-Features mißt. Aus- und Eintragen aus einem laufenden Rückruf heraus ist erlaubt: die Liste wird vor
-dem Durchlauf kopiert, ausgetragene Plätze werden nach dem Durchlauf ausgemustert.
+Ein Rückruf läuft in einem `Render::PassScope` mit seinem Namen, den `FramePhase` beim Eintragen
+darumlegt — damit F1 jeden Abnehmer mißt und nicht nur die, die daran gedacht haben.
+
+Aus- und Eintragen aus einem laufenden Rückruf heraus ist erlaubt. Die Abnehmer liegen deshalb in
+einem **festen Feld** statt in einem `std::vector`: nichts zieht um, während ein `std::function`
+gerade ausgeführt wird. Ein während des Durchlaufs Ausgetragener läuft nicht mehr, seine Funktion
+wird aber erst nach dem Durchlauf freigegeben — sonst zerstörte man das Aufrufziel unter dem
+laufenden Aufruf. Ein während des Durchlaufs Eingetragener wartet auf den nächsten Frame, weil die
+Laufzahl vor dem ersten Rückruf feststeht.
 
 ### 5.7 Nachladen bei Dateiänderung
 
@@ -345,7 +360,9 @@ Der Konstantenpuffer liegt auf `b1` und trägt, in dieser Reihenfolge und auf 16
 `LightCoordinate` (4 × float), `WaveOffset` (2 × int), `FarDepthValue`, `NearDepthValue`,
 `InvDepthTextureSize` (2 × float), `DynamicRes` (2 × float), dann die vier Regler.
 
-`BuildDispatchList` liefert bis zu vier Teilzeichnungen. Je Teilzeichnung wird der Puffer neu
+`BuildDispatchList` liefert **bis zu acht** Teilzeichnungen — `DispatchList::Dispatch` ist ein Feld
+von acht, typisch sind ein bis zwei bei einer Sonne außerhalb des Bildes und vier bis sechs bei
+einer im Bild. Je Teilzeichnung wird der Puffer neu
 beschrieben und einmal `Dispatch` gerufen — die Aufteilung ist Bends Wellenfront-Schema, nicht eine
 Schleife, die man zusammenfassen könnte.
 
@@ -434,10 +451,18 @@ Bends Apache-2.0-Kopfzeilen bleiben in beiden übernommenen Dateien unangetastet
 **`BendDispatchTests`** — `Bend::BuildDispatchList` ist reine CPU-Mathematik ohne eine Zeile D3D.
 Geprüft an bekannten Eingaben: Sonne im Zenit, Sonne hinter der Kamera, Sonne am Bildrand, und ein
 entartetes Sichtfeld der Breite null. Erwartet werden eine Teilzeichnungszahl zwischen eins und
-vier, Wellenzahlen größer null in jeder Teilzeichnung, und Wellenversätze, die zusammen das ganze
-Sichtfeld abdecken. Das ist der Teil des Verfahrens, in dem sich ein Vorzeichenfehler versteckt.
+**acht**, Wellenzahlen größer null in jeder Teilzeichnung, und Wellenversätze, die zusammen das
+ganze Sichtfeld abdecken. Das ist der Teil des Verfahrens, in dem sich ein Vorzeichenfehler
+versteckt.
 
-**`FramePhaseTests`** — der Zustandsautomat, ohne Spiel, wie `Menu::Gate` in E1. Geprüft: der zweite
+Der übernommene Kopf definiert `BuildDispatchList` im Header **ohne `inline`**. In zwei
+Übersetzungseinheiten eingebunden — Test und Feature — gäbe das ein doppeltes Symbol. Er wird
+deshalb in genau einer Einheit eingebunden, hinter `src/Features/ScreenSpaceShadows/BendDispatch.h`,
+die nur deklariert.
+
+**`PhaseDispatcherTests`** — der Zustandsautomat hinter der Frame-Phase, ohne Spiel, wie
+`Menu::Gate` in E1. Er sitzt als eigene Klasse `Render::PhaseDispatcher` neben dem Patch, genau
+damit er ohne Engine prüfbar bleibt. Geprüft: der zweite
 Aufruf im selben Frame löst nicht aus; der erste im nächsten schon; ein ausgetragener Rückruf läuft
 nicht mehr; Austragen aus dem laufenden Rückruf heraus wirkt erst danach und stürzt nicht ab; zwei
 Rückrufe laufen in Eintragungsreihenfolge.
