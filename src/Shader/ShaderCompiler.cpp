@@ -1,17 +1,23 @@
 #include "Shader/ShaderCompiler.h"
 
 #include <memory>
+#include <vector>
 
 namespace Shader
 {
 	namespace
 	{
-		// Strictness plus warnings-as-errors is the same standard we hold our
-		// own C++ to with /W4 /WX. Level 3 because this code runs per pixel.
-		constexpr std::uint32_t kFlags =
+		// Level 3 because this code runs per pixel. Warnings as errors is not
+		// in here: it is the default of Compile, and the one call site that
+		// compiles foreign source turns it off for itself.
+		constexpr std::uint32_t kBaseFlags =
 			REX::W32::D3DCOMPILE_ENABLE_STRICTNESS |
-			REX::W32::D3DCOMPILE_WARNINGS_ARE_ERRORS |
 			REX::W32::D3DCOMPILE_OPTIMIZATION_LEVEL3;
+
+		bool IsSupportedProfile(std::string_view a_profile) noexcept
+		{
+			return a_profile == "ps_5_0" || a_profile == "vs_5_0" || a_profile == "cs_5_0";
+		}
 
 		std::string BlobToString(REX::W32::ID3DBlob* a_blob)
 		{
@@ -37,7 +43,56 @@ namespace Shader
 		const std::string& a_sourceName,
 		const std::string& a_entryPoint)
 	{
+		return Compile(a_source, a_sourceName, a_entryPoint, "ps_5_0");
+	}
+
+	CompileResult CompileVertexShader(
+		std::string_view a_source,
+		const std::string& a_sourceName,
+		const std::string& a_entryPoint)
+	{
+		return Compile(a_source, a_sourceName, a_entryPoint, "vs_5_0");
+	}
+
+	CompileResult CompileComputeShader(
+		std::string_view a_source,
+		const std::string& a_sourceName,
+		const std::string& a_entryPoint,
+		std::span<const ShaderDefine> a_defines,
+		bool a_warningsAsErrors)
+	{
+		return Compile(
+			a_source, a_sourceName, a_entryPoint, "cs_5_0", a_defines, a_warningsAsErrors);
+	}
+
+	CompileResult Compile(
+		std::string_view a_source,
+		const std::string& a_sourceName,
+		const std::string& a_entryPoint,
+		const std::string& a_profile,
+		std::span<const ShaderDefine> a_defines,
+		bool a_warningsAsErrors)
+	{
 		CompileResult result;
+
+		if (!IsSupportedProfile(a_profile)) {
+			result.diagnostics = "unsupported shader profile " + a_profile;
+			return result;
+		}
+
+		// The array has to outlive the call and end in a null entry. The
+		// strings belong to the caller's span; D3D_SHADER_MACRO stores pointers
+		// into them rather than copying.
+		std::vector<REX::W32::D3D_SHADER_MACRO> macros;
+		macros.reserve(a_defines.size() + 1);
+		for (const auto& define : a_defines) {
+			macros.push_back({ define.name.c_str(), define.value.c_str() });
+		}
+		macros.push_back({ nullptr, nullptr });
+
+		const std::uint32_t flags =
+			kBaseFlags |
+			(a_warningsAsErrors ? REX::W32::D3DCOMPILE_WARNINGS_ARE_ERRORS : 0u);
 
 		REX::W32::ID3DBlob* code = nullptr;
 		REX::W32::ID3DBlob* errors = nullptr;
@@ -46,11 +101,11 @@ namespace Shader
 			a_source.data(),
 			a_source.size(),
 			a_sourceName.c_str(),
-			nullptr,  // no defines until subproject D brings a descriptor scheme
+			a_defines.empty() ? nullptr : macros.data(),
 			nullptr,  // no include handler, see the header for why
 			a_entryPoint.c_str(),
-			"ps_5_0",
-			kFlags,
+			a_profile.c_str(),
+			flags,
 			0,
 			std::addressof(code),
 			std::addressof(errors));
