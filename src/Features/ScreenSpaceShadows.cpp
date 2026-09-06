@@ -470,6 +470,7 @@ namespace Features
 			// no transform, and one sample of a value that changes is not a
 			// measurement. The lesson cost two runs before it stuck.
 			Render::LogCameraMatrices();
+			Render::ProbeCameraMatrices(_mask.Width(), _mask.Height());
 		}
 
 		return a_out.plan.count > 0;

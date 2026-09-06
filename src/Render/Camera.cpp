@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <string>
 
 namespace Render
 {
@@ -136,6 +137,102 @@ namespace Render
 
 		if (camera.referenceCamera != nullptr) {
 			LogMatrix("reference worldToCam", std::addressof(camera.referenceCamera->worldToCam));
+		}
+	}
+
+	namespace
+	{
+		/// Where a_matrix puts a_vector, in pixels, and how far in front it is.
+		/// Row vector on the left, no w divide until the end - the same way
+		/// Bend takes its light coordinate.
+		void ReportCandidate(
+			const char* a_what,
+			const float (&a_matrix)[16],
+			const float (&a_vector)[4],
+			std::uint32_t a_width,
+			std::uint32_t a_height) noexcept
+		{
+			float clip[4]{};
+			for (int column = 0; column < 4; ++column) {
+				clip[column] =
+					a_vector[0] * a_matrix[0 * 4 + column] +
+					a_vector[1] * a_matrix[1 * 4 + column] +
+					a_vector[2] * a_matrix[2 * 4 + column] +
+					a_vector[3] * a_matrix[3 * 4 + column];
+			}
+
+			if (clip[3] == 0.0f) {
+				REX::INFO("{}: w is zero, no position", a_what);
+				return;
+			}
+
+			const auto x = ((clip[0] / clip[3]) * 0.5f + 0.5f) * static_cast<float>(a_width);
+			const auto y = ((clip[1] / clip[3]) * -0.5f + 0.5f) * static_cast<float>(a_height);
+
+			REX::INFO("{}: pixel [{:.0f} {:.0f}], w {:.4f}", a_what, x, y, clip[3]);
+		}
+	}
+
+	void ProbeCameraMatrices(std::uint32_t a_width, std::uint32_t a_height) noexcept
+	{
+		auto* const state = RE::BSGraphics::State::GetSingleton();
+		if (state == nullptr) {
+			return;
+		}
+
+		const auto& view = state->cameraState.camViewData;
+
+		float direction[4]{};
+		std::memcpy(direction, std::addressof(view.viewDir), sizeof(float) * 3);
+		direction[3] = 0.0f;
+
+		REX::INFO(
+			"probe: viewDir [{:.4f} {:.4f} {:.4f}] must land at [{} {}]",
+			direction[0],
+			direction[1],
+			direction[2],
+			a_width / 2,
+			a_height / 2);
+
+		const auto probe = [&](const char* a_what, const void* a_rows) {
+			float m[16]{};
+			std::memcpy(m, a_rows, sizeof(m));
+			ReportCandidate(a_what, m, direction, a_width, a_height);
+		};
+
+		probe("probe state viewProj", std::addressof(view.viewProjMat));
+		probe("probe state viewProjUnjittered", std::addressof(view.viewProjUnjittered));
+		probe("probe state currentViewProjUnjittered", std::addressof(view.currentViewProjUnjittered));
+
+		{
+			float viewMatrix[16]{};
+			float projMatrix[16]{};
+			float product[16]{};
+			std::memcpy(viewMatrix, std::addressof(view.viewMat), sizeof(viewMatrix));
+			std::memcpy(projMatrix, std::addressof(view.projMat), sizeof(projMatrix));
+			Multiply(viewMatrix, projMatrix, product);
+			ReportCandidate("probe state view x proj", product, direction, a_width, a_height);
+		}
+
+		const auto cached_count = static_cast<std::uint32_t>(
+			state->cameraDataCache.size() < 8 ? state->cameraDataCache.size() : 8);
+
+		for (std::uint32_t i = 0; i < cached_count; ++i) {
+			const auto& cached = state->cameraDataCache[i].camViewData;
+
+			const auto name = std::string{ "probe cache[" } + std::to_string(i) + "] viewProj";
+			probe(name.c_str(), std::addressof(cached.viewProjMat));
+
+			float viewMatrix[16]{};
+			float projMatrix[16]{};
+			float product[16]{};
+			std::memcpy(viewMatrix, std::addressof(cached.viewMat), sizeof(viewMatrix));
+			std::memcpy(projMatrix, std::addressof(cached.projMat), sizeof(projMatrix));
+			Multiply(viewMatrix, projMatrix, product);
+
+			const auto productName =
+				std::string{ "probe cache[" } + std::to_string(i) + "] view x proj";
+			ReportCandidate(productName.c_str(), product, direction, a_width, a_height);
 		}
 	}
 

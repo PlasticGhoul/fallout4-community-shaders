@@ -59,4 +59,16 @@ namespace Render
 	/// combined one and the unjittered combined one - so that which of them is
 	/// filled can be read off rather than guessed at.
 	void LogCameraMatrices() noexcept;
+
+	/// Tries every matrix the camera state and its cache can offer, and reports
+	/// for each where it puts the camera's own view direction.
+	///
+	/// This is the check that should have been written first. A view projection
+	/// is not recognised by its shape - the one this code trusted looks like a
+	/// matrix and is not one - but by what it does, and there is exactly one
+	/// thing it must do that can be verified without a known scene point:
+	/// carry viewDir to the centre of the screen, in front of the camera. Any
+	/// candidate that does is the one; every candidate that does not is out,
+	/// whatever its entries look like.
+	void ProbeCameraMatrices(std::uint32_t a_width, std::uint32_t a_height) noexcept;
 }
