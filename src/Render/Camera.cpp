@@ -3,6 +3,7 @@
 #include "Render/Renderer.h"
 
 #include <RE/B/BSGraphics.h>
+#include <RE/N/NiCamera.h>
 
 #include <REX/W32/DXGI.h>
 
@@ -110,11 +111,32 @@ namespace Render
 			return;
 		}
 
-		const auto& view = state->cameraState.camViewData;
+		const auto& camera = state->cameraState;
+		const auto& view = camera.camViewData;
+
 		LogMatrix("camera view", std::addressof(view.viewMat));
 		LogMatrix("camera proj", std::addressof(view.projMat));
 		LogMatrix("camera viewProj", std::addressof(view.viewProjMat));
-		LogMatrix("camera viewProjUnjittered", std::addressof(view.viewProjUnjittered));
+
+		// The three places the world camera could be instead of cameraState,
+		// covered in one pass so that finding it costs one run rather than
+		// three. The cache is what the engine keeps per camera; the reference
+		// camera is the scene node the state was built from, and its
+		// worldToCam is the view matrix in another form.
+		REX::INFO(
+			"camera cache holds {}, reference camera {}",
+			state->cameraDataCache.size(),
+			camera.referenceCamera != nullptr ? "present" : "null");
+
+		if (!state->cameraDataCache.empty()) {
+			LogMatrix(
+				"cache[0] viewProj",
+				std::addressof(state->cameraDataCache[0].camViewData.viewProjMat));
+		}
+
+		if (camera.referenceCamera != nullptr) {
+			LogMatrix("reference worldToCam", std::addressof(camera.referenceCamera->worldToCam));
+		}
 	}
 
 	std::optional<std::array<float, 16>> ViewProjectionComputed() noexcept

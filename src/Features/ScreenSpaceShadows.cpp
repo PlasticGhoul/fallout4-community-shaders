@@ -464,10 +464,12 @@ namespace Features
 				computedProjection[3],
 				alternative.count);
 
-			if (!_loggedMatrices) {
-				_loggedMatrices = true;
-				Render::LogCameraMatrices();
-			}
+			// Periodically, not once. Logging this a single time has now
+			// caught the wrong moment twice - the first draw of a session is
+			// a loading screen, where the sun has no rotation and the camera
+			// no transform, and one sample of a value that changes is not a
+			// measurement. The lesson cost two runs before it stuck.
+			Render::LogCameraMatrices();
 		}
 
 		return a_out.plan.count > 0;

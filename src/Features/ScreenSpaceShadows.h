@@ -104,9 +104,5 @@ namespace Features
 		/// established for Fallout 4, and one look at the log settles it
 		/// instead of three game starts.
 		bool _loggedDirection{ false };
-
-		/// The four matrices ViewData carries, written once so that which of
-		/// them actually holds the view projection can be read off.
-		bool _loggedMatrices{ false };
 	};
 }
