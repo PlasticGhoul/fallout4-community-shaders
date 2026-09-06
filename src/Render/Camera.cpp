@@ -253,6 +253,7 @@ namespace Render
 		};
 
 		bool g_loggedPerspective = false;
+		bool g_loggedRefusal = false;
 
 		/// Three rows that are unit length and mutually perpendicular. A camera
 		/// basis is, and a half-written or foreign matrix is not - so this is
@@ -355,6 +356,10 @@ namespace Render
 		// version-1-11-240-0.bin.
 		auto* const world = RE::Main::WorldRootCamera();
 		if (world == nullptr) {
+			if (!g_loggedRefusal) {
+				g_loggedRefusal = true;
+				REX::ERROR("world camera: Main::WorldRootCamera returned nothing");
+			}
 			return std::nullopt;
 		}
 
@@ -368,6 +373,27 @@ namespace Render
 		}
 
 		if (!IsOrthonormal(axes)) {
+			// Named, with the numbers. A silent refusal is how the last run
+			// looked like a success while the feature did nothing at all, and
+			// a check that cannot say which one it was is no better than none.
+			if (!g_loggedRefusal) {
+				g_loggedRefusal = true;
+				REX::ERROR(
+					"world camera basis is not orthonormal: "
+					"[{:.4f} {:.4f} {:.4f}] [{:.4f} {:.4f} {:.4f}] [{:.4f} {:.4f} {:.4f}]",
+					axes[0][0], axes[0][1], axes[0][2],
+					axes[1][0], axes[1][1], axes[1][2],
+					axes[2][0], axes[2][1], axes[2][2]);
+
+				// The transposed reading, in case worldToCam is stored the
+				// other way round - one look tells which, instead of a run.
+				REX::ERROR(
+					"the same read transposed: "
+					"[{:.4f} {:.4f} {:.4f}] [{:.4f} {:.4f} {:.4f}] [{:.4f} {:.4f} {:.4f}]",
+					axes[0][0], axes[1][0], axes[2][0],
+					axes[0][1], axes[1][1], axes[2][1],
+					axes[0][2], axes[1][2], axes[2][2]);
+			}
 			return std::nullopt;
 		}
 
@@ -384,8 +410,8 @@ namespace Render
 			axes[2][0] * sunAxis[0] + axes[2][1] * sunAxis[1] + axes[2][2] * sunAxis[2];
 
 		if (alignment > 0.999f || alignment < -0.999f) {
-			if (!g_loggedPerspective) {
-				g_loggedPerspective = true;
+			if (!g_loggedRefusal) {
+				g_loggedRefusal = true;
 				REX::ERROR(
 					"world camera looks straight down the sun ({:.4f}) - this is the shadow "
 					"camera again, refusing it",

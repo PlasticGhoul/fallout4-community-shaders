@@ -253,6 +253,12 @@ namespace Features
 
 	void ScreenSpaceShadows::Draw()
 	{
+		// Counted before anything can refuse, because it is what paces the
+		// periodic logging. Counting it after the first early return meant a
+		// frame that gave up left the counter at zero, and "every 180th" became
+		// "every one" - the last run wrote 920 kB of the same two lines.
+		++_draws;
+
 		const auto* const sky = RE::Sky::GetSingleton();
 		if (sky == nullptr || sky->mode.get() != RE::Sky::Mode::kFull ||
 			sky->sun == nullptr || sky->sun->light.get() == nullptr) {
@@ -294,8 +300,6 @@ namespace Features
 		if (!BuildGeometry(*sky, geometry)) {
 			return;
 		}
-
-		++_draws;
 
 		const Render::StateGuard guard;
 
