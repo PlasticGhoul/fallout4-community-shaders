@@ -34,6 +34,13 @@ namespace Render
 	/// is measured by F1 and named in a capture without the caller doing
 	/// anything about it. Returns PhaseDispatcher::kNoToken when the cap is
 	/// reached.
+	///
+	/// **The name must not be the feature's own.** The profiler keys its rows
+	/// by name alone, and the registry already measures every feature's Frame
+	/// under that name from Present. A phase subscribed under the same one
+	/// lands in the same row, where the two samples a frame average against
+	/// each other: F2's first snapshot showed the draw at half its cost, with
+	/// a p95 of exactly twice the mean. "<Feature>/Draw" is the convention.
 	PhaseDispatcher::Token SubscribeFramePhase(
 		std::string_view a_name,
 		std::function<void()> a_callback);

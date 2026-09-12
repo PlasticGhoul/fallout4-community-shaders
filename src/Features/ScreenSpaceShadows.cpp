@@ -168,7 +168,9 @@ namespace Features
 		// of the names B2's inventory wrote.
 		Render::Targets::LogSlots();
 
-		_phase = Render::SubscribeFramePhase("ScreenSpaceShadows", [this] { Draw(); });
+		// Not the feature's own name: the registry measures Frame under that
+		// one, and the profiler keys rows by name - see SubscribeFramePhase.
+		_phase = Render::SubscribeFramePhase("ScreenSpaceShadows/Draw", [this] { Draw(); });
 		if (_phase == Render::PhaseDispatcher::kNoToken) {
 			REX::ERROR("ScreenSpaceShadows: the frame phase has no room left");
 			return false;
