@@ -3,10 +3,10 @@
 #include "Render/Profiler.h"
 #include "Render/SwapChainHook.h"
 #include "Render/VTablePatch.h"
+#include "Shader/ShaderCatalog.h"
 #include "Util/ObjectRTTI.h"
 
-#include <RE/B/BSShader.h>
-
+#include <array>
 #include <string>
 #include <utility>
 
@@ -22,80 +22,133 @@ namespace Render
 		using SetupTechniqueFn = bool (*)(void*, std::uint32_t);
 
 		constexpr std::size_t kSetupTechniqueSlot = 2;
-		constexpr auto kClassName = "BSDFCompositeShader";
+		constexpr auto kPhaseCount = static_cast<std::size_t>(Phase::kCount);
 
-		VTablePatch g_patch;
-		void* g_original = nullptr;
-		PhaseDispatcher g_dispatcher;
-		std::uint64_t g_hits = 0;
-		bool g_installed = false;
+		struct Anchor
+		{
+			/// As the RTTI spells it, and as Shader::ShaderClasses lists it.
+			const char* className;
+			VTablePatch patch;
+			void* original{ nullptr };
+			PhaseDispatcher dispatcher;
+			std::uint64_t hits{ 0 };
+			bool installed{ false };
+		};
 
+		// kAfterOpaque names the class FrameTrace is expected to find first
+		// after composite and sky; the first trace run of F3 confirms or
+		// corrects it. A different measurement changes this string and
+		// nothing else.
+		std::array<Anchor, kPhaseCount> g_anchors{ {
+			{ "BSDFCompositeShader" },
+			{ "BSEffectShader" },
+		} };
+
+		template <std::size_t N>
 		bool ThunkSetupTechnique(void* a_self, std::uint32_t a_pass) noexcept
 		{
-			if (g_dispatcher.Dispatch(FrameCount())) {
-				++g_hits;
+			auto& anchor = g_anchors[N];
+			if (anchor.dispatcher.Dispatch(FrameCount())) {
+				++anchor.hits;
+			}
+			return reinterpret_cast<SetupTechniqueFn>(anchor.original)(a_self, a_pass);
+		}
+
+		template <std::size_t... I>
+		constexpr std::array<SetupTechniqueFn, sizeof...(I)> MakeThunks(std::index_sequence<I...>)
+		{
+			return { &ThunkSetupTechnique<I>... };
+		}
+
+		constexpr auto kThunks = MakeThunks(std::make_index_sequence<kPhaseCount>{});
+
+		std::uintptr_t VTableOf(std::string_view a_className) noexcept
+		{
+			for (const auto& shaderClass : Shader::ShaderClasses()) {
+				if (shaderClass.className == a_className) {
+					return shaderClass.vtable;
+				}
+			}
+			return 0;
+		}
+
+		bool InstallOne(std::size_t a_index) noexcept
+		{
+			auto& anchor = g_anchors[a_index];
+			if (anchor.installed) {
+				return true;
 			}
 
-			return reinterpret_cast<SetupTechniqueFn>(g_original)(a_self, a_pass);
+			auto** const table = reinterpret_cast<void**>(VTableOf(anchor.className));
+			if (table == nullptr) {
+				REX::ERROR("frame phase: no vtable address for {}", anchor.className);
+				return false;
+			}
+
+			// The table has to be the one the id promised, and it has to be a
+			// primary table, before an entry of it is touched. Finding out
+			// afterwards is not an option: the first call through a wrongly
+			// patched entry ends the process, and the locator sits in front
+			// of the table anyway.
+			const auto identity = Util::DescribeVTable(table);
+			if (!identity.has_value() ||
+				identity->className != anchor.className ||
+				identity->subobjectOffset != 0) {
+				REX::ERROR(
+					"frame phase: the vtable id for {} names {} at +0x{:X}, leaving it alone",
+					anchor.className,
+					identity.has_value() ? identity->className : std::string{ "nothing" },
+					identity.has_value() ? identity->subobjectOffset : 0);
+				return false;
+			}
+
+			if (!anchor.patch.InstallAtTable(
+					table, kSetupTechniqueSlot, reinterpret_cast<void*>(kThunks[a_index]))) {
+				REX::ERROR("frame phase: could not patch {}::SetupTechnique", anchor.className);
+				return false;
+			}
+
+			anchor.original = anchor.patch.Original();
+			anchor.installed = true;
+			REX::INFO(
+				"frame phase {} installed on {}, chaining to {}",
+				a_index,
+				anchor.className,
+				anchor.original);
+			return true;
+		}
+
+		bool InRange(Phase a_phase) noexcept
+		{
+			return static_cast<std::size_t>(a_phase) < kPhaseCount;
 		}
 	}
 
 	bool InstallFramePhase() noexcept
 	{
-		if (g_installed) {
-			return true;
+		bool before = false;
+		for (std::size_t i = 0; i < kPhaseCount; ++i) {
+			const bool ok = InstallOne(i);
+			if (i == static_cast<std::size_t>(Phase::kBeforeComposite)) {
+				before = ok;
+			}
 		}
-
-		// [0] is the main table; [1] is the second base subobject, 0x70 further
-		// on. Both ids exist in 1.11.240, checked offline against
-		// version-1-11-240-0.bin before ever being resolved - REL::ID::offset
-		// ends the process on an id it does not know.
-		auto** const table =
-			reinterpret_cast<void**>(RE::VTABLE::BSDFCompositeShader[0].address());
-
-		if (table == nullptr) {
-			REX::ERROR("frame phase: no vtable address for {}", kClassName);
-			return false;
-		}
-
-		// The table has to be the one the id promised, and it has to be a
-		// primary table, before an entry of it is touched. Finding out
-		// afterwards is not an option: the first call through a wrongly patched
-		// entry ends the process, and the locator sits in front of the table
-		// anyway.
-		const auto identity = Util::DescribeVTable(table);
-		if (!identity.has_value() ||
-			identity->className != kClassName ||
-			identity->subobjectOffset != 0) {
-			REX::ERROR(
-				"frame phase: the vtable id for {} names {} at +0x{:X}, leaving it alone",
-				kClassName,
-				identity.has_value() ? identity->className : std::string{ "nothing" },
-				identity.has_value() ? identity->subobjectOffset : 0);
-			return false;
-		}
-
-		if (!g_patch.InstallAtTable(
-				table, kSetupTechniqueSlot, reinterpret_cast<void*>(&ThunkSetupTechnique))) {
-			REX::ERROR("frame phase: could not patch {}::SetupTechnique", kClassName);
-			return false;
-		}
-
-		g_original = g_patch.Original();
-		g_installed = true;
-
-		REX::INFO("frame phase installed, chaining to {}", g_original);
-		return true;
+		return before;
 	}
 
 	PhaseDispatcher::Token SubscribeFramePhase(
+		Phase a_phase,
 		std::string_view a_name,
 		std::function<void()> a_callback)
 	{
+		if (!InRange(a_phase)) {
+			return PhaseDispatcher::kNoToken;
+		}
+
 		// The scope is opened here rather than by the caller, so that every
 		// subscriber is measured and not only the ones that remembered to ask.
 		std::string name{ a_name };
-		return g_dispatcher.Subscribe(
+		return g_anchors[static_cast<std::size_t>(a_phase)].dispatcher.Subscribe(
 			a_name,
 			[name = std::move(name), callback = std::move(a_callback)] {
 				const PassScope scope{ name };
@@ -103,13 +156,15 @@ namespace Render
 			});
 	}
 
-	void UnsubscribeFramePhase(PhaseDispatcher::Token a_token) noexcept
+	void UnsubscribeFramePhase(Phase a_phase, PhaseDispatcher::Token a_token) noexcept
 	{
-		g_dispatcher.Unsubscribe(a_token);
+		if (InRange(a_phase)) {
+			g_anchors[static_cast<std::size_t>(a_phase)].dispatcher.Unsubscribe(a_token);
+		}
 	}
 
-	std::uint64_t FramePhaseHits() noexcept
+	std::uint64_t FramePhaseHits(Phase a_phase) noexcept
 	{
-		return g_hits;
+		return InRange(a_phase) ? g_anchors[static_cast<std::size_t>(a_phase)].hits : 0;
 	}
 }

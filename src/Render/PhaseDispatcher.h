@@ -34,6 +34,12 @@ namespace Render
 
 		/// The name is for logging, and for the profiler pass FramePhase wraps
 		/// around the callback. Returns kNoToken when every slot is taken.
+		///
+		/// Tokens are unique across every dispatcher in the process, not only
+		/// within this one. FramePhase keeps one dispatcher per phase, and a
+		/// feature that named the wrong phase on Unsubscribe would otherwise
+		/// take somebody else's callback down with a token that merely looked
+		/// like its own.
 		Token Subscribe(std::string_view a_name, std::function<void()> a_callback);
 
 		/// Takes effect immediately, including for a subscriber that has not
@@ -67,7 +73,6 @@ namespace Render
 		void Retire(Entry& a_entry) noexcept;
 
 		std::array<Entry, kMaxSubscribers> _entries{};
-		Token _nextToken{ 1 };
 		std::uint64_t _lastFrame{ 0 };
 
 		/// Separate from _lastFrame, because frame zero is a frame like any

@@ -136,7 +136,7 @@ namespace Features
 		_everFired = false;
 		_draws = 0;
 		_frames = 0;
-		_lastHits = Render::FramePhaseHits();
+		_lastHits = Render::FramePhaseHits(Render::Phase::kBeforeComposite);
 
 		if (!Render::InitFullscreenPass()) {
 			return false;
@@ -170,7 +170,8 @@ namespace Features
 
 		// Not the feature's own name: the registry measures Frame under that
 		// one, and the profiler keys rows by name - see SubscribeFramePhase.
-		_phase = Render::SubscribeFramePhase("ScreenSpaceShadows/Draw", [this] { Draw(); });
+		_phase = Render::SubscribeFramePhase(
+			Render::Phase::kBeforeComposite, "ScreenSpaceShadows/Draw", [this] { Draw(); });
 		if (_phase == Render::PhaseDispatcher::kNoToken) {
 			REX::ERROR("ScreenSpaceShadows: the frame phase has no room left");
 			return false;
@@ -209,7 +210,7 @@ namespace Features
 		// tell "not started" from "stopped" is worse than none, because it
 		// teaches whoever reads the log to ignore it.
 		if (_frames % kStallInterval == 0) {
-			const auto hits = Render::FramePhaseHits();
+			const auto hits = Render::FramePhaseHits(Render::Phase::kBeforeComposite);
 
 			if (hits != _lastHits) {
 				_everFired = true;
@@ -234,7 +235,7 @@ namespace Features
 		// way of Registry::Tick, the callback from SetupTechnique - so they
 		// cannot overlap, and unsubscribing before releasing is enough. No lock
 		// is needed, and that is the assumption the design rests on.
-		Render::UnsubscribeFramePhase(_phase);
+		Render::UnsubscribeFramePhase(Render::Phase::kBeforeComposite, _phase);
 		_phase = Render::PhaseDispatcher::kNoToken;
 
 		if (_raymarch != nullptr) {

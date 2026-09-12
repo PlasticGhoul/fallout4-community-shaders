@@ -1,7 +1,22 @@
 #include "Render/PhaseDispatcher.h"
 
+#include <atomic>
+
 namespace Render
 {
+	namespace
+	{
+		/// One counter for every dispatcher, so that no two live tokens are
+		/// ever equal, whichever phase handed them out. Subscribe runs on the
+		/// render thread alone; the atomic is for the tests, which are free to
+		/// construct dispatchers anywhere.
+		PhaseDispatcher::Token NextToken() noexcept
+		{
+			static std::atomic<PhaseDispatcher::Token> next{ 1 };
+			return next.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+
 	PhaseDispatcher::Token PhaseDispatcher::Subscribe(
 		std::string_view a_name,
 		std::function<void()> a_callback)
@@ -11,7 +26,7 @@ namespace Render
 				continue;
 			}
 
-			entry.token = _nextToken++;
+			entry.token = NextToken();
 			entry.name.assign(a_name);
 			entry.callback = std::move(a_callback);
 			entry.active = true;

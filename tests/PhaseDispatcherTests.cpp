@@ -190,6 +190,29 @@ int main()
 		Check(dispatcher.Count() == 0, "unsubscribing an unknown token is harmless");
 	}
 
+	{
+		// Two phases are two dispatchers. A subscriber of one never runs in
+		// the other, and each counts its own frames.
+		Render::PhaseDispatcher before;
+		Render::PhaseDispatcher after;
+		int ranBefore = 0;
+		int ranAfter = 0;
+
+		const auto tokenBefore = before.Subscribe("before", [&ranBefore] { ++ranBefore; });
+		const auto tokenAfter = after.Subscribe("after", [&ranAfter] { ++ranAfter; });
+
+		Check(before.Dispatch(1), "the first phase runs on frame one");
+		Check(ranBefore == 1 && ranAfter == 0, "and only its own subscriber ran");
+		Check(after.Dispatch(1), "the second phase runs on the same frame independently");
+		Check(ranBefore == 1 && ranAfter == 1, "and only its own subscriber ran there");
+
+		after.Unsubscribe(tokenBefore);
+		Check(after.Count() == 1, "a token of the other phase unsubscribes nothing here");
+		before.Unsubscribe(tokenBefore);
+		after.Unsubscribe(tokenAfter);
+		Check(before.Count() == 0 && after.Count() == 0, "and each token unsubscribes in its own");
+	}
+
 	std::printf("\n%s\n", g_failures == 0 ? "all checks passed" : "checks failed");
 	return g_failures == 0 ? 0 : 1;
 }
