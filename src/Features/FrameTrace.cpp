@@ -36,7 +36,10 @@ namespace Features
 
 		constexpr std::size_t kSetupTechniqueSlot = 2;
 		constexpr std::size_t kClassCount = 13;
-		constexpr std::uint32_t kDefaultKey = 0x79;  // VK_F10
+		// VK_F9. Not F10: Windows reports F10 as a system key, WM_SYSKEYDOWN
+		// rather than WM_KEYDOWN, and the window hook offers only the latter.
+		// The first trace run was armed on F10 and never fired for that reason.
+		constexpr std::uint32_t kDefaultKey = 0x78;
 
 		std::array<Render::VTablePatch, kClassCount> g_patches{};
 		std::array<void*, kClassCount> g_original{};
