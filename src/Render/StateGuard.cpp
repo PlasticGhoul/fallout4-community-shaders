@@ -54,6 +54,7 @@ namespace Render
 		_context->CSGetShaderResources(0, kComputeSlots, _csResources);
 		_context->CSGetUnorderedAccessViews(0, kComputeSlots, _csUAVs);
 		_context->CSGetSamplers(0, kComputeSlots, _csSamplers);
+		_context->PSGetSamplers(0, kPixelSamplers, _psSamplers);
 
 		// Slot 1 rather than 0: that is where the Bend raymarch expects its
 		// PerFrame buffer, and it is the only one we overwrite.
@@ -86,6 +87,7 @@ namespace Render
 		// a null here asks for.
 		_context->CSSetUnorderedAccessViews(0, kComputeSlots, _csUAVs, nullptr);
 		_context->CSSetSamplers(0, kComputeSlots, _csSamplers);
+		_context->PSSetSamplers(0, kPixelSamplers, _psSamplers);
 		_context->CSSetConstantBuffers(1, kComputeSlots, _csConstantBuffers);
 		_context->PSSetConstantBuffers(1, kComputeSlots, _psConstantBuffers);
 
@@ -102,6 +104,7 @@ namespace Render
 		ReleaseAll(_csResources, kComputeSlots);
 		ReleaseAll(_csUAVs, kComputeSlots);
 		ReleaseAll(_csSamplers, kComputeSlots);
+		ReleaseAll(_psSamplers, kPixelSamplers);
 		ReleaseAll(_csConstantBuffers, kComputeSlots);
 		ReleaseAll(_psConstantBuffers, kComputeSlots);
 	}

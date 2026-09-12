@@ -35,10 +35,12 @@ namespace Render
 		static constexpr std::uint32_t kRenderTargets = 8;
 		static constexpr std::uint32_t kViewports = 16;
 
-		/// The slots our passes bind into, and no more: slot 0 of the pixel
-		/// stage for the mask, and the compute stage's first slot of each kind
-		/// for the raymarch.
-		static constexpr std::uint32_t kPixelResources = 1;
+		/// The slots our passes bind into, and no more: slots 0 and 1 of the
+		/// pixel stage (F2's mask; F4's coverage cube and depth), the pixel
+		/// stage's first sampler (F4), and the compute stage's first slot of
+		/// each kind for the raymarch.
+		static constexpr std::uint32_t kPixelResources = 2;
+		static constexpr std::uint32_t kPixelSamplers = 1;
 		static constexpr std::uint32_t kComputeSlots = 1;
 
 		REX::W32::ID3D11DeviceContext* _context{ nullptr };
@@ -71,6 +73,7 @@ namespace Render
 		REX::W32::ID3D11ShaderResourceView* _csResources[kComputeSlots]{};
 		REX::W32::ID3D11UnorderedAccessView* _csUAVs[kComputeSlots]{};
 		REX::W32::ID3D11SamplerState* _csSamplers[kComputeSlots]{};
+		REX::W32::ID3D11SamplerState* _psSamplers[kPixelSamplers]{};
 		REX::W32::ID3D11Buffer* _csConstantBuffers[kComputeSlots]{};
 
 		/// Slot 1 of the pixel stage as well: the fog pass binds its constants
