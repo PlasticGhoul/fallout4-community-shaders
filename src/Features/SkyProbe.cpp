@@ -349,14 +349,13 @@ namespace Features
 		const auto counts = Render::DrawHookCountsSoFar();
 		REX::INFO(
 			"SkyProbe: in {} frames: DrawIndexed {}, Draw {}, DrawIndexedInstanced {}, DrawInstanced {}, "
-			"ExecuteCommandList {}, of which on the deferred table {}",
+			"ExecuteCommandList {}",
 			kSecond,
 			counts.indexed - _lastCounts.indexed,
 			counts.plain - _lastCounts.plain,
 			counts.indexedInstanced - _lastCounts.indexedInstanced,
 			counts.instanced - _lastCounts.instanced,
-			counts.executeCommandList - _lastCounts.executeCommandList,
-			counts.onDeferredTable - _lastCounts.onDeferredTable);
+			counts.executeCommandList - _lastCounts.executeCommandList);
 		_lastCounts = counts;
 
 		const std::scoped_lock lock{ _mutex };

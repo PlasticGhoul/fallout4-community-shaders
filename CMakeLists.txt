@@ -701,6 +701,34 @@ if(FO4CS_BUILD_TESTS)
 
     add_test(NAME DrawObserver COMMAND DrawObserverTests)
 
+    # Executes machine code it generated itself, against a fake object laid
+    # out like the runtime's context. Host only, no device.
+    add_executable(
+        ContextTableTests
+        "${CMAKE_SOURCE_DIR}/tests/ContextTableTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Render/ContextTable.cpp"
+    )
+
+    target_include_directories(
+        ContextTableTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(ContextTableTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        ContextTableTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(ContextTableTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            ContextTableTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME ContextTable COMMAND ContextTableTests)
+
     # The plausibility check and the world-to-clip arithmetic are what run
     # here. The two functions beside them reach for the world camera, which is
     # exactly what cannot be tested on the host; they link because their
