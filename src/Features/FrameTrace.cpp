@@ -4,6 +4,7 @@
 #include "Menu/Hotkeys.h"
 #include "Menu/KeyLatch.h"
 #include "Render/DebugName.h"
+#include "Render/FramePhase.h"
 #include "Render/Renderer.h"
 #include "Render/SwapChainHook.h"
 #include "Render/VTablePatch.h"
@@ -48,6 +49,49 @@ namespace Features
 		std::atomic<bool> g_recording{ false };
 
 		Trace::Recorder g_recorder;
+
+		// diag: does a value written into fogState.clamp from Present survive
+		// to the composite? Written every frame with the last-writer guard from
+		// the spec, read back once a second from kBeforeComposite.
+		float g_clampOriginal = 0.0f;
+		float g_clampWritten = 0.0f;
+		bool g_clampOverridden = false;
+		std::uint64_t g_probeFrames = 0;
+		Render::PhaseDispatcher::Token g_probeToken = Render::PhaseDispatcher::kNoToken;
+
+		void ProbeWrite() noexcept
+		{
+			auto* const state = RE::BSGraphics::State::GetSingleton();
+			if (state == nullptr) {
+				return;
+			}
+			float& clamp = state->fogState.clamp;
+			if (!g_clampOverridden || clamp != g_clampWritten) {
+				g_clampOriginal = clamp;
+			}
+			g_clampWritten = g_clampOriginal * 0.5f;
+			clamp = g_clampWritten;
+			g_clampOverridden = true;
+		}
+
+		void ProbeRead() noexcept
+		{
+			if (++g_probeFrames % 180 != 0) {
+				return;
+			}
+			const auto* const state = RE::BSGraphics::State::GetSingleton();
+			const auto* const sky = RE::Sky::GetSingleton();
+			if (state == nullptr || sky == nullptr) {
+				return;
+			}
+			REX::INFO(
+				"clamp probe: wrote {:.4f} from original {:.4f}, composite sees {:.4f}, Sky::fogClamp {:.4f} - {}",
+				g_clampWritten,
+				g_clampOriginal,
+				state->fogState.clamp,
+				sky->fogClamp,
+				state->fogState.clamp == g_clampWritten ? "SURVIVED" : "overwritten before the composite");
+		}
 
 		Menu::KeyLatch& TheLatch() noexcept
 		{
@@ -303,11 +347,18 @@ namespace Features
 			return false;
 		}
 
+		if (g_probeToken == Render::PhaseDispatcher::kNoToken) {
+			g_probeToken = Render::SubscribeFramePhase(
+				Render::Phase::kBeforeComposite, "FrameTrace/ClampProbe", [] { ProbeRead(); });
+		}
+
 		return true;
 	}
 
 	void FrameTrace::Frame()
 	{
+		ProbeWrite();
+
 		// Read every frame, so a rebind through the overlay takes effect.
 		TheLatch().SetKey(Settings::GetUInt32("FrameTrace/key"));
 
@@ -352,6 +403,15 @@ namespace Features
 
 	void FrameTrace::Shutdown()
 	{
+		Render::UnsubscribeFramePhase(Render::Phase::kBeforeComposite, g_probeToken);
+		g_probeToken = Render::PhaseDispatcher::kNoToken;
+		if (g_clampOverridden) {
+			if (auto* const state = RE::BSGraphics::State::GetSingleton(); state != nullptr) {
+				state->fogState.clamp = g_clampOriginal;
+			}
+			g_clampOverridden = false;
+		}
+
 		Menu::TheHotkeys().Unregister(TheLatch());
 		g_armed.store(false, std::memory_order_relaxed);
 
