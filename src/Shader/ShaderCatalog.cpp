@@ -34,33 +34,36 @@ namespace Shader
 		// Roughly a terminal width, so a long list wraps rather than producing
 		// one unreadable line.
 		constexpr std::size_t kLineWidth = 140;
+	}
 
-		std::string TechniqueName(const void* a_shader, std::uint32_t a_id) noexcept
-		{
-			auto** const vtable = *reinterpret_cast<void** const*>(a_shader);
-			if (vtable == nullptr) {
-				return {};
-			}
-
-			const auto call = reinterpret_cast<GetTechniqueNameFn>(vtable[kGetTechniqueNameSlot]);
-
-			std::array<char, kNameBufferSize> buffer{};
-			call(a_shader, a_id, buffer.data(), static_cast<std::uint32_t>(buffer.size() - 1));
-
-			// The engine may leave the buffer untouched for an id it does not
-			// recognise, and a name full of control characters would mean the
-			// slot is not the one we think it is. Either way, say nothing
-			// rather than write rubbish into the log.
-			std::string name{ buffer.data() };
-			for (const auto character : name) {
-				if (static_cast<unsigned char>(character) < 0x20) {
-					return {};
-				}
-			}
-
-			return name;
+	std::string TechniqueName(const void* a_shader, std::uint32_t a_id) noexcept
+	{
+		auto** const vtable = *reinterpret_cast<void** const*>(a_shader);
+		if (vtable == nullptr) {
+			return {};
 		}
 
+		const auto call = reinterpret_cast<GetTechniqueNameFn>(vtable[kGetTechniqueNameSlot]);
+
+		std::array<char, kNameBufferSize> buffer{};
+		call(a_shader, a_id, buffer.data(), static_cast<std::uint32_t>(buffer.size() - 1));
+
+		// The engine may leave the buffer untouched for an id it does not
+		// recognise, and a name full of control characters would mean the
+		// slot is not the one we think it is. Either way, say nothing
+		// rather than write rubbish into the log.
+		std::string name{ buffer.data() };
+		for (const auto character : name) {
+			if (static_cast<unsigned char>(character) < 0x20) {
+				return {};
+			}
+		}
+
+		return name;
+	}
+
+	namespace
+	{
 		// The header of every map, whatever the verdict on it.
 		//
 		// This is a raw dump on purpose. A layout assumption that misses twice

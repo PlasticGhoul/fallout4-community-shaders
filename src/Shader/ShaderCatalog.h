@@ -38,6 +38,14 @@ namespace Shader
 	/// against nothing.
 	[[nodiscard]] std::span<const ShaderClass> ShaderClasses() noexcept;
 
+	/// The engine's own name for one technique of one shader object, through
+	/// vtable slot 09. Empty when the engine gives none.
+	///
+	/// A call into the game, not a read of it: callers pass only an object
+	/// whose class Util::DescribeObject confirmed - the slot numbering is
+	/// commonlibf4's, and on a wrong object it would call something else.
+	[[nodiscard]] std::string TechniqueName(const void* a_shader, std::uint32_t a_id) noexcept;
+
 	/// Logs what one shader object holds: its identity cross-check, the fxp
 	/// name, and per stage the number of techniques with their ids.
 	///
