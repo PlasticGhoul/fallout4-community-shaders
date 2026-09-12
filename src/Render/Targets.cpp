@@ -69,13 +69,15 @@ namespace Render::Targets
 		}
 
 		REX::INFO(
-			"target slots: diffuse {} is {}, specular {} is {}, normals {} is {}",
+			"target slots: diffuse {} is {}, specular {} is {}, normals {} is {}, scene hdr {} is {}",
 			kLightDiffuse,
 			NameOf(RenderTargetTexture(kLightDiffuse)),
 			kLightSpecular,
 			NameOf(RenderTargetTexture(kLightSpecular)),
 			kGBufferNormal,
-			NameOf(RenderTargetTexture(kGBufferNormal)));
+			NameOf(RenderTargetTexture(kGBufferNormal)),
+			kSceneHDR,
+			NameOf(RenderTargetTexture(kSceneHDR)));
 
 		// The depth has no texture pointer of its own here, so it is named
 		// through the view instead - GetViewTargetName follows a view to the

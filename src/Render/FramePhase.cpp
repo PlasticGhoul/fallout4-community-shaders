@@ -35,10 +35,11 @@ namespace Render
 			bool installed{ false };
 		};
 
-		// kAfterOpaque names the class FrameTrace is expected to find first
-		// after composite and sky; the first trace run of F3 confirms or
-		// corrects it. A different measurement changes this string and
-		// nothing else.
+		// kAfterOpaque: BSEffectShader, measured by FrameTrace on 2026-09-12
+		// in two frames, one with water in view. The composite writes RT_004,
+		// the sky draws into it, the water surfaces follow, and the first
+		// effect technique of the frame comes after all of them. A different
+		// measurement changes this string and nothing else.
 		std::array<Anchor, kPhaseCount> g_anchors{ {
 			{ "BSDFCompositeShader" },
 			{ "BSEffectShader" },

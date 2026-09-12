@@ -35,10 +35,11 @@ namespace Features
 
 		constexpr std::size_t kSetupTechniqueSlot = 2;
 		constexpr std::size_t kClassCount = 13;
-		// VK_F9. Not F10: Windows reports F10 as a system key, WM_SYSKEYDOWN
-		// rather than WM_KEYDOWN, and the window hook offers only the latter.
-		// The first trace run was armed on F10 and never fired for that reason.
-		constexpr std::uint32_t kDefaultKey = 0x78;
+		// VK_F8, which Fallout 4 leaves unbound. Not F10: Windows reports F10
+		// as a system key, WM_SYSKEYDOWN rather than WM_KEYDOWN, and the
+		// window hook offers only the latter - the first trace run was armed
+		// on F10 and could not fire. Not F9 either: that is quick load.
+		constexpr std::uint32_t kDefaultKey = 0x77;
 
 		std::array<Render::VTablePatch, kClassCount> g_patches{};
 		std::array<void*, kClassCount> g_original{};

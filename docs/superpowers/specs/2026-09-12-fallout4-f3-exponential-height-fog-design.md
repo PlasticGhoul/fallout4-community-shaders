@@ -99,7 +99,7 @@ Aus dem Brainstorming vom 2026-09-12, jeweils mit Begründung:
 ### 4.1 Was es ist
 
 `Features::FrameTrace` in `src/Features/`, mit einem Schalter (aus) und einer Taste (`Key`, Vorgabe
-F10, `0x79`). Ein Tastendruck schärft es; der nächste vollständige Frame zwischen zwei `Present`
+F8, `0x77`; F10 kommt als `WM_SYSKEYDOWN` nie am Fensterhaken an, F9 ist Quick-Load). Ein Tastendruck schärft es; der nächste vollständige Frame zwischen zwei `Present`
 wird aufgezeichnet und im darauffolgenden `Frame()` als Block ins Log geschrieben.
 
 ### 4.2 Was es aufzeichnet
@@ -378,7 +378,7 @@ Spiels muß weg sein.
 | `ExponentialHeightFog/sunAnisotropy`   | −0,99 – 0,99   | 0,2     | Bündelung des Glühens um die Sonne                                                                            |
 | `ExponentialHeightFog/vanillaFog`      | 0 – 1          | 1       | Anteil des Spielnebels, siehe 7                                                                               |
 | `FrameTrace/enabled`                   | —              | aus     | Schalter                                                                                                      |
-| `FrameTrace/key`                       | Taste          | F10     | schärft die Aufzeichnung                                                                                      |
+| `FrameTrace/key`                       | Taste          | F8      | schärft die Aufzeichnung                                                                                      |
 
 Die Horizontweite von 500.000 ist kein Regler. Alle Regler werden bei jeder Verwendung frisch
 gelesen; gemerkt werden nur die beiden Werte aus 7.2.
@@ -431,8 +431,8 @@ bleibt. Das ist der Preis eines Passes gegenüber F12 und steht so in der Roadma
 
 Zwei Spielstarts, gebündelt.
 
-**Lauf 1, Trace und Probe.** Sanctuary draußen, Blick über den Ort: F10. Ein zweites Mal mit
-Wasser im Bild: F10. Dazu läuft die Probe aus 7.3. Ergebnis: Anker-Klasse, HDR-Ziel, Ausgang der
+**Lauf 1, Trace und Probe.** Sanctuary draußen, Blick über den Ort: F8. Ein zweites Mal mit
+Wasser im Bild: F8. Dazu läuft die Probe aus 7.3. Ergebnis: Anker-Klasse, HDR-Ziel, Ausgang der
 Probe. Danach werden `kAfterOpaque` und `kSceneHDR` eingetragen und der Nebelpass gebaut.
 
 **Lauf 2, Abnahme.**

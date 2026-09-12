@@ -30,6 +30,14 @@ namespace Render::Targets
 	/// measuring spike. Unused by F2, named for what comes after it.
 	inline constexpr std::size_t kGBufferNormal = 20;
 
+	/// FO4_RT_004, R11G11B10_FLOAT. The finished HDR scene: the composite
+	/// technique 0x0040 writes it reading the whole g-buffer and both light
+	/// targets, the sky draws into it after, and everything from the water
+	/// surfaces to the effects draws on top. Measured by FrameTrace on
+	/// 2026-09-12 in two frames. What a feature draws onto in
+	/// Phase::kAfterOpaque.
+	inline constexpr std::size_t kSceneHDR = 4;
+
 	/// Null for an index out of range or an empty slot.
 	///
 	/// These are silent on failure by design. They are read once per frame from
