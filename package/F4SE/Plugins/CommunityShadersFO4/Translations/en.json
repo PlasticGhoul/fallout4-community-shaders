@@ -9,7 +9,7 @@
     "feature.cloud_shadows.cloud_height": "Cloud Height",
     "feature.cloud_shadows.cloud_height_help": "Height of the cloud layer in metres. Sets how far the shadows are offset from the clouds when the sun is low.",
     "feature.cloud_shadows.debug_view": "Debug View",
-    "feature.cloud_shadows.debug_view_help": "Shows the pass instead of the picture: the cloud coverage as the ground sees it, or the direction it is sampled in.",
+    "feature.cloud_shadows.debug_view_help": "Shows the pass instead of the picture: the cloud coverage as the ground sees it, the direction it is sampled in, or the six faces of the coverage map.",
     "feature.cloud_shadows.help": "Shadows of the clouds overhead, moving across the landscape with them. Taken from the clouds the game draws, so they match the sky.",
     "feature.cloud_shadows.name": "Cloud Shadows",
     "feature.cloud_shadows.opacity": "Opacity",

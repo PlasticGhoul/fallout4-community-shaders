@@ -81,7 +81,10 @@ namespace Features
 		bool _imageReady{ false };
 
 		// Saved around one repeated draw, on the render thread.
-		REX::W32::ID3D11RenderTargetView* _savedTarget{ nullptr };
+		/// All eight: the clouds technique binds RT_004 and RT_029, the motion
+		/// vectors, and TAA needs the second one from every layer.
+		static constexpr std::uint32_t kSavedTargets = 8;
+		REX::W32::ID3D11RenderTargetView* _savedTargets[kSavedTargets]{};
 		REX::W32::ID3D11DepthStencilView* _savedDepth{ nullptr };
 		REX::W32::ID3D11BlendState* _savedBlend{ nullptr };
 		REX::W32::ID3D11RasterizerState* _savedRasterizer{ nullptr };

@@ -111,6 +111,9 @@ namespace Features
 			if (a_choice == "direction") {
 				return 2.0f;
 			}
+			if (a_choice == "cube") {
+				return 3.0f;
+			}
 			return 0.0f;
 		}
 
@@ -198,12 +201,12 @@ namespace Features
 		Settings::DeclareChoice(
 			"CloudShadows/debugView",
 			"off",
-			std::vector<std::string>{ "off", "coverage", "direction" })
+			std::vector<std::string>{ "off", "coverage", "direction", "cube" })
 			.Label("feature.cloud_shadows.debug_view", "Debug View")
 			.Help(
 				"feature.cloud_shadows.debug_view_help",
 				"Shows the pass instead of the picture: the cloud coverage as the ground sees "
-				"it, or the direction it is sampled in.");
+				"it, the direction it is sampled in, or the six faces of the coverage map.");
 	}
 
 	bool CloudShadows::Setup()
@@ -319,8 +322,13 @@ namespace Features
 
 	void CloudShadows::ReleaseSaved() noexcept
 	{
-		for (auto** object : { reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedTarget)),
-				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedDepth)),
+		for (auto*& target : _savedTargets) {
+			if (target != nullptr) {
+				target->Release();
+				target = nullptr;
+			}
+		}
+		for (auto** object : { reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedDepth)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedBlend)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedRasterizer)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedConstants)) }) {
@@ -480,7 +488,7 @@ namespace Features
 			}
 		}
 
-		a_context.OMGetRenderTargets(1, std::addressof(_savedTarget), std::addressof(_savedDepth));
+		a_context.OMGetRenderTargets(kSavedTargets, _savedTargets, std::addressof(_savedDepth));
 		a_context.OMGetBlendState(std::addressof(_savedBlend), _savedFactor, std::addressof(_savedMask));
 		a_context.RSGetState(std::addressof(_savedRasterizer));
 		_savedViewportCount = 16;
@@ -506,7 +514,7 @@ namespace Features
 		_repeating = false;
 
 		a_context.VSSetConstantBuffers(kSkyConstantSlot, 1, std::addressof(_savedConstants));
-		a_context.OMSetRenderTargets(1, std::addressof(_savedTarget), _savedDepth);
+		a_context.OMSetRenderTargets(kSavedTargets, _savedTargets, _savedDepth);
 		a_context.OMSetBlendState(_savedBlend, _savedFactor, _savedMask);
 		a_context.RSSetState(_savedRasterizer);
 		a_context.RSSetViewports(_savedViewportCount, _savedViewports);

@@ -15,7 +15,9 @@
 // The "Debug View" setting, carried in CameraUp.w:
 //   1  coverage   the sampled coverage, black to white
 //   2  direction  normalize(direction) * 0.5 + 0.5
-// Both are drawn with a plain blend state onto RT_058 alone.
+//   3  cube       the six faces of the coverage map, three by two:
+//                 +X -X +Y over -Y +Z -Z, each face as D3D lays it out
+// All are drawn with a plain blend state onto RT_058 alone.
 
 TextureCube<float4> Coverage : register(t0);
 Texture2D<float> DepthTexture : register(t1);
@@ -62,10 +64,37 @@ PixelOutput Output(float3 value)
 	return output;
 }
 
+// The direction a texel of face `face` at (s, t) in [-1, 1] stands for, per
+// the D3D cube face orientation table; t runs down the texture like v.
+float3 CubeDirection(int face, float s, float t)
+{
+	if (face == 0)
+		return float3(1.0, -t, -s);
+	if (face == 1)
+		return float3(-1.0, -t, s);
+	if (face == 2)
+		return float3(s, 1.0, t);
+	if (face == 3)
+		return float3(s, -1.0, -t);
+	if (face == 4)
+		return float3(s, -t, 1.0);
+	return float3(-s, -t, -1.0);
+}
+
 PixelOutput main(PixelInput input)
 {
 	const float depth = DepthTexture.Load(int3(input.position.xy, 0));
 	const int debugView = (int)(CameraUp.w + 0.5);
+
+	if (debugView == 3) {
+		const float2 cell = float2(input.uv.x * 3.0, input.uv.y * 2.0);
+		const int face = (int)floor(cell.x) + 3 * (int)floor(cell.y);
+		const float2 st = frac(cell) * 2.0 - 1.0;
+		const float value = Coverage.SampleLevel(LinearClamp, CubeDirection(face, st.x, st.y), 0).a;
+		// A thin frame around each face, so the grid is readable.
+		const float edge = max(abs(st.x), abs(st.y)) > 0.98 ? 0.5 : 0.0;
+		return Output(float3(value, value + edge, value));
+	}
 
 	// Sky: no surface, no shadow.
 	if (depth >= 0.9999)
