@@ -9,14 +9,32 @@
 // Everything is relative to the camera. World coordinates in Fallout 4 run
 // to eighty thousand, and a float has seven digits; only the height needs
 // the camera's z, and that is one number.
+//
+// Two switches for looking at the pass rather than through it, both off in
+// the file as shipped and turned on by a define at the top of this file in
+// the game's Data folder, which the feature reloads within a second:
+//
+//   FOG_DEBUG_OPACITY  the picture becomes the fog's opacity, black to white
+//   FOG_DEBUG_COLOR    the picture becomes our rebuild of the game's fog
+//                      colour, to hold against the game's own at the horizon
 
 Texture2D<float> DepthTexture : register(t0);
+
+// No pixel is treated as farther than this. The depth buffer's far end
+// packs LOD terrain and the sky dome into the last few ten-thousandths, and
+// near / (1 - z) turns those into a million units and more - full cover in
+// the game's far fog colour, bright enough after bloom to read as white, and
+// jumping between two values as a pixel's depth crosses whatever threshold
+// separates sky from ground. Capping the distance for ground and sky alike
+// gives the horizon one opacity and no seam. The game's own far fog distance
+// is the natural cap; this is the ceiling for weathers that set it absurdly.
+static const float kMaxFogDistance = 200000.0;
 
 cbuffer PerFrame : register(b1)
 {
 	float4 CameraForward;   // xyz forward, w camera height
 	float4 CameraRight;     // xyz right / sx, w near plane
-	float4 CameraUp;        // xyz up / sy, w sky distance
+	float4 CameraUp;        // xyz up / sy, w unused
 	float4 SunDirection;    // xyz towards the sun, w sun inscattering
 	float4 SunColor;        // rgb, w anisotropy
 	float4 FogRange;        // x near, y far, z power, w clamp - fogState.rangeData.xy, power, clamp
@@ -81,11 +99,11 @@ float4 main(PixelInput input) : SV_TARGET0
 	const float2 ndc = float2(input.uv.x * 2.0 - 1.0, 1.0 - input.uv.y * 2.0);
 	const float3 ray = CameraForward.xyz + ndc.x * CameraRight.xyz + ndc.y * CameraUp.xyz;
 
-	// z = 1 - near / d along forward; the sky reads as one and gets the
-	// horizon distance instead.
+	// z = 1 - near / d along forward. The sky's one and the far end of the
+	// ground both run into the cap; see kMaxFogDistance.
 	const float nearPlane = CameraRight.w;
-	const float skyDistance = CameraUp.w;
-	const float viewDepth = depth >= 0.99999 ? skyDistance : nearPlane / max(1.0 - depth, 1e-6);
+	const float farCap = min(FogRange.y, kMaxFogDistance);
+	const float viewDepth = min(nearPlane / max(1.0 - depth, 1e-6), farCap);
 
 	const float3 relative = ray * viewDepth;
 	const float rayLength = length(relative);
@@ -124,6 +142,13 @@ float4 main(PixelInput input) : SV_TARGET0
 	const float opacity = 1.0 - transmittance;
 
 	float3 color = VanillaFogColor(rayLength, pixelHeight);
+
+#if defined(FOG_DEBUG_OPACITY)
+	return float4(opacity.xxx, 1.0);
+#endif
+#if defined(FOG_DEBUG_COLOR)
+	return float4(color, 1.0);
+#endif
 
 	// The sun's glow through the fog: a Henyey-Greenstein lobe around it.
 	const float sunInscattering = SunDirection.w;

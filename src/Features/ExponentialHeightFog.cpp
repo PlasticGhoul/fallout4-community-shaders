@@ -45,10 +45,6 @@ namespace Features
 		constexpr auto kShaderFile = "ExponentialHeightFog/Fog.hlsl";
 		constexpr std::uint64_t kLogInterval = 180;
 
-		/// Far enough that the integral has converged upward and run to full
-		/// cover downward. The sky is drawn at infinity; this stands in for it.
-		constexpr float kSkyDistance = 500000.0f;
-
 		/// Field for field the cbuffer PerFrame of Fog.hlsl: thirteen float4.
 		struct alignas(16) FogConstants
 		{
@@ -276,7 +272,9 @@ namespace Features
 		data.cameraUp[0] = camera.upOverScaleY[0];
 		data.cameraUp[1] = camera.upOverScaleY[1];
 		data.cameraUp[2] = camera.upOverScaleY[2];
-		data.cameraUp[3] = kSkyDistance;
+		// Free since the sky stopped having a distance of its own; the shader
+		// caps ground and sky alike at the game's far fog distance.
+		data.cameraUp[3] = 0.0f;
 		data.sunDirection[0] = towardsSun[0];
 		data.sunDirection[1] = towardsSun[1];
 		data.sunDirection[2] = towardsSun[2];
