@@ -98,11 +98,5 @@ namespace Features
 		/// normal state indoors, not a fault.
 		bool _reportedNoSun{ false };
 		bool _reportedNoTargets{ false };
-
-		/// The light's world rotation and the sun node's position, written once
-		/// per session. Which column of that matrix is the direction is not
-		/// established for Fallout 4, and one look at the log settles it
-		/// instead of three game starts.
-		bool _loggedDirection{ false };
 	};
 }

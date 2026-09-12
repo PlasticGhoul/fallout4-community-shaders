@@ -648,13 +648,14 @@ if(FO4CS_BUILD_TESTS)
 
     add_test(NAME BendDispatch COMMAND BendDispatchTests)
 
-    # Only the plausibility check is linked in. The rest of Camera.cpp reaches
-    # for the engine's singleton, which is exactly what cannot be tested here.
+    # The plausibility check and the world-to-clip arithmetic are what run
+    # here. The two functions beside them reach for the world camera, which is
+    # exactly what cannot be tested on the host; they link because their
+    # engine calls resolve lazily and are never made.
     add_executable(
         CameraTests
         "${CMAKE_SOURCE_DIR}/tests/CameraTests.cpp"
         "${CMAKE_SOURCE_DIR}/src/Render/Camera.cpp"
-        "${CMAKE_SOURCE_DIR}/src/Render/Renderer.cpp"
     )
 
     target_include_directories(

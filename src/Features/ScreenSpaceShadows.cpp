@@ -337,63 +337,6 @@ namespace Features
 		const auto* const light = reinterpret_cast<const RE::NiLight*>(a_sky.sun->light.get());
 		const auto& rotate = light->GetWorldRotate();
 
-		// Where the engine draws the sun. Read through NiAVObject, which sits
-		// at offset zero of NiBillboardNode - its own type is forward declared
-		// only, the same trick as the light above.
-		const auto* const node =
-			reinterpret_cast<const RE::NiAVObject*>(a_sky.sun->sunBaseNode.get());
-		if (node == nullptr) {
-			return false;
-		}
-
-		const auto& sunPosition = node->GetWorldTranslate();
-
-		// Logged once a second rather than once a session. The first version
-		// wrote it a single time and caught the one moment where it was
-		// meaningless - an identity rotation and a sun at the origin, because
-		// the world had not been placed yet. One sample of a value that
-		// changes is not a measurement.
-		if (_draws % kStallInterval == 0) {
-			// All twelve floats, not the nine a 3x3 would have. Two readings of
-			// this structure have now missed: the column this code takes gives
-			// a direction with no vertical component at all, and rows one and
-			// two read as an exact identity that cannot be orthonormal beside
-			// row zero. Once an assumption about a layout is wrong twice, the
-			// answer is a raw dump rather than a third guess - the lesson C
-			// paid for. NiMatrix3 is NiPoint4 entry[3], so the fourth column
-			// is in here as well.
-			const auto& transform = light->GetWorldTransform();
-			REX::INFO(
-				"sun light rotate raw: "
-				"[{:.4f} {:.4f} {:.4f} {:.4f}] [{:.4f} {:.4f} {:.4f} {:.4f}] "
-				"[{:.4f} {:.4f} {:.4f} {:.4f}] translate [{:.1f} {:.1f} {:.1f}] scale {:.3f}",
-				rotate.entry[0][0], rotate.entry[0][1], rotate.entry[0][2], rotate.entry[0][3],
-				rotate.entry[1][0], rotate.entry[1][1], rotate.entry[1][2], rotate.entry[1][3],
-				rotate.entry[2][0], rotate.entry[2][1], rotate.entry[2][2], rotate.entry[2][3],
-				transform.translate.x,
-				transform.translate.y,
-				transform.translate.z,
-				transform.scale);
-
-			// Same trick as the light: read the node through NiAVObject, which
-			// is at offset zero of NiBillboardNode. Its own type is forward
-			// declared only. The position is the fallback answer if the
-			// rotation above turns out not to carry the direction.
-			REX::INFO(
-				"sun node at [{:.1f} {:.1f} {:.1f}]",
-				sunPosition.x,
-				sunPosition.y,
-				sunPosition.z);
-
-			// Once per session is enough for this one: the projection changes
-			// only with the field of view, and what is being asked of it -
-			// which end of the depth buffer is near - does not change at all.
-			if (!_loggedDirection) {
-				_loggedDirection = true;
-				Render::LogProjection();
-			}
-		}
-
 		// Row zero, and only row zero. The engine does not keep a rotation here
 		// at all: rows one and two read as an untouched identity in every
 		// sample, while row zero is a unit vector that drifts with the time of
@@ -402,6 +345,11 @@ namespace Features
 		// identity below it and produced a direction lying exactly in the
 		// horizontal plane, which is both wrong and the grazing angle Bend
 		// names as its own worst case for edge artefacts.
+		//
+		// It is the same convention the camera node turned out to follow -
+		// forward in row zero - and Gamebryo's: a light shines and a camera
+		// looks down its local x axis, and row j of the world rotation is
+		// local axis j in world space.
 		const float direction[3] = {
 			rotate.entry[0][0],
 			rotate.entry[0][1],
