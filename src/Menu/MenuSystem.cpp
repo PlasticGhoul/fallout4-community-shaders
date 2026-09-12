@@ -72,6 +72,14 @@ namespace Menu
 			return latch;
 		}
 
+		/// The settings path whose button armed the current key capture, empty
+		/// when none is armed. Render thread only, like the panel that sets it.
+		std::string& TheCapturePath()
+		{
+			static std::string path;
+			return path;
+		}
+
 		/// Anything else reads as the top right corner. A settings file edited
 		/// by hand must not be able to put the display off the screen.
 		[[nodiscard]] int CornerFromSetting(std::string_view a_corner) noexcept
@@ -162,11 +170,16 @@ namespace Menu
 		}
 
 		// Taken here rather than in the panel, because the gate lives here and
-		// the panel should not have to know it.
+		// the panel should not have to know it. The key goes to the setting
+		// whose button armed the capture - the gate captures for the whole
+		// overlay and does not know which one that was.
 		if (const auto captured = TheGate().TakeCapturedKey(); captured != 0) {
-			REX::INFO("overlay toggle key rebound to 0x{:02X}", captured);
-			Settings::SetUInt32(kToggleKeyPath, captured);
-			Settings::Save();
+			if (!TheCapturePath().empty()) {
+				REX::INFO("{} rebound to 0x{:02X}", TheCapturePath(), captured);
+				Settings::SetUInt32(TheCapturePath(), captured);
+				Settings::Save();
+			}
+			TheCapturePath().clear();
 		}
 
 		// Announced once, next to the window handle and the ImGui version, so
@@ -219,8 +232,13 @@ namespace Menu
 
 		PanelContext panel;
 		panel.frame = Render::FrameCount();
-		panel.armCapture = [] { TheGate().ArmCapture(); };
-		panel.isCapturing = [] { return TheGate().IsCapturing(); };
+		panel.armCapture = [](std::string_view a_path) {
+			TheCapturePath().assign(a_path);
+			TheGate().ArmCapture();
+		};
+		panel.isCapturing = [](std::string_view a_path) {
+			return TheGate().IsCapturing() && TheCapturePath() == a_path;
+		};
 
 		// Read every frame rather than cached, like every other setting: there
 		// is no change notification, so a cached corner would need refreshing

@@ -103,7 +103,7 @@ namespace Menu
 			const PanelContext& a_context)
 		{
 			const auto key = Settings::GetUInt32(a_entry.path);
-			const bool capturing = a_context.isCapturing && a_context.isCapturing();
+			const bool capturing = a_context.isCapturing && a_context.isCapturing(a_entry.path);
 
 			std::string caption;
 			if (capturing) {
@@ -115,7 +115,7 @@ namespace Menu
 
 			if (ImGui::Button(caption.c_str(), ImVec2{ ImGui::GetFontSize() * 8.0f, 0.0f }) &&
 				!capturing && a_context.armCapture) {
-				a_context.armCapture();
+				a_context.armCapture(a_entry.path);
 			}
 
 			ImGui::SameLine();

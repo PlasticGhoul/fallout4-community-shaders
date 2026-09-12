@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <string_view>
 
 namespace Menu
 {
@@ -11,10 +12,15 @@ namespace Menu
 	{
 		std::uint64_t frame{ 0 };
 
-		/// Starts taking the next key press. The key binding button says so
-		/// until one arrives.
-		std::function<void()> armCapture;
-		std::function<bool()> isCapturing;
+		/// Starts taking the next key press for the setting at this path. The
+		/// binding button of that setting, and only that one, says so until a
+		/// key arrives. The path travels with the request because the capture
+		/// itself is one for the whole overlay: without it, every key button
+		/// showed the prompt at once and the key went to the toggle setting
+		/// whichever button had been pressed - found in F3, when a third key
+		/// setting arrived.
+		std::function<void(std::string_view)> armCapture;
+		std::function<bool(std::string_view)> isCapturing;
 	};
 
 	/// One ImGui window, drawn from the settings schema and the feature
