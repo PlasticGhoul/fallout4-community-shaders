@@ -37,6 +37,9 @@ namespace RE
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace Features
 {
@@ -124,6 +127,37 @@ namespace Features
 			.Help(
 				"feature.exponential_height_fog.vanilla_fog_help",
 				"How much of the game's own fog remains. One leaves it untouched.");
+
+		// A view of the pass rather than through it. A setting and not a
+		// shader define, so that it is flipped in the overlay and never by
+		// editing a file in the game folder.
+		Settings::DeclareChoice(
+			"ExponentialHeightFog/debugView",
+			"off",
+			std::vector<std::string>{ "off", "opacity", "distance", "color" })
+			.Label("feature.exponential_height_fog.debug_view", "Debug View")
+			.Help(
+				"feature.exponential_height_fog.debug_view_help",
+				"Shows the pass instead of the picture: its opacity, the distance it "
+				"integrates over (white at the cap), or its rebuild of the game's fog colour.");
+	}
+
+	namespace
+	{
+		/// The number the shader switches on, from the choice's string.
+		float DebugViewIndex(std::string_view a_choice) noexcept
+		{
+			if (a_choice == "opacity") {
+				return 1.0f;
+			}
+			if (a_choice == "distance") {
+				return 2.0f;
+			}
+			if (a_choice == "color") {
+				return 3.0f;
+			}
+			return 0.0f;
+		}
 	}
 
 	bool ExponentialHeightFog::Setup()
@@ -302,9 +336,7 @@ namespace Features
 		data.cameraUp[0] = camera.upOverScaleY[0];
 		data.cameraUp[1] = camera.upOverScaleY[1];
 		data.cameraUp[2] = camera.upOverScaleY[2];
-		// Free since the sky stopped having a distance of its own; the shader
-		// caps ground and sky alike at the game's far fog distance.
-		data.cameraUp[3] = 0.0f;
+		data.cameraUp[3] = DebugViewIndex(Settings::GetString("ExponentialHeightFog/debugView"));
 		data.sunDirection[0] = towardsSun[0];
 		data.sunDirection[1] = towardsSun[1];
 		data.sunDirection[2] = towardsSun[2];

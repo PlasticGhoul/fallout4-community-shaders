@@ -6,6 +6,8 @@
         "generator": "tools/extract-i18n.py",
         "note": "DO NOT EDIT MANUALLY. Run: python tools/extract-i18n.py --write"
     },
+    "feature.exponential_height_fog.debug_view": "Debug View",
+    "feature.exponential_height_fog.debug_view_help": "Shows the pass instead of the picture: its opacity, the distance it integrates over (white at the cap), or its rebuild of the game's fog colour.",
     "feature.exponential_height_fog.density": "Density",
     "feature.exponential_height_fog.density_help": "How thick the fog is at its base.",
     "feature.exponential_height_fog.height": "Height",

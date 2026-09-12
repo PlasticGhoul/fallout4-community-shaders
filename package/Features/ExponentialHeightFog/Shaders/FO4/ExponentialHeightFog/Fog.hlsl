@@ -10,17 +10,16 @@
 // to eighty thousand, and a float has seven digits; only the height needs
 // the camera's z, and that is one number.
 //
-// Three switches for looking at the pass rather than through it, all off in
-// the file as shipped and turned on by a define at the top of this file in
-// the game's Data folder, which the feature reloads within a second:
+// The "Debug View" setting of the feature, carried in CameraUp.w, shows the
+// pass rather than the picture:
 //
-//   FOG_DEBUG_OPACITY   the picture becomes the fog's opacity, black to white
-//   FOG_DEBUG_COLOR     the picture becomes our rebuild of the game's fog
-//                       colour, to hold against the game's own at the horizon
-//   FOG_DEBUG_DISTANCE  the picture becomes the distance the fog integrates
-//                       over, white at the cap - a sky that is not pure white
-//                       has a depth of its own, and one that flickers has a
-//                       depth that does not agree with the camera's near plane
+//   1  opacity   the fog's opacity, black to white
+//   2  distance  the distance the fog integrates over, white at the cap - a
+//                sky that is not pure white has a depth of its own, and one
+//                that flickers has a depth that does not agree with the
+//                camera's near plane
+//   3  color     our rebuild of the game's fog colour, to hold against the
+//                game's own at the horizon
 
 Texture2D<float> DepthTexture : register(t0);
 
@@ -38,7 +37,7 @@ cbuffer PerFrame : register(b1)
 {
 	float4 CameraForward;   // xyz forward, w camera height
 	float4 CameraRight;     // xyz right / sx, w near plane
-	float4 CameraUp;        // xyz up / sy, w unused
+	float4 CameraUp;        // xyz up / sy, w debug view (0 off, 1 opacity, 2 distance, 3 color)
 	float4 SunDirection;    // xyz towards the sun, w sun inscattering
 	float4 SunColor;        // rgb, w anisotropy
 	float4 FogRange;        // x near, y far, z power, w clamp - fogState.rangeData.xy, power, clamp
@@ -119,8 +118,9 @@ float4 main(PixelInput input) : SV_TARGET0
 	const float fogHeight = Params.y;
 	const float heightFalloff = Params.z * 0.001;
 	const float startDistance = Params.w;
+	const int debugView = (int)(CameraUp.w + 0.5);
 
-	if (density <= 0.0)
+	if (density <= 0.0 && debugView == 0)
 		discard;
 
 	// Unreal's exponential height fog line integral.
@@ -147,15 +147,12 @@ float4 main(PixelInput input) : SV_TARGET0
 
 	float3 color = VanillaFogColor(rayLength, pixelHeight);
 
-#if defined(FOG_DEBUG_OPACITY)
-	return float4(opacity.xxx, 1.0);
-#endif
-#if defined(FOG_DEBUG_DISTANCE)
-	return float4((viewDepth / kMaxFogDistance).xxx, 1.0);
-#endif
-#if defined(FOG_DEBUG_COLOR)
-	return float4(color, 1.0);
-#endif
+	if (debugView == 1)
+		return float4(opacity.xxx, 1.0);
+	if (debugView == 2)
+		return float4((viewDepth / kMaxFogDistance).xxx, 1.0);
+	if (debugView == 3)
+		return float4(color, 1.0);
 
 	// The sun's glow through the fog: a Henyey-Greenstein lobe around it.
 	const float sunInscattering = SunDirection.w;
