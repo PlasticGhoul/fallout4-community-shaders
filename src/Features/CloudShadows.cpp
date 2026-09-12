@@ -338,9 +338,11 @@ namespace Features
 			_linearClamp->Release();
 			_linearClamp = nullptr;
 		}
-		if (_staging != nullptr) {
-			_staging->Release();
-			_staging = nullptr;
+		for (auto*& buffer : _staging) {
+			if (buffer != nullptr) {
+				buffer->Release();
+				buffer = nullptr;
+			}
 		}
 		for (auto*& buffer : _faceConstants) {
 			if (buffer != nullptr) {
@@ -348,10 +350,12 @@ namespace Features
 				buffer = nullptr;
 			}
 		}
-		for (auto*& buffer : _layerStaging) {
-			if (buffer != nullptr) {
-				buffer->Release();
-				buffer = nullptr;
+		for (auto& ring : _layerStaging) {
+			for (auto*& buffer : ring) {
+				if (buffer != nullptr) {
+					buffer->Release();
+					buffer = nullptr;
+				}
 			}
 		}
 		for (auto*& buffer : _geometryConstants) {
@@ -387,10 +391,12 @@ namespace Features
 			return false;
 		}
 
-		for (auto*& buffer : _layerStaging) {
-			if (buffer != nullptr) {
-				buffer->Release();
-				buffer = nullptr;
+		for (auto& ring : _layerStaging) {
+			for (auto*& buffer : ring) {
+				if (buffer != nullptr) {
+					buffer->Release();
+					buffer = nullptr;
+				}
 			}
 		}
 		for (auto*& buffer : _geometryConstants) {
@@ -402,15 +408,22 @@ namespace Features
 		for (auto& ready : _layerReady) {
 			ready = false;
 		}
+		for (auto& frames : _layerWrittenFrame) {
+			for (auto& frame : frames) {
+				frame = 0;
+			}
+		}
 
 		REX::W32::D3D11_BUFFER_DESC stagingDesc{};
 		stagingDesc.byteWidth = desc.byteWidth;
 		stagingDesc.usage = REX::W32::D3D11_USAGE_STAGING;
 		stagingDesc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_READ;
-		for (auto*& buffer : _layerStaging) {
-			if (device->CreateBuffer(std::addressof(stagingDesc), nullptr, std::addressof(buffer)) < 0) {
-				REX::ERROR("CloudShadows: a staging copy of the layer constants could not be created");
-				return false;
+		for (auto& ring : _layerStaging) {
+			for (auto*& buffer : ring) {
+				if (device->CreateBuffer(std::addressof(stagingDesc), nullptr, std::addressof(buffer)) < 0) {
+					REX::ERROR("CloudShadows: a staging copy of the layer constants could not be created");
+					return false;
+				}
 			}
 		}
 
@@ -435,15 +448,23 @@ namespace Features
 
 	bool CloudShadows::ReadLayerGeometry(REX::W32::ID3D11DeviceContext& a_context, std::uint32_t a_layer) noexcept
 	{
-		// Last frame's copy of this layer's constants. The GPU finished it a
-		// frame ago, so the map is not expected to wait; if it would, the
-		// layer sits this frame out rather than stall the thread.
+		// The copy of this layer's constants from two frames ago. The GPU has
+		// long finished it, so the map is not expected to wait; if it would,
+		// the layer keeps the image it has rather than stall the thread or
+		// sit the frame out.
+		const auto frame = Render::FrameCount();
+		const auto slot = ReadSlot(frame);
+		if (_layerWrittenFrame[a_layer][slot] == 0) {
+			return false;
+		}
+
 		REX::W32::D3D11_MAPPED_SUBRESOURCE mapped{};
-		if (a_context.Map(_layerStaging[a_layer], 0, REX::W32::D3D11_MAP_READ, REX::W32::D3D11_MAP_FLAG_DO_NOT_WAIT, std::addressof(mapped)) < 0) {
+		if (a_context.Map(_layerStaging[a_layer][slot], 0, REX::W32::D3D11_MAP_READ, REX::W32::D3D11_MAP_FLAG_DO_NOT_WAIT, std::addressof(mapped)) < 0) {
+			++_mapFailures;
 			return false;
 		}
 		std::memcpy(_layerImage[a_layer].data(), mapped.data, _layerImage[a_layer].size());
-		a_context.Unmap(_layerStaging[a_layer], 0);
+		a_context.Unmap(_layerStaging[a_layer][slot], 0);
 		return true;
 	}
 
@@ -499,7 +520,7 @@ namespace Features
 			return false;
 		}
 
-		if (_staging != nullptr && _constantBytes == desc.byteWidth) {
+		if (_staging[0] != nullptr && _constantBytes == desc.byteWidth) {
 			return true;
 		}
 
@@ -508,9 +529,14 @@ namespace Features
 			return false;
 		}
 
-		if (_staging != nullptr) {
-			_staging->Release();
-			_staging = nullptr;
+		for (auto*& buffer : _staging) {
+			if (buffer != nullptr) {
+				buffer->Release();
+				buffer = nullptr;
+			}
+		}
+		for (auto& frame : _stagingWrittenFrame) {
+			frame = 0;
 		}
 		for (auto*& buffer : _faceConstants) {
 			if (buffer != nullptr) {
@@ -524,9 +550,11 @@ namespace Features
 		stagingDesc.byteWidth = desc.byteWidth;
 		stagingDesc.usage = REX::W32::D3D11_USAGE_STAGING;
 		stagingDesc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_READ;
-		if (device->CreateBuffer(std::addressof(stagingDesc), nullptr, std::addressof(_staging)) < 0) {
-			REX::ERROR("CloudShadows: the staging copy of the sky constants could not be created");
-			return false;
+		for (auto*& buffer : _staging) {
+			if (device->CreateBuffer(std::addressof(stagingDesc), nullptr, std::addressof(buffer)) < 0) {
+				REX::ERROR("CloudShadows: the staging copy of the sky constants could not be created");
+				return false;
+			}
 		}
 
 		REX::W32::D3D11_BUFFER_DESC faceDesc{};
@@ -550,22 +578,24 @@ namespace Features
 	void CloudShadows::ReadStagedConstants() noexcept
 	{
 		auto* const context = Render::GetContext();
-		if (context == nullptr || _staging == nullptr || _stagingFrame == 0 || _copiedFrame == _stagingFrame) {
+		if (context == nullptr || _staging[0] == nullptr) {
 			return;
 		}
-		// A frame later than the copy, and never waiting: the render thread
-		// must not stall on its own copy.
-		if (Render::FrameCount() <= _stagingFrame) {
+
+		// The copy from two frames ago, never waiting: the render thread must
+		// not stall on its own copy. A failed map keeps the image it has.
+		const auto slot = ReadSlot(Render::FrameCount());
+		if (_stagingWrittenFrame[slot] == 0) {
 			return;
 		}
 
 		REX::W32::D3D11_MAPPED_SUBRESOURCE mapped{};
-		if (context->Map(_staging, 0, REX::W32::D3D11_MAP_READ, REX::W32::D3D11_MAP_FLAG_DO_NOT_WAIT, std::addressof(mapped)) < 0) {
+		if (context->Map(_staging[slot], 0, REX::W32::D3D11_MAP_READ, REX::W32::D3D11_MAP_FLAG_DO_NOT_WAIT, std::addressof(mapped)) < 0) {
+			++_mapFailures;
 			return;
 		}
 		std::memcpy(_image.data(), mapped.data, _image.size());
-		context->Unmap(_staging, 0);
-		_copiedFrame = _stagingFrame;
+		context->Unmap(_staging[slot], 0);
 		_imageReady = true;
 	}
 
@@ -607,10 +637,12 @@ namespace Features
 		}
 
 		// Once a frame: the sky's per-view constants are the same for all
-		// nine layers. Copied now, read from Present a frame later.
+		// nine layers. Copied now, read from Present two frames later.
 		const auto frame = Render::FrameCount();
 		if (_stagingFrame != frame) {
-			a_context.CopyResource(_staging, _savedConstants);
+			const auto slot = WriteSlot(frame);
+			a_context.CopyResource(_staging[slot], _savedConstants);
+			_stagingWrittenFrame[slot] = frame;
 			_stagingFrame = frame;
 		}
 
@@ -631,10 +663,15 @@ namespace Features
 			return;
 		}
 
-		// Last frame's constants of this layer first, then this frame's copy
-		// over them for the next.
-		_layerReady[_layer] = ReadLayerGeometry(a_context, _layer);
-		a_context.CopyResource(_layerStaging[_layer], _savedGeometry);
+		// The constants of this layer from two frames ago first - a failed
+		// read keeps the image the layer has - then this frame's copy into
+		// the ring.
+		if (ReadLayerGeometry(a_context, _layer)) {
+			_layerReady[_layer] = true;
+		}
+		const auto slot = WriteSlot(frame);
+		a_context.CopyResource(_layerStaging[_layer][slot], _savedGeometry);
+		_layerWrittenFrame[_layer][slot] = frame;
 		if (_layerReady[_layer]) {
 			++_layersReady;
 		}
@@ -793,14 +830,15 @@ namespace Features
 		if (_draws % kLogInterval == 0) {
 			REX::INFO(
 				"clouds: {} cloud draw(s) seen, {} with layer constants, {} repeated into {} faces in {} frames, "
-				"view constants {} ({} bytes, near {:.2f}), layer constants {} bytes, "
+				"{} map(s) would have waited, view constants {} ({} bytes, near {:.2f}), layer constants {} bytes, "
 				"sun [{:.3f} {:.3f} {:.3f}], cloud height {:.0f}",
-				_capturedDraws, _layersReady, _repeatedDraws, kCapturedFaces, kLogInterval,
+				_capturedDraws, _layersReady, _repeatedDraws, kCapturedFaces, kLogInterval, _mapFailures,
 				_imageReady ? "ready" : "pending", _constantBytes, NearFrom(_image), _geometryBytes,
 				towardsSun[0], towardsSun[1], towardsSun[2], cloudHeight);
 			_capturedDraws = 0;
 			_layersReady = 0;
 			_repeatedDraws = 0;
+			_mapFailures = 0;
 		}
 
 		const Render::StateGuard guard;

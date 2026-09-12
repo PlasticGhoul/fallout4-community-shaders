@@ -78,20 +78,30 @@ namespace Features
 		// The sky's vertex constants, a frame old: copied into staging at the
 		// first clouds draw, read back from Present, written out with one
 		// face's matrices each. Sized from the engine's own buffer.
-		REX::W32::ID3D11Buffer* _staging{ nullptr };
+		/// Copies go into a ring and are read two frames later. A read with
+		/// DO_NOT_WAIT one frame after the copy failed in about half the
+		/// frames at 180 fps - the GPU runs that far behind - and a layer left
+		/// out for a frame was the flicker the user saw.
+		static constexpr std::uint32_t kRing = 3;
+		static std::uint32_t WriteSlot(std::uint64_t a_frame) noexcept { return static_cast<std::uint32_t>(a_frame % kRing); }
+		static std::uint32_t ReadSlot(std::uint64_t a_frame) noexcept { return static_cast<std::uint32_t>((a_frame + 1) % kRing); }
+
+		REX::W32::ID3D11Buffer* _staging[kRing]{};
+		std::uint64_t _stagingWrittenFrame[kRing]{};
 		REX::W32::ID3D11Buffer* _faceConstants[kCapturedFaces]{};
 		std::vector<std::uint8_t> _image;
 		std::uint32_t _constantBytes{ 0 };
 		std::uint64_t _stagingFrame{ 0 };
 		std::uint64_t _facesWrittenFrame{ 0 };
-		std::uint64_t _copiedFrame{ 0 };
 		bool _imageReady{ false };
+		std::uint32_t _mapFailures{ 0 };
 
 		// The layer's geometry constants - slot 2, world view projection in
 		// front, the layer's world matrix behind it - copied per draw, read a
 		// frame later at the same draw of the next frame, and written out
 		// with the face's projection times that world matrix.
-		REX::W32::ID3D11Buffer* _layerStaging[kMaxLayers]{};
+		REX::W32::ID3D11Buffer* _layerStaging[kMaxLayers][kRing]{};
+		std::uint64_t _layerWrittenFrame[kMaxLayers][kRing]{};
 		std::vector<std::uint8_t> _layerImage[kMaxLayers];
 		bool _layerReady[kMaxLayers]{};
 		REX::W32::ID3D11Buffer* _geometryConstants[kCapturedFaces]{};
