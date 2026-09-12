@@ -48,12 +48,19 @@ namespace Features
 		/// Five faces: every direction but straight down.
 		static constexpr std::uint32_t kCapturedFaces = 5;
 
+		/// Cloud layers a frame can carry; the weather format has 32, the
+		/// probe saw nine drawn.
+		static constexpr std::uint32_t kMaxLayers = 32;
+
 		void Draw();
 		[[nodiscard]] bool Compile();
 		[[nodiscard]] bool EnsureStates();
 		[[nodiscard]] bool EnsureConstantCopies(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_engine) noexcept;
+		[[nodiscard]] bool EnsureGeometryCopies(REX::W32::ID3D11Buffer* a_engine) noexcept;
 		void ReadStagedConstants() noexcept;
 		void WriteFaceConstants(REX::W32::ID3D11DeviceContext& a_context) noexcept;
+		[[nodiscard]] bool ReadLayerGeometry(REX::W32::ID3D11DeviceContext& a_context, std::uint32_t a_layer) noexcept;
+		void WriteFaceGeometry(REX::W32::ID3D11DeviceContext& a_context, std::uint32_t a_layer) noexcept;
 		void ReleaseSaved() noexcept;
 
 		Render::TechniqueFilter _clouds{};
@@ -79,6 +86,21 @@ namespace Features
 		std::uint64_t _facesWrittenFrame{ 0 };
 		std::uint64_t _copiedFrame{ 0 };
 		bool _imageReady{ false };
+
+		// The layer's geometry constants - slot 2, world view projection in
+		// front, the layer's world matrix behind it - copied per draw, read a
+		// frame later at the same draw of the next frame, and written out
+		// with the face's projection times that world matrix.
+		REX::W32::ID3D11Buffer* _layerStaging[kMaxLayers]{};
+		std::vector<std::uint8_t> _layerImage[kMaxLayers];
+		bool _layerReady[kMaxLayers]{};
+		REX::W32::ID3D11Buffer* _geometryConstants[kCapturedFaces]{};
+		REX::W32::ID3D11Buffer* _savedGeometry{ nullptr };
+		std::uint32_t _geometryBytes{ 0 };
+		std::uint32_t _layerIndex{ 0 };
+		std::uint32_t _layer{ 0 };
+		std::uint64_t _layerFrame{ 0 };
+		std::uint32_t _layersReady{ 0 };
 
 		// Saved around one repeated draw, on the render thread.
 		/// All eight: the clouds technique binds RT_004 and RT_029, the motion

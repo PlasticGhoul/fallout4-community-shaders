@@ -67,6 +67,17 @@ namespace Features
 		constexpr std::size_t kMatricesEnd = 256;
 		constexpr float kNearFallback = 15.0f;
 
+		/// The layer's geometry constants, slot 2, 224 bytes as the probe read
+		/// them: the world view projection in rows at the front - which is
+		/// what the vertex shader positions with, the first repeat showed the
+		/// camera's own picture in every face - and the layer's world matrix
+		/// as three rows of four behind it, a turn about the vertical and a
+		/// small translation.
+		constexpr std::uint32_t kGeometryConstantSlot = 2;
+		constexpr std::size_t kGeometryWvpOffset = 0;
+		constexpr std::size_t kGeometryWorldOffset = 64;
+		constexpr std::size_t kGeometryBytesNeeded = 112;
+
 		/// D3D's cube faces, in the order TextureCube samples them: the
 		/// direction the face looks along, its up, its right. Chosen so that
 		/// sampling the cube with a world direction lands on what this face
@@ -125,6 +136,8 @@ namespace Features
 			a_row[3] = a_w;
 		}
 
+		void FaceViewProjection(const FaceAxes& a_face, float a_near, float (&a_out)[16]) noexcept;
+
 		/// The four matrices of one face, 90 degrees wide, camera centred,
 		/// in the arrangement the probe found: rows, no translation.
 		void WriteFaceMatrices(std::uint8_t* a_image, const FaceAxes& a_face, float a_near) noexcept
@@ -145,10 +158,7 @@ namespace Features
 			projection[14] = 1.0f;
 
 			float viewProjection[16]{};
-			WriteRow(viewProjection + 0, a_face.right, 0.0f);
-			WriteRow(viewProjection + 4, a_face.up, 0.0f);
-			WriteRow(viewProjection + 8, a_face.forward, -a_near);
-			WriteRow(viewProjection + 12, a_face.forward, 0.0f);
+			FaceViewProjection(a_face, a_near, viewProjection);
 
 			float inverse[16]{};
 			for (int i = 0; i < 3; ++i) {
@@ -162,6 +172,31 @@ namespace Features
 			std::memcpy(a_image + kProjectionOffset, projection, sizeof(projection));
 			std::memcpy(a_image + kViewProjectionOffset, viewProjection, sizeof(viewProjection));
 			std::memcpy(a_image + kInverseRotationOffset, inverse, sizeof(inverse));
+		}
+
+		/// The face's view projection, rows right / up / forward - near /
+		/// forward, no translation: the sky is camera centred.
+		void FaceViewProjection(const FaceAxes& a_face, float a_near, float (&a_out)[16]) noexcept
+		{
+			WriteRow(a_out + 0, a_face.right, 0.0f);
+			WriteRow(a_out + 4, a_face.up, 0.0f);
+			WriteRow(a_out + 8, a_face.forward, -a_near);
+			WriteRow(a_out + 12, a_face.forward, 0.0f);
+		}
+
+		/// M = F * W for row matrices, W given as three rows of four with an
+		/// implied (0 0 0 1) fourth: clip_i = sum_k F[i][k] * (W p)_k.
+		void MultiplyWorld(const float (&a_face)[16], const float (&a_world)[12], float (&a_out)[16]) noexcept
+		{
+			for (int i = 0; i < 4; ++i) {
+				for (int j = 0; j < 4; ++j) {
+					float sum = a_face[i * 4 + 3] * (j == 3 ? 1.0f : 0.0f);
+					for (int k = 0; k < 3; ++k) {
+						sum += a_face[i * 4 + k] * a_world[k * 4 + j];
+					}
+					a_out[i * 4 + j] = sum;
+				}
+			}
 		}
 
 		/// The engine's near plane out of its projection block: z = w - near
@@ -217,9 +252,15 @@ namespace Features
 		_draws = 0;
 		_capturedDraws = 0;
 		_repeatedDraws = 0;
+		_layersReady = 0;
+		_layerIndex = 0;
+		_layerFrame = 0;
 		_mainView = false;
 		_repeating = false;
 		_imageReady = false;
+		for (auto& ready : _layerReady) {
+			ready = false;
+		}
 
 		const auto skyIndex = Render::ClassIndexOf("BSSkyShader");
 		if (!skyIndex.has_value()) {
@@ -307,11 +348,120 @@ namespace Features
 				buffer = nullptr;
 			}
 		}
+		for (auto*& buffer : _layerStaging) {
+			if (buffer != nullptr) {
+				buffer->Release();
+				buffer = nullptr;
+			}
+		}
+		for (auto*& buffer : _geometryConstants) {
+			if (buffer != nullptr) {
+				buffer->Release();
+				buffer = nullptr;
+			}
+		}
+		for (auto& image : _layerImage) {
+			image.clear();
+		}
 		_image.clear();
 		_imageReady = false;
 		_constantBytes = 0;
+		_geometryBytes = 0;
 		_constants.Release();
 		_coverage.Release();
+	}
+
+	bool CloudShadows::EnsureGeometryCopies(REX::W32::ID3D11Buffer* a_engine) noexcept
+	{
+		REX::W32::D3D11_BUFFER_DESC desc{};
+		a_engine->GetDesc(std::addressof(desc));
+		if (desc.byteWidth < kGeometryBytesNeeded) {
+			return false;
+		}
+		if (_geometryBytes == desc.byteWidth) {
+			return true;
+		}
+
+		auto* const device = Render::GetDevice();
+		if (device == nullptr) {
+			return false;
+		}
+
+		for (auto*& buffer : _layerStaging) {
+			if (buffer != nullptr) {
+				buffer->Release();
+				buffer = nullptr;
+			}
+		}
+		for (auto*& buffer : _geometryConstants) {
+			if (buffer != nullptr) {
+				buffer->Release();
+				buffer = nullptr;
+			}
+		}
+		for (auto& ready : _layerReady) {
+			ready = false;
+		}
+
+		REX::W32::D3D11_BUFFER_DESC stagingDesc{};
+		stagingDesc.byteWidth = desc.byteWidth;
+		stagingDesc.usage = REX::W32::D3D11_USAGE_STAGING;
+		stagingDesc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_READ;
+		for (auto*& buffer : _layerStaging) {
+			if (device->CreateBuffer(std::addressof(stagingDesc), nullptr, std::addressof(buffer)) < 0) {
+				REX::ERROR("CloudShadows: a staging copy of the layer constants could not be created");
+				return false;
+			}
+		}
+
+		REX::W32::D3D11_BUFFER_DESC faceDesc{};
+		faceDesc.byteWidth = desc.byteWidth;
+		faceDesc.usage = REX::W32::D3D11_USAGE_DEFAULT;
+		faceDesc.bindFlags = REX::W32::D3D11_BIND_CONSTANT_BUFFER;
+		for (auto*& buffer : _geometryConstants) {
+			if (device->CreateBuffer(std::addressof(faceDesc), nullptr, std::addressof(buffer)) < 0) {
+				REX::ERROR("CloudShadows: a face's geometry constants could not be created");
+				return false;
+			}
+		}
+
+		for (auto& image : _layerImage) {
+			image.assign(desc.byteWidth, 0);
+		}
+		_geometryBytes = desc.byteWidth;
+		REX::INFO("CloudShadows: layer constants are {} bytes in slot {}", desc.byteWidth, kGeometryConstantSlot);
+		return true;
+	}
+
+	bool CloudShadows::ReadLayerGeometry(REX::W32::ID3D11DeviceContext& a_context, std::uint32_t a_layer) noexcept
+	{
+		// Last frame's copy of this layer's constants. The GPU finished it a
+		// frame ago, so the map is not expected to wait; if it would, the
+		// layer sits this frame out rather than stall the thread.
+		REX::W32::D3D11_MAPPED_SUBRESOURCE mapped{};
+		if (a_context.Map(_layerStaging[a_layer], 0, REX::W32::D3D11_MAP_READ, REX::W32::D3D11_MAP_FLAG_DO_NOT_WAIT, std::addressof(mapped)) < 0) {
+			return false;
+		}
+		std::memcpy(_layerImage[a_layer].data(), mapped.data, _layerImage[a_layer].size());
+		a_context.Unmap(_layerStaging[a_layer], 0);
+		return true;
+	}
+
+	void CloudShadows::WriteFaceGeometry(REX::W32::ID3D11DeviceContext& a_context, std::uint32_t a_layer) noexcept
+	{
+		float world[12]{};
+		std::memcpy(world, _layerImage[a_layer].data() + kGeometryWorldOffset, sizeof(world));
+		const auto near = NearFrom(_image);
+
+		std::vector<std::uint8_t> image = _layerImage[a_layer];
+		for (std::uint32_t face = 0; face < kCapturedFaces; ++face) {
+			float faceProjection[16]{};
+			FaceViewProjection(kFaces[face], near, faceProjection);
+			float wvp[16]{};
+			MultiplyWorld(faceProjection, world, wvp);
+			std::memcpy(image.data() + kGeometryWvpOffset, wvp, sizeof(wvp));
+			a_context.UpdateSubresource(_geometryConstants[face], 0, nullptr, image.data(), 0, 0);
+		}
 	}
 
 	bool CloudShadows::Wants(const Render::CurrentTechnique& a_current) const noexcept
@@ -331,7 +481,8 @@ namespace Features
 		for (auto** object : { reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedDepth)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedBlend)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedRasterizer)),
-				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedConstants)) }) {
+				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedConstants)),
+				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_savedGeometry)) }) {
 			if (*object != nullptr) {
 				(*object)->Release();
 				*object = nullptr;
@@ -462,6 +613,31 @@ namespace Features
 			_stagingFrame = frame;
 		}
 
+		// Per draw: which layer this is, counted from the frame's first.
+		if (_layerFrame != frame) {
+			_layerFrame = frame;
+			_layerIndex = 0;
+		}
+		_layer = _layerIndex++;
+		if (_layer >= kMaxLayers) {
+			ReleaseSaved();
+			return;
+		}
+
+		a_context.VSGetConstantBuffers(kGeometryConstantSlot, 1, std::addressof(_savedGeometry));
+		if (_savedGeometry == nullptr || !EnsureGeometryCopies(_savedGeometry)) {
+			ReleaseSaved();
+			return;
+		}
+
+		// Last frame's constants of this layer first, then this frame's copy
+		// over them for the next.
+		_layerReady[_layer] = ReadLayerGeometry(a_context, _layer);
+		a_context.CopyResource(_layerStaging[_layer], _savedGeometry);
+		if (_layerReady[_layer]) {
+			++_layersReady;
+		}
+
 		++_capturedDraws;
 		_mainView = true;
 	}
@@ -473,7 +649,7 @@ namespace Features
 		}
 		_mainView = false;
 
-		if (!_imageReady) {
+		if (!_imageReady || !_layerReady[_layer]) {
 			ReleaseSaved();
 			return;
 		}
@@ -487,6 +663,7 @@ namespace Features
 				_faceClearedFrame[face] = frame;
 			}
 		}
+		WriteFaceGeometry(a_context, _layer);
 
 		a_context.OMGetRenderTargets(kSavedTargets, _savedTargets, std::addressof(_savedDepth));
 		a_context.OMGetBlendState(std::addressof(_savedBlend), _savedFactor, std::addressof(_savedMask));
@@ -508,12 +685,14 @@ namespace Features
 			auto* const rtv = _coverage.FaceRTV(face);
 			a_context.OMSetRenderTargets(1, std::addressof(rtv), nullptr);
 			a_context.VSSetConstantBuffers(kSkyConstantSlot, 1, std::addressof(_faceConstants[face]));
+			a_context.VSSetConstantBuffers(kGeometryConstantSlot, 1, std::addressof(_geometryConstants[face]));
 			a_call.Repeat(a_context);
 			++_repeatedDraws;
 		}
 		_repeating = false;
 
 		a_context.VSSetConstantBuffers(kSkyConstantSlot, 1, std::addressof(_savedConstants));
+		a_context.VSSetConstantBuffers(kGeometryConstantSlot, 1, std::addressof(_savedGeometry));
 		a_context.OMSetRenderTargets(kSavedTargets, _savedTargets, _savedDepth);
 		a_context.OMSetBlendState(_savedBlend, _savedFactor, _savedMask);
 		a_context.RSSetState(_savedRasterizer);
@@ -612,12 +791,14 @@ namespace Features
 
 		if (_draws % kLogInterval == 0) {
 			REX::INFO(
-				"clouds: {} cloud draw(s) seen, {} repeated into {} faces in {} frames, constants {} ({} bytes, near {:.2f}), "
+				"clouds: {} cloud draw(s) seen, {} with layer constants, {} repeated into {} faces in {} frames, "
+				"view constants {} ({} bytes, near {:.2f}), layer constants {} bytes, "
 				"sun [{:.3f} {:.3f} {:.3f}], cloud height {:.0f}",
-				_capturedDraws, _repeatedDraws, kCapturedFaces, kLogInterval,
-				_imageReady ? "ready" : "pending", _constantBytes, NearFrom(_image),
+				_capturedDraws, _layersReady, _repeatedDraws, kCapturedFaces, kLogInterval,
+				_imageReady ? "ready" : "pending", _constantBytes, NearFrom(_image), _geometryBytes,
 				towardsSun[0], towardsSun[1], towardsSun[2], cloudHeight);
 			_capturedDraws = 0;
+			_layersReady = 0;
 			_repeatedDraws = 0;
 		}
 
