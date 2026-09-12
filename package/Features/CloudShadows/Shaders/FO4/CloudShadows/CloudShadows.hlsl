@@ -17,9 +17,6 @@
 //   2  direction  normalize(direction) * 0.5 + 0.5
 //   3  cube       the six faces of the coverage map, three by two:
 //                 +X -X +Y over -Y +Z -Z, each face as D3D lays it out
-//   4  matrices   the same grid, but the capture draws each face with a
-//                 different matrix - see WriteFaceGeometry - to find out
-//                 which convention the sky vertex shader follows
 // All are drawn with a plain blend state onto RT_058 alone.
 
 TextureCube<float4> Coverage : register(t0);
@@ -89,7 +86,7 @@ PixelOutput main(PixelInput input)
 	const float depth = DepthTexture.Load(int3(input.position.xy, 0));
 	const int debugView = (int)(CameraUp.w + 0.5);
 
-	if (debugView >= 3) {
+	if (debugView == 3) {
 		const float2 cell = float2(input.uv.x * 3.0, input.uv.y * 2.0);
 		const int face = (int)floor(cell.x) + 3 * (int)floor(cell.y);
 		const float2 st = frac(cell) * 2.0 - 1.0;
