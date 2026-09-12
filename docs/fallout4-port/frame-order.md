@@ -1,7 +1,7 @@
 # Frame-Reihenfolge der Shader-Klassen (Fallout 4 AE 1.11.240)
 
-Gemessen mit `FrameTrace` am 2026-09-12 in Sanctuary, zwei Frames: einmal Blick �ber den Ort,
-einmal mit Wasser im Bild. Je `SetupTechnique`-Aufruf der zw�lf Shader-Singletons eine Zeile:
+Gemessen mit `FrameTrace` am 2026-09-12 in Sanctuary, zwei Frames: einmal Blick über den Ort,
+einmal mit Wasser im Bild. Je `SetupTechnique`-Aufruf der zwölf Shader-Singletons eine Zeile:
 Klasse, Technik-ID und -Name (Slot 09), gebundene Ziele und die benannten Pixel-SRVs. Unbenannte
 Sichten sind Texturen der Szene (Materialien, Schattenkarten-Sampler), keine Render-Targets.
 
@@ -9,17 +9,20 @@ Sichten sind Texturen der Szene (Materialien, Schattenkarten-Sampler), keine Ren
 
 -   `BSDFComposite` (Technik `0x0040`) schreibt die fertige HDR-Szene nach `FO4_RT_004` und liest
     dabei den ganzen G-Buffer, beide Lichtziele, `DS_002`, `RT_028`, `RT_003`, `RT_009` (SSR/AO,
-    halbe Aufl�sung) und `RT_039` (Hi-Z).
+    halbe Auflösung) und `RT_039` (Hi-Z).
 -   Der Himmel (`BSSky`, `BSSkyTexture`, `BSSkyClouds`) zeichnet danach nach `RT_004`.
--   Danach Wasserreflexion (`RT_002`, liest `RT_004`), Wasserfl�chen nach `RT_004`, ein
-    `BSUtilityTStencil`, und **dann die erste `BSEffectShader`-Technik** � in beiden Frames.
-    Das ist `Render::Phase::kAfterOpaque`.
+-   Danach Wasserreflexion (`RT_002`, liest `RT_004`), Wasserflächen nach `RT_004`, ein
+    `BSUtilityTStencil`, und **dann die erste `BSEffectShader`-Technik** — in beiden Frames.
+    **Aber nicht in jedem:** ein Zähler über alle Frames zeigte später Effect-Techniken
+    (`0x10000407`, `0x10000021`), die vor dem Composite laufen, bis zu 30-mal je Sekunde.
+    `Render::Phase::kAfterOpaque` ist deshalb der erste Effect-Aufruf, **nachdem `BSSkyShader`
+    den Frame gesehen hat** — siehe „Aus Teilprojekt F3 bestätigt“ in der Roadmap.
 -   Der erste `BSDFCompositeShader`-Aufruf (`BSDFCompositeBase`, `0x0088`) schreibt noch in
-    `RT_058/059` � F2s Anker `kBeforeComposite` liegt also vor dem Basisanteil, nach dem
+    `RT_058/059` — F2s Anker `kBeforeComposite` liegt also vor dem Basisanteil, nach dem
     direkten Licht (`BSDFLight 0x4000000`, der einzige DFLight-Aufruf mit den Lichtzielen).
 -   `BSUtilityShader` zeichnet die Schattenkarte `DS_008` (rund 40 Aufrufe je Frame).
--   `fogState.rangeData` h�lt rohe Distanzen `[near far heightMid heightRange]`, hier
-    `[1600 250000 64 15000]`, `highLowRangeData` die Fernvariante `[64 15000 64 10000]` � nicht
+-   `fogState.rangeData` hält rohe Distanzen `[near far heightMid heightRange]`, hier
+    `[1600 250000 64 15000]`, `highLowRangeData` die Fernvariante `[64 15000 64 10000]` — nicht
     die Rampenkoeffizienten des Shaders; die rechnet der Uploader daraus.
 
 ## frame trace: frame 2490

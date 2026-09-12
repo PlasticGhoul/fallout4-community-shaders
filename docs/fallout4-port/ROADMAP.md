@@ -1,9 +1,9 @@
 # Fallout 4 Port — Roadmap
 
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
-Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay) und F2 (Screen-Space
-Shadows) sind abgeschlossen**. Als Nächstes steht **F3** an, Exponential Height Fog. Stand
-2026-09-12.
+Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay), F2 (Screen-Space Shadows)
+und F3 (Exponential Height Fog) sind abgeschlossen**. Als Nächstes steht **F4** an, Cloud
+Shadows. Stand 2026-09-12.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -55,7 +55,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | E2   | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                        | Einstellungen im Overlay ändern, sie überleben einen Neustart              | **abgeschlossen** |
 | F1   | **Performance Overlay** — CPU- und GPU-Zeitmessung je Pass, im Overlay dargestellt                                     | Zahlen im Spiel ablesbar, die sich unter Last bewegen                      | **abgeschlossen** |
 | F2   | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | **abgeschlossen** |
-| F3   | **Exponential Height Fog**                                                                                             | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F3   | **Exponential Height Fog** — erster Pass hinter der opaken Szene, dazu `FrameTrace` als Werkzeug für alle Anker        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | **abgeschlossen** |
 | F4   | **Cloud Shadows**                                                                                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | F5   | **Skylighting**                                                                                                        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | F6   | **Volumetric Lighting**                                                                                                | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
@@ -118,7 +118,10 @@ Teilprojekte überhaupt abnehmbar.
 Permutations-Cache nicht brauchen: sie sind eigene Pässe, die den G-Buffer lesen. Kompilieren und
 Einschleusen liegen seit C vor, die Targets seit B2. Der Cache wird erst für Gruppe 2 gebraucht,
 und die ist teurer geworden — siehe unten. F2 trägt die Naht für alle folgenden: eigener Pass,
-G-Buffer-Zugriff, Ergebnis zurück in die Beleuchtung.
+G-Buffer-Zugriff, Ergebnis zurück in die Beleuchtung. F3 hat dazu `FrameTrace` hinterlassen, ein
+Diagnose-Feature, das auf Tastendruck einen Frame der Engine als Liste ins Log schreibt: der Anker
+jedes weiteren Bildschirmraum-Features (F4 bis F11) wird damit gemessen statt vermutet — und der
+Zähler in der Sekundenzeile hat gezeigt, daß zwei gemessene Frames noch keinen Anker belegen.
 
 **Gruppe 2 bekommt ein eigenes Forschungs-Teilprojekt**, ausdrücklich wie B2 markiert. F12 baut den
 Permutations-Cache und belegt ihn am kleinsten Gruppe-2-Feature. Zahl und Zuschnitt von F14
@@ -746,6 +749,129 @@ steht ausführlich in der Spec-Notiz und in `Render/Camera.h`; das Wesentliche:
 -   **Werte, die sich ändern, gehören periodisch ins Log.** Drei einmalige Logzeilen haben in
     einer Sitzung dreimal den Ladebildschirm erwischt. Ebenso: eine Ablehnung, die nur beim
     ersten Mal spricht, macht danach jeden Lauf zum Scheinerfolg.
+
+## Aus Teilprojekt F3 bestätigt
+
+Sämtliche Läufe am 2026-09-12. Der erste Pass des Ports, der hinter der opaken Szene auf das
+fertige Bild zeichnet, und das Werkzeug, mit dem sein Platz gemessen wurde: `FrameTrace`,
+`Render::Phase::kAfterOpaque`, `Render::Targets::kSceneHDR`, `Render::FogCameraFromMatrix`,
+`Menu::Hotkeys`. Die Frame-Reihenfolge der zwölf Shader-Klassen steht vollständig in
+`frame-order.md`.
+
+### Die Zahlen
+
+Gemessen in Sanctuary, 2560×1440, Vorgaben der Regler, Vanilla-Regler auf 0:
+
+```
+=== performance snapshot over 300 frames ===
+  pass                     gpu avg   cpu avg   gpu p95   gpu p99
+  Frame                      5.557     4.802     5.680     5.712
+    Features                 0.000     0.137     0.000     0.000
+      ScreenSpaceShadows     0.000     0.016     0.000     0.000
+      ExponentialHeightFog     0.000     0.005     0.000     0.000
+    Overlay                  0.005     0.176     0.005     0.005
+    ScreenSpaceShadows/Draw     0.161     0.015     0.160     0.166
+    ExponentialHeightFog/VanillaFog     0.000     0.002     0.000     0.000
+    ExponentialHeightFog/Draw     0.027     0.007     0.027     0.027
+      ExponentialHeightFog/Fog     0.026     0.002     0.026     0.026
+  179.9 fps, cpu 5.08 ms, gpu 5.56 ms, 0 frame(s) discarded
+```
+
+**Das Feature kostet 0,027 ms GPU und rund 0,014 ms CPU je Frame** (Draw, VanillaFog und die
+Frame-Zeile der Registry zusammen). Ein Vollbild-Pixelshader ohne Schleife, ein Zehntel der
+Kontaktschatten aus F2. Der Frame ist gegen die F1-Grundlinie (6,598 ms GPU) nicht direkt
+vergleichbar, weil Blickrichtung und Tageszeit andere waren.
+
+### Der Trace
+
+Zwei Frames, einmal Blick über den Ort, einmal mit Wasser im Bild, je rund 113 Aufrufe:
+Prepass (≈40, G-Buffer) → Wasser-Setup → Schattenkarte `DS_008` (≈40, `BSUtilityShader`) →
+`BSDFLight 0x4000000` auf `RT_058/059` → `BSDFCompositeBase 0x0088` noch auf `RT_058/059` (F2s
+Anker liegt also vor dem Basisanteil) → Wasser-Stencil → `BSDFCompositeEnvmapSslrApplyAO` nach
+`RT_009` → **`BSDFComposite 0x0040` schreibt die fertige HDR-Szene nach `FO4_RT_004`** →
+`BSWaterDpth` → Himmel (`BSSky`, `BSSkyTexture`, `BSSkyClouds`) → Wasserreflexion (`RT_002`) →
+Wasserflächen → `BSUtilityTStencil` → Effekte → `BSSkySunOcclude` → `BSEffectTexUimr` (UI).
+`kSceneHDR` ist damit Slot 4, der Tiefenpuffer `DS_002`.
+
+### Die Gabelungen der Spec
+
+-   **Der zweite Anker — das tragende Risiko, und es ist eingetreten.** Der Trace zeigte die erste
+    `BSEffectShader`-Technik in beiden Frames nach dem Himmel, und so wurde der Anker gebaut. Ein
+    Zähler in der Sekundenzeile über **jeden** Frame zeigte dann: die auslösende Technik wechselt
+    bis zu 30-mal je Sekunde, und bei `0x10000407` und `0x10000021` war der am Composite
+    geschriebene Clamp beim Zeichnen in 180 von 180 Frames noch nicht drin — diese Effect-Aufrufe
+    laufen **vor dem Composite**. Der Nebel wurde in solchen Frames gezeichnet und vom Composite
+    übermalt: ein Frame ohne Nebel, das vom Nutzer gemeldete Blitzen im Himmel, mit und ohne
+    Vanilla-Regler. Seit `596a82b8` ist `BSSkyShader` als dritter Anker ohne Abonnenten gepatcht,
+    und `kAfterOpaque` feuert beim ersten Effect-Aufruf, nachdem der Himmel den Frame gesehen hat.
+    Im Abnahmelauf blieb die Technik in 86 von 87 Sekunden-Intervallen konstant `0x805015`, das
+    Blitzen ist weg. **Lehre: zwei Frames belegen keine Frame-Reihenfolge; der Anker jedes
+    weiteren Features bekommt denselben Zähler.**
+-   **Der Vanilla-Regler — Ausgang 1 mit Vorbehalt.** Die Probe schrieb `clamp · 0,5` aus
+    `Present` und las am Composite: in 67 von 69 Stichproben überlebte der Wert, in **2 nicht** —
+    dort stand `Sky::fogClamp`, die frische Kopie der Engine. Der Regler schreibt seit `8a278e14`
+    aus `kBeforeComposite`, in der `SetupTechnique` des Composite selbst, unmittelbar vor dem
+    Lesen. Der Zähler „clamp foreign" stand im Abnahmelauf in jedem Intervall auf 0 von 180: die
+    Engine frischt `fogState` zwischen Composite und Effekten nie auf. Sichtprüfung: bei 0 ist die
+    Distanztrübung des Spiels sichtbar weg.
+-   **Die Nebelfarbe.** Aus `fogState` nachgerechnet, wobei `rangeData` rohe Distanzen hält
+    (`[near far heightMid heightRange]`, Sanctuary `[1600 250000 64 15000]`, später
+    `[3000 250000 …]`) und nicht die Rampenkoeffizienten der Spec-Formel; der Shader baut die
+    Rampe selbst. Das Höhenband ist als „Mitte ± Spanne/2" angesetzt. **Der Abgleich am Horizont
+    über die Debug-Ansicht `color` ist vom Nutzer nicht eigens berichtet worden** und gilt als
+    nicht bestätigt; ein Fehler dort wäre eine Zeile in `HeightRamp`.
+
+### Die Abnahme
+
+Block mit Schalter, sieben Reglern und der Debug-Ansicht im Overlay; Schalter aus und an mit
+sichtbarem Unterschied; die Schicht wandert mit `Height`; Sonneneinstreuung sichtbar; Vanilla-
+Regler auf 0 nimmt die Distanztrübung weg; beide Passzeilen in der Tafel und der Schnappschuß
+per F11; Pip-Boy und Alt-Tab ohne Befund; Feature im laufenden Spiel mehrfach aus- und
+angeschaltet ohne Absturz, der Spielnebel beim Abschalten sofort zurück. Keine `[E]`-Zeile im
+Abnahmelauf.
+
+**Root Cellar:** der Pass läuft in Innenräumen gar nicht mehr, weil der Himmelsmarker dort nie
+feuert — die Zeile „no sun, standing down" erscheint deshalb nicht mehr für dieses Feature; der
+Nutzer meldete keinen Befund. **Das Nachladen bei Dateiänderung ist nicht ausgeführt worden**
+(0 Neuübersetzungen im Log), wie schon in F2; der Mechanismus ist derselbe. **Der Farbabgleich**
+ist nicht eigens berichtet, siehe oben.
+
+### Was die Läufe ergeben haben
+
+-   **Der Nebel wird über die Tiefe rekonstruiert, ohne Matrixinversion:** Sichtstrahl aus den
+    Spalten von `worldToCam`, `d = near / (1 − z)`. **Die Nahebene ist nicht konstant 15**: im
+    Spiel schwankte sie zwischen 10,5 und 19,4 je nach Blick, Fallout 4 stellt sie zur Laufzeit
+    nach. Sie wird je Frame aus der Matrix gelesen.
+-   **Am hinteren Ende des Tiefenpuffers liegen LOD-Terrain und Himmel dicht unter 1**;
+    `near / (1 − z)` macht daraus Millionen Einheiten und volle Deckung, nach dem Bloom weiß.
+    Der Abstand ist bei `min(far, 200000)` gedeckelt, für Boden und Himmel gleich. Die
+    Skyrim-Vorlage nebelt den Himmel im Hauptbild gar nicht (`Sky.hlsl`, nur `inReflection`);
+    wir tun es mit dem Deckel, und es sieht stimmig aus.
+-   **Die Vorgaben sind für Boston gedacht, nicht für Sanctuary.** Die Kamera steht dort bei
+    z ≈ 7900; mit `height` 0 und `heightFalloff` 0,2 bleibt der Nebel dort fast unsichtbar, eine
+    Schicht wird erst mit `height` ≈ 7600 und Falloff ≈ 1,0 sichtbar. Die `density`-Vorgabe ist
+    0,03 statt der 0,005 der Vorlage, sonst war zwischen an und aus kein Unterschied. Die Hilfe
+    nennt die Höhe von Sanctuary.
+-   **Ein Feature kann eine Taste haben:** `Menu::Hotkeys` bietet übrige Tasten jedem
+    registrierten `KeyLatch` an. Dabei fiel ein Fehler aus E2 auf und wurde behoben: die
+    Tastenaufnahme im Overlay schrieb jede gefangene Taste in den Overlay-Schalter statt in das
+    Feld, dessen Knopf gedrückt war. **Tastenfallen:** F10 ist `WM_SYSKEYDOWN` und erreicht den
+    `WM_KEYDOWN`-Haken nie, F9 Quick-Load, F5 Quick-Save, F12 Steam; `FrameTrace` liegt auf F8.
+-   **Ein Fehlalarm kostete eine Halbierungsrunde:** „Eingabe komplett tot" war ein zwischendurch
+    angesteckter Controller, den Fallout 4 der Tastatur vorzieht. Bei einem Symptom, das der Diff
+    nicht erklärt, zuerst nach der Umgebung fragen.
+-   **Debug-Ansichten sind Einstellungen, keine Shader-Defines.** Die erste Fassung verlangte,
+    ein `#define` in die Datei im Spielordner zu schreiben; der Nutzer hat klargestellt, daß er
+    das nicht tut. `debugView` ist eine Choice im Block und geht als Zahl im freien `w` von
+    `CameraUp` an den Shader.
+
+### Ein bekanntes Zugeständnis
+
+Der Pass liegt vor den Transparenzen. Wasser, Glas und Effekte sehen unseren Nebel nur, soweit er
+auf dem liegt, was hinter ihnen ist; der Spielnebel auf ihnen bleibt. Das ist der Preis eines
+Passes gegenüber F12. Ob F3 einen volumetrischen Anteil bekommt (die Vorlage hat einen, mit
+Froxel-Volumen und Lichtstreuung), wird bei **F6** mitentschieden, wenn feststeht, welche
+Volumeninfrastruktur dort entsteht.
 
 ## Bekannte Lücken in CommonLibF4
 
