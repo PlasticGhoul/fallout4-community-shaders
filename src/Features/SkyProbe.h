@@ -1,12 +1,15 @@
 #pragma once
 
 #include "Feature/Feature.h"
+#include "Render/DrawHook.h"
 #include "Render/DrawObserver.h"
 
 #include <REX/W32/D3D11.h>
 
 #include <cstdint>
 #include <map>
+#include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -26,12 +29,8 @@ namespace Features
 		void Shutdown() override;
 
 		[[nodiscard]] bool Wants(const Render::CurrentTechnique& a_current) const noexcept override;
-		void BeforeDraw(REX::W32::ID3D11DeviceContext& a_context) noexcept override;
-		void AfterDraw(
-			REX::W32::ID3D11DeviceContext& a_context,
-			std::uint32_t a_indexCount,
-			std::uint32_t a_startIndex,
-			std::int32_t a_baseVertex) noexcept override;
+		void BeforeDraw(REX::W32::ID3D11DeviceContext& a_context, const Render::DrawCall& a_call) noexcept override;
+		void AfterDraw(REX::W32::ID3D11DeviceContext& a_context, const Render::DrawCall& a_call) noexcept override;
 
 	private:
 		struct Row
@@ -53,10 +52,16 @@ namespace Features
 		void LogFormatSupport();
 
 		Render::TechniqueFilter _sky{};
+
+		/// The thunk may run on whichever thread the engine draws on; the
+		/// once-a-second report runs from Present. One lock for everything
+		/// below it - a probe, not a hot path.
+		std::mutex _mutex;
 		std::map<std::string, Row> _rows;
+		std::set<std::uint32_t> _threads;
 		std::uint64_t _frames{ 0 };
 		std::uint64_t _lastFrameSeen{ 0 };
-		std::uint64_t _lastCallsSeen{ 0 };
+		Render::DrawHookCounts _lastCounts{};
 		std::uint64_t _cloudFrames{ 0 };
 		std::uint64_t _blendLoggedFrame{ 0 };
 		std::uint64_t _dumpFrame{ 0 };

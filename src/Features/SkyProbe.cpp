@@ -12,6 +12,7 @@
 #include <RE/N/NiCamera.h>
 
 #include <REX/W32/DXGI.h>
+#include <REX/W32/KERNEL32.h>
 
 #include <algorithm>
 #include <cmath>
@@ -51,6 +52,22 @@ namespace Features
 				return "INV_DEST_COLOR";
 			default:
 				return "other";
+			}
+		}
+
+		const char* KindName(Render::DrawCall::Kind a_kind)
+		{
+			switch (a_kind) {
+			case Render::DrawCall::Kind::kIndexed:
+				return "DrawIndexed";
+			case Render::DrawCall::Kind::kPlain:
+				return "Draw";
+			case Render::DrawCall::Kind::kIndexedInstanced:
+				return "DrawIndexedInstanced";
+			case Render::DrawCall::Kind::kInstanced:
+				return "DrawInstanced";
+			default:
+				return "?";
 			}
 		}
 
@@ -100,9 +117,13 @@ namespace Features
 
 		LogFormatSupport();
 
-		_rows.clear();
+		{
+			const std::scoped_lock lock{ _mutex };
+			_rows.clear();
+			_threads.clear();
+		}
 		_frames = 0;
-		_lastCallsSeen = Render::DrawHookCalls();
+		_lastCounts = Render::DrawHookCountsSoFar();
 		Render::SetDrawObserver(this);
 		REX::INFO("SkyProbe: watching every BSSkyShader draw (class index {})", *index);
 		return true;
@@ -111,6 +132,7 @@ namespace Features
 	void SkyProbe::Shutdown()
 	{
 		Render::SetDrawObserver(nullptr);
+		const std::scoped_lock lock{ _mutex };
 		for (auto& pending : _pending) {
 			if (pending.staging != nullptr) {
 				pending.staging->Release();
@@ -124,8 +146,11 @@ namespace Features
 		return _sky.Matches(a_current);
 	}
 
-	void SkyProbe::BeforeDraw(REX::W32::ID3D11DeviceContext& a_context) noexcept
+	void SkyProbe::BeforeDraw(REX::W32::ID3D11DeviceContext& a_context, const Render::DrawCall& a_call) noexcept
 	{
+		const std::scoped_lock lock{ _mutex };
+		_threads.insert(REX::W32::GetCurrentThreadId());
+
 		const auto current = Render::CurrentTechniqueOf();
 		const auto frame = Render::FrameCount();
 
@@ -150,7 +175,7 @@ namespace Features
 			target->Release();
 		}
 
-		auto& row = _rows[std::format("0x{:04X} -> {}", current.technique, name)];
+		auto& row = _rows[std::format("0x{:04X} {} -> {}", current.technique, KindName(a_call.kind), name)];
 		++row.second;
 		++row.total;
 
@@ -171,8 +196,7 @@ namespace Features
 		}
 	}
 
-	void SkyProbe::AfterDraw(
-		REX::W32::ID3D11DeviceContext&, std::uint32_t, std::uint32_t, std::int32_t) noexcept
+	void SkyProbe::AfterDraw(REX::W32::ID3D11DeviceContext&, const Render::DrawCall&) noexcept
 	{}
 
 	void SkyProbe::LogBlendState(REX::W32::ID3D11DeviceContext& a_context)
@@ -244,6 +268,7 @@ namespace Features
 
 	void SkyProbe::ReadVertexConstants()
 	{
+		const std::scoped_lock lock{ _mutex };
 		auto* const context = Render::GetContext();
 		if (context == nullptr || _pending.empty()) {
 			return;
@@ -321,11 +346,27 @@ namespace Features
 			return;
 		}
 
-		const auto calls = Render::DrawHookCalls();
+		const auto counts = Render::DrawHookCountsSoFar();
 		REX::INFO(
-			"SkyProbe: {} indexed draws in {} frames ({} per frame), clouds drawn in {} frame(s)",
-			calls - _lastCallsSeen, kSecond, (calls - _lastCallsSeen) / kSecond, _cloudFrames);
-		_lastCallsSeen = calls;
+			"SkyProbe: in {} frames: DrawIndexed {}, Draw {}, DrawIndexedInstanced {}, DrawInstanced {}, "
+			"ExecuteCommandList {}, of which on the deferred table {}",
+			kSecond,
+			counts.indexed - _lastCounts.indexed,
+			counts.plain - _lastCounts.plain,
+			counts.indexedInstanced - _lastCounts.indexedInstanced,
+			counts.instanced - _lastCounts.instanced,
+			counts.executeCommandList - _lastCounts.executeCommandList,
+			counts.onDeferredTable - _lastCounts.onDeferredTable);
+		_lastCounts = counts;
+
+		const std::scoped_lock lock{ _mutex };
+		std::string threads;
+		for (const auto id : _threads) {
+			threads += std::format("{}{}", threads.empty() ? "" : " ", id);
+		}
+		REX::INFO(
+			"SkyProbe: clouds drawn in {} frame(s), sky draws on {} thread(s) [{}]",
+			_cloudFrames, _threads.size(), threads);
 		_cloudFrames = 0;
 
 		for (auto& [key, row] : _rows) {
