@@ -125,7 +125,7 @@ namespace Features
 			if (a_choice == "cube") {
 				return 3.0f;
 			}
-			if (a_choice == "sky") {
+			if (a_choice == "matrices") {
 				return 4.0f;
 			}
 			return 0.0f;
@@ -239,13 +239,13 @@ namespace Features
 		Settings::DeclareChoice(
 			"CloudShadows/debugView",
 			"off",
-			std::vector<std::string>{ "off", "coverage", "direction", "cube", "sky" })
+			std::vector<std::string>{ "off", "coverage", "direction", "cube", "matrices" })
 			.Label("feature.cloud_shadows.debug_view", "Debug View")
 			.Help(
 				"feature.cloud_shadows.debug_view_help",
 				"Shows the pass instead of the picture: the cloud coverage as the ground sees "
 				"it, the direction it is sampled in, the six faces of the coverage map, or the "
-				"map laid over the sky, where it has to match the clouds.");
+				"faces drawn with trial matrices.");
 	}
 
 	bool CloudShadows::Setup()
@@ -461,6 +461,36 @@ namespace Features
 		for (std::uint32_t face = 0; face < kCapturedFaces; ++face) {
 			float faceProjection[16]{};
 			FaceViewProjection(kFaces[face], near, faceProjection);
+
+			// The trial matrices of the "matrices" debug view. Face 0 takes
+			// the engine's own view projection out of slot 12 and has to
+			// reproduce the camera's picture; face 1 the same with the y row
+			// negated. Faces 2 to 4 look up, as built, with up negated, with
+			// forward negated. One screenshot says which convention holds.
+			if (_trialMatrices) {
+				if (face == 0 || face == 1) {
+					std::memcpy(faceProjection, _image.data() + kViewProjectionOffset, sizeof(faceProjection));
+					if (face == 1) {
+						for (int j = 0; j < 4; ++j) {
+							faceProjection[4 + j] = -faceProjection[4 + j];
+						}
+					}
+				} else {
+					FaceAxes axes = kFaces[4];
+					if (face == 3) {
+						for (auto& component : axes.up) {
+							component = -component;
+						}
+					}
+					if (face == 4) {
+						for (auto& component : axes.forward) {
+							component = -component;
+						}
+					}
+					FaceViewProjection(axes, near, faceProjection);
+				}
+			}
+
 			float wvp[16]{};
 			MultiplyWorld(faceProjection, world, wvp);
 			std::memcpy(image.data() + kGeometryWvpOffset, wvp, sizeof(wvp));
@@ -771,6 +801,7 @@ namespace Features
 		_reportedLowSun = false;
 
 		const auto debugView = DebugViewIndex(Settings::GetString("CloudShadows/debugView"));
+		_trialMatrices = debugView > 3.5f;
 		const auto cloudHeight =
 			static_cast<float>(Settings::GetDouble("CloudShadows/cloudHeight")) * Clouds::kUnitsPerMetre;
 

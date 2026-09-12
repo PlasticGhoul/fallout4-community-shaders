@@ -117,6 +117,7 @@ namespace Features
 		std::uint32_t _savedViewportCount{ 16 };
 		bool _mainView{ false };
 		bool _repeating{ false };
+		bool _trialMatrices{ false };
 
 		std::uint64_t _faceClearedFrame[Render::CubeTarget::kFaces]{};
 		std::uint32_t _capturedDraws{ 0 };
