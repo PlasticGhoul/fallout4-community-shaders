@@ -1,6 +1,7 @@
 #include "Feature/FeatureSystem.h"
 
 #include "Feature/FeatureRegistry.h"
+#include "Features/CloudShadows.h"
 #include "Features/ExponentialHeightFog.h"
 #include "Features/FrameCounter.h"
 #include "Features/FrameTrace.h"
@@ -32,6 +33,10 @@ namespace Features
 			// that writes into engine memory: teardown runs in reverse, and the
 			// entries should go back after the shader pointer does.
 			TheRegistry().Register(std::make_unique<ShaderCensus>());
+
+			// Before the contact shadows: both multiply the same light targets
+			// from the same phase, and this order reads sensibly in the profiler.
+			TheRegistry().Register(std::make_unique<CloudShadows>());
 
 			// Subscribes to the frame phase and owns D3D resources of its own,
 			// but writes into no engine memory - so it goes back after the
