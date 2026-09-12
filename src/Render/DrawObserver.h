@@ -25,9 +25,34 @@ namespace Render
 		[[nodiscard]] bool Matches(const CurrentTechnique& a_current) const noexcept;
 	};
 
+	/// One draw call of the engine, as the hook saw it, in a shape that lets
+	/// an observer issue the very same call again.
+	struct DrawCall
+	{
+		enum class Kind : std::uint8_t
+		{
+			kIndexed,
+			kPlain,
+			kIndexedInstanced,
+			kInstanced,
+		};
+
+		Kind kind{ Kind::kIndexed };
+		std::uint32_t count{ 0 };          // indices or vertices, per instance
+		std::uint32_t instanceCount{ 1 };  // one for the non-instanced kinds
+		std::uint32_t start{ 0 };          // start index or start vertex
+		std::int32_t baseVertex{ 0 };      // indexed kinds only
+		std::uint32_t startInstance{ 0 };  // instanced kinds only
+
+		/// Issues this call on a_context, through the engine's own entry, so
+		/// that the hook does not see it a second time.
+		void Repeat(REX::W32::ID3D11DeviceContext& a_context) const noexcept;
+	};
+
 	/// Somebody who wants to surround the engine's draw calls of one
 	/// technique: swap targets and state before, put them back after, draw
-	/// again in between. Called on the render thread from inside DrawIndexed.
+	/// again in between. Called on the thread the engine draws on, from
+	/// inside the draw call.
 	///
 	/// A draw the observer does not want passes straight through, with one
 	/// atomic load and one comparison spent on it.
@@ -37,11 +62,7 @@ namespace Render
 		virtual ~DrawObserver() = default;
 
 		[[nodiscard]] virtual bool Wants(const CurrentTechnique& a_current) const noexcept = 0;
-		virtual void BeforeDraw(REX::W32::ID3D11DeviceContext& a_context) noexcept = 0;
-		virtual void AfterDraw(
-			REX::W32::ID3D11DeviceContext& a_context,
-			std::uint32_t a_indexCount,
-			std::uint32_t a_startIndex,
-			std::int32_t a_baseVertex) noexcept = 0;
+		virtual void BeforeDraw(REX::W32::ID3D11DeviceContext& a_context, const DrawCall& a_call) noexcept = 0;
+		virtual void AfterDraw(REX::W32::ID3D11DeviceContext& a_context, const DrawCall& a_call) noexcept = 0;
 	};
 }
