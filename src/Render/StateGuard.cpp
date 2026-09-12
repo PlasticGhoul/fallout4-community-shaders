@@ -58,6 +58,7 @@ namespace Render
 		// Slot 1 rather than 0: that is where the Bend raymarch expects its
 		// PerFrame buffer, and it is the only one we overwrite.
 		_context->CSGetConstantBuffers(1, kComputeSlots, _csConstantBuffers);
+		_context->PSGetConstantBuffers(1, kComputeSlots, _psConstantBuffers);
 	}
 
 	StateGuard::~StateGuard() noexcept
@@ -86,6 +87,7 @@ namespace Render
 		_context->CSSetUnorderedAccessViews(0, kComputeSlots, _csUAVs, nullptr);
 		_context->CSSetSamplers(0, kComputeSlots, _csSamplers);
 		_context->CSSetConstantBuffers(1, kComputeSlots, _csConstantBuffers);
+		_context->PSSetConstantBuffers(1, kComputeSlots, _psConstantBuffers);
 
 		ReleaseAll(_renderTargets, kRenderTargets);
 		ReleaseOne(_depthStencil);
@@ -101,5 +103,6 @@ namespace Render
 		ReleaseAll(_csUAVs, kComputeSlots);
 		ReleaseAll(_csSamplers, kComputeSlots);
 		ReleaseAll(_csConstantBuffers, kComputeSlots);
+		ReleaseAll(_psConstantBuffers, kComputeSlots);
 	}
 }

@@ -72,5 +72,9 @@ namespace Render
 		REX::W32::ID3D11UnorderedAccessView* _csUAVs[kComputeSlots]{};
 		REX::W32::ID3D11SamplerState* _csSamplers[kComputeSlots]{};
 		REX::W32::ID3D11Buffer* _csConstantBuffers[kComputeSlots]{};
+
+		/// Slot 1 of the pixel stage as well: the fog pass binds its constants
+		/// there, and the composite that follows binds its own.
+		REX::W32::ID3D11Buffer* _psConstantBuffers[kComputeSlots]{};
 	};
 }
