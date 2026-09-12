@@ -83,7 +83,13 @@ namespace Features
 				"Fog that lies in low ground and thins with height, drawn over the finished "
 				"scene in the game's own fog colour, with the sun glowing through it.");
 
-		Settings::DeclareSlider("ExponentialHeightFog/density", 0.005, 0.0, 0.1)
+		// 0.03, not the template's 0.005: at Sanctuary the camera stands
+		// almost eight thousand units above a fog height of zero, which the
+		// falloff turns into a third of the density, and the ground in view is
+		// five to twenty thousand units away. The template's value gives under
+		// one percent of cover there - the first run showed no difference
+		// switching it on and off. This gives a few percent, visibly a layer.
+		Settings::DeclareSlider("ExponentialHeightFog/density", 0.03, 0.0, 0.2)
 			.Label("feature.exponential_height_fog.density", "Density")
 			.Help("feature.exponential_height_fog.density_help", "How thick the fog is at its base.");
 

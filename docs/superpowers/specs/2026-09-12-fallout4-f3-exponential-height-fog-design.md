@@ -367,18 +367,18 @@ Spiels muß weg sein.
 
 ### 8.1 Die Einstellungen
 
-| Pfad                                   | Bereich        | Vorgabe | Bedeutung                                                                                                     |
-| -------------------------------------- | -------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
-| `ExponentialHeightFog/enabled`         | —              | an      | Schalter                                                                                                      |
-| `ExponentialHeightFog/density`         | 0 – 0,1        | 0,005   | Grunddichte, im Shader × 0,001; Bereich so, daß `SliderFormat` drei Stellen gibt und 0,005 einstellbar bleibt |
-| `ExponentialHeightFog/height`          | −22000 – 22000 | 0       | Welt-z, ab der der Nebel dünner wird; Sanctuary liegt bei rund 7900                                           |
-| `ExponentialHeightFog/heightFalloff`   | 0,001 – 2      | 0,2     | Abnahme mit der Höhe, im Shader × 0,001                                                                       |
-| `ExponentialHeightFog/startDistance`   | 0 – 100000     | 0       | nebelfreier Nahbereich                                                                                        |
-| `ExponentialHeightFog/sunInscattering` | 0 – 10         | 1       | Stärke des Sonnenglühens                                                                                      |
-| `ExponentialHeightFog/sunAnisotropy`   | −0,99 – 0,99   | 0,2     | Bündelung des Glühens um die Sonne                                                                            |
-| `ExponentialHeightFog/vanillaFog`      | 0 – 1          | 1       | Anteil des Spielnebels, siehe 7                                                                               |
-| `FrameTrace/enabled`                   | —              | aus     | Schalter                                                                                                      |
-| `FrameTrace/key`                       | Taste          | F8      | schärft die Aufzeichnung                                                                                      |
+| Pfad                                   | Bereich        | Vorgabe | Bedeutung                                                                                                                                                  |
+| -------------------------------------- | -------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ExponentialHeightFog/enabled`         | —              | an      | Schalter                                                                                                                                                   |
+| `ExponentialHeightFog/density`         | 0 – 0,2        | 0,03    | Grunddichte, im Shader × 0,001; Vorgabe nach Lauf 2: 0,005 gab bei Sanctuary unter einem Prozent Deckung, Bereich so, daß `SliderFormat` drei Stellen gibt |
+| `ExponentialHeightFog/height`          | −22000 – 22000 | 0       | Welt-z, ab der der Nebel dünner wird; Sanctuary liegt bei rund 7900                                                                                        |
+| `ExponentialHeightFog/heightFalloff`   | 0,001 – 2      | 0,2     | Abnahme mit der Höhe, im Shader × 0,001                                                                                                                    |
+| `ExponentialHeightFog/startDistance`   | 0 – 100000     | 0       | nebelfreier Nahbereich                                                                                                                                     |
+| `ExponentialHeightFog/sunInscattering` | 0 – 10         | 1       | Stärke des Sonnenglühens                                                                                                                                   |
+| `ExponentialHeightFog/sunAnisotropy`   | −0,99 – 0,99   | 0,2     | Bündelung des Glühens um die Sonne                                                                                                                         |
+| `ExponentialHeightFog/vanillaFog`      | 0 – 1          | 1       | Anteil des Spielnebels, siehe 7                                                                                                                            |
+| `FrameTrace/enabled`                   | —              | aus     | Schalter                                                                                                                                                   |
+| `FrameTrace/key`                       | Taste          | F8      | schärft die Aufzeichnung                                                                                                                                   |
 
 Die Horizontweite von 500.000 ist kein Regler. Alle Regler werden bei jeder Verwendung frisch
 gelesen; gemerkt werden nur die beiden Werte aus 7.2.
