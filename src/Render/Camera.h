@@ -95,26 +95,42 @@ namespace Render
 		std::uint32_t a_width,
 		std::uint32_t a_height) noexcept;
 
-	/// A world point in homogeneous clip space, through the world camera's own
-	/// worldToCam.
+	/// A world direction in homogeneous clip space through a world-to-clip
+	/// matrix in the engine's convention: the point stands on the right,
+	/// clip_i is the sum over j of m[i][j] d_j, and the fourth component of a
+	/// direction is zero, so the translation column never enters.
 	///
-	/// That matrix is world to clip, not world to camera - its top left is a
-	/// projection with Bethesda's axis order, x to x, z to y and y to depth,
-	/// and the ratio of its two scales is the aspect of the screen exactly.
-	/// Reading its three by three corner as a camera basis was a mistake; it
-	/// was never one, and the engine's own WorldPtToScreenPt3 takes the whole
-	/// thing for precisely this purpose.
+	/// Pure arithmetic, no engine, which is what lets the host test hold it
+	/// against three frames of NiCamera::WorldPtToScreenPt3 out of the log.
+	[[nodiscard]] std::array<float, 4> ClipFromWorldToCam(
+		const float (&a_worldToCam)[4][4],
+		const float (&a_direction)[3]) noexcept;
+
+	/// The direction towards the sun in homogeneous clip space, which is what
+	/// Bend's dispatch builder asks for: float4(direction, 0) through the view
+	/// projection, no divide.
 	///
-	/// Applying all sixteen entries to a point needs no basis, no frustum and
-	/// no field of view, and gets the perspective divide right by construction.
-	/// Bend takes a point as readily as a direction - float4(position, 1) - and
-	/// the sun, a hundred and twenty thousand units out, behaves as a
-	/// directional light regardless.
+	/// The matrix is NiCamera::worldToCam of Main::WorldRootCamera, and it is
+	/// world to clip whole, rotation included, whatever its name says. On the
+	/// loading screen the camera's rotation is a bare permutation of the axes,
+	/// which made the matrix read as if it carried no rotation at all; the
+	/// two commits that inverted the camera node's own rotation in front of it
+	/// rotated twice. The engine's own WorldPtToScreenPt3 applies exactly this
+	/// matrix, and rebuilding its clip coordinate from the screen position it
+	/// hands back is where the three mistakes of the last session lived: it
+	/// divides by the magnitude of w, so behind the camera its answer is
+	/// mirrored and its depth has the wrong sign for Bend, and the forward
+	/// axis that was used to give w back its sign was the wrong column.
+	///
+	/// Returns nothing only when there is no world camera or its matrix is
+	/// not finite, and says which the first time.
 	[[nodiscard]] std::optional<std::array<float, 4>> ProjectPoint(
 		const float (&a_direction)[3]) noexcept;
 
-	/// Writes where the sun lands on screen under both readings of the camera
-	/// rotation, the inverted one and the plain one.
+	/// Writes our clip coordinate for the direction beside what the engine's
+	/// WorldPtToScreenPt3 answers for a point far along it, both in the
+	/// engine's convention - screen position and depth over the magnitude of
+	/// w - so that a run shows the two agreeing rather than assuming it.
 	///
 	/// Called from the caller's own periodic tick, never once: three one-shot
 	/// logs in this file have sampled a loading screen and said nothing.

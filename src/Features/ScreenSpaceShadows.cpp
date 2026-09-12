@@ -431,12 +431,12 @@ namespace Features
 			static_cast<int>(_mask.Height())
 		};
 
-		// The direction towards the sun, not its billboard's position. Fallout 4
-		// rebases the world around the camera - the camera node reads as being
-		// at [0 0 128] while the sun's node sits eighty thousand units out - so
-		// the two are not in the same space and the difference between them
-		// carries the player's absolute position as an error. A direction is
-		// immune to that, and to the translation terms of the projection.
+		// The direction towards the sun, not its billboard's position. The sun
+		// node sits a few hundred units from the camera and not exactly along
+		// the light - measured, it was nine degrees higher - so it is a place
+		// to draw a sprite, not a direction to march towards. The light's own
+		// direction is, and with w zero the projection's translation terms
+		// drop out of it.
 		const float sunDirection[3]{ light4[0], light4[1], light4[2] };
 		const auto clip = Render::ProjectPoint(sunDirection);
 		if (!clip) {

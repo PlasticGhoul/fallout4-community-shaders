@@ -342,6 +342,20 @@ namespace Render
 		}
 	}
 
+	std::array<float, 4> ClipFromWorldToCam(
+		const float (&a_worldToCam)[4][4],
+		const float (&a_direction)[3]) noexcept
+	{
+		std::array<float, 4> clip{};
+		for (std::size_t row = 0; row < 4; ++row) {
+			clip[row] =
+				a_worldToCam[row][0] * a_direction[0] +
+				a_worldToCam[row][1] * a_direction[1] +
+				a_worldToCam[row][2] * a_direction[2];
+		}
+		return clip;
+	}
+
 	std::optional<std::array<float, 4>> ProjectPoint(const float (&a_direction)[3]) noexcept
 	{
 		auto* const world = RE::Main::WorldRootCamera();
@@ -353,82 +367,32 @@ namespace Render
 			return std::nullopt;
 		}
 
-		// The engine's own routine, not ours. Five attempts at doing this by
-		// hand each failed on a different convention - which matrix, which
-		// axis order, which way round the rotation, which space the position
-		// was in - and NiCamera::WorldPtToScreenPt3 knows all of them because
-		// it is what the game uses. Aiming at the sun, it answered 0.502
-		// across, and the height it reports follows the sun as it rises.
-		//
-		// A point far along the direction stands in for the sun. Starting from
-		// the camera keeps it clear of the rebasing that makes the sun node's
-		// own position unusable here.
-		const auto& origin = world->GetWorldTransform().translate;
-		const RE::NiPoint3 far{
-			origin.x + a_direction[0] * kSunDistance,
-			origin.y + a_direction[1] * kSunDistance,
-			origin.z + a_direction[2] * kSunDistance
-		};
+		// The whole matrix, applied to the direction, and nothing else. It is
+		// the matrix the engine's own WorldPtToScreenPt3 applies, so there is
+		// no convention left to get wrong between here and Bend: w is the
+		// depth of the direction with its sign, x over w and y over w are the
+		// light's place on screen - mirrored through the centre when it is
+		// behind, which is what Bend expects beside a negative w - and z over
+		// w is one on either side, the depth of infinity under a projection
+		// with no far plane.
+		const auto clip = ClipFromWorldToCam(world->worldToCam, a_direction);
 
-		float screenX = 0.0f;
-		float screenY = 0.0f;
-		float depth = 0.0f;
-
-		// The bool is not "in front" - it reports only that the projection
-		// divided without trouble, and it reads true with the sun squarely
-		// behind the camera. What separates the two is the sign of the depth:
-		// it comes back at about +1 ahead and about -1 behind. Reading the bool
-		// for it left Bend thinking a light behind the player was in front of
-		// them, at a mirrored position, and the sweep collapsed to a single
-		// dispatch - shadows that vanished the moment you turned away from the
-		// sun.
-		static_cast<void>(world->WorldPtToScreenPt3(far, screenX, screenY, depth, 1.0e-5f));
-
-		// The real w, not just its sign. Bend clamps this very value away from
-		// zero so that the divide stays finite as a light crosses the plane of
-		// the screen; handed a fixed plus or minus one it has nothing to clamp,
-		// and the light coordinate jumps from one end of the world to the other
-		// in a single frame. That is the dark flash at the moment the sun
-		// passes from in front of the player to behind.
-		//
-		// For a direction, w is the cosine between it and the camera's forward
-		// axis: continuous, and it changes sign exactly where the flash was.
-		// Camera space has y forward - worldToCam's fourth row is (0, 1, 0) -
-		// so forward in world space is the second column of the rotation.
-		const auto& rotate = world->GetWorldTransform().rotate;
-		const float forward[3]{
-			rotate.entry[0][1],
-			rotate.entry[1][1],
-			rotate.entry[2][1]
-		};
-
-		const auto w =
-			a_direction[0] * forward[0] +
-			a_direction[1] * forward[1] +
-			a_direction[2] * forward[2];
-
-		// Its sign has to agree with the depth the engine reported. They are
-		// worked out from different things - a dot product here, the engine's
-		// own projection there - so a disagreement means the forward axis is
-		// the wrong column, and that is worth saying rather than drawing.
-		if ((w >= 0.0f) != (depth >= 0.0f)) {
-			if (!g_loggedRefusal) {
-				g_loggedRefusal = true;
-				REX::ERROR(
-					"camera forward disagrees with the engine: cosine {:.4f} against depth "
-					"{:.4f} - the forward axis is not this column",
-					w,
-					depth);
+		for (const auto value : clip) {
+			if (!std::isfinite(value)) {
+				if (!g_loggedRefusal) {
+					g_loggedRefusal = true;
+					REX::ERROR(
+						"world camera: worldToCam is not finite, clip [{} {} {} {}]",
+						clip[0],
+						clip[1],
+						clip[2],
+						clip[3]);
+				}
+				return std::nullopt;
 			}
-			return std::nullopt;
 		}
 
-		return std::array<float, 4>{
-			(screenX * 2.0f - 1.0f) * w,
-			(screenY * 2.0f - 1.0f) * w,
-			depth * w,
-			w
-		};
+		return clip;
 	}
 
 	void LogProjectionSample(const float (&a_direction)[3]) noexcept
@@ -441,10 +405,9 @@ namespace Render
 		const auto& transform = world->GetWorldTransform();
 		const auto& rotate = transform.rotate;
 
-		// A rotation that only permutes a vector is an axis convention, not an
-		// orientation. Aiming at the sun produced exactly that - the world
-		// direction came back with its components cycled - so this says plainly
-		// whether the camera node carries the player's heading at all.
+		// Row zero is forward, row one up, row two right - the frames of
+		// 2026-09-06 only add up that way. Kept in the log because it is the
+		// one line that says what the player was looking at.
 		REX::INFO(
 			"world camera rotate: [{:.3f} {:.3f} {:.3f}] [{:.3f} {:.3f} {:.3f}] "
 			"[{:.3f} {:.3f} {:.3f}], at [{:.1f} {:.1f} {:.1f}]",
@@ -453,14 +416,17 @@ namespace Render
 			rotate.entry[2][0], rotate.entry[2][1], rotate.entry[2][2],
 			transform.translate.x, transform.translate.y, transform.translate.z);
 
-		// The engine's own routine, as the arbiter. It uses the same matrix and
-		// the same port the game does, with the game's conventions, so its
-		// answer settles what ours should be without another convention to
-		// guess at. A point far along the direction stands in for the sun.
+		// The engine's own routine over a point far along the direction, as
+		// the arbiter. It divides by the magnitude of w, so behind the camera
+		// its position is mirrored and its depth negative; our clip coordinate
+		// is written out in the same convention so that the two lines can be
+		// laid side by side. They differ legitimately in the third place of the
+		// depth, where the stand-in point's near plane term sits - 15 over a
+		// hundred thousand times w.
 		const RE::NiPoint3 far{
-			transform.translate.x + a_direction[0] * 100000.0f,
-			transform.translate.y + a_direction[1] * 100000.0f,
-			transform.translate.z + a_direction[2] * 100000.0f
+			transform.translate.x + a_direction[0] * kSunDistance,
+			transform.translate.y + a_direction[1] * kSunDistance,
+			transform.translate.z + a_direction[2] * kSunDistance
 		};
 
 		float ex = 0.0f;
@@ -468,12 +434,29 @@ namespace Render
 		float ez = 0.0f;
 		static_cast<void>(world->WorldPtToScreenPt3(far, ex, ey, ez, 1.0e-5f));
 
-		REX::INFO(
-			"engine says the sun is at [{:.3f} {:.3f}] depth {:.4f}, so it is {}",
-			ex,
-			ey,
-			ez,
-			ez >= 0.0f ? "ahead" : "behind");
+		const auto clip = ClipFromWorldToCam(world->worldToCam, a_direction);
+		const auto magnitude = std::abs(clip[3]);
+
+		if (magnitude > 0.0f) {
+			REX::INFO(
+				"sun on screen: engine [{:.3f} {:.3f}] depth {:.4f}, "
+				"ours [{:.3f} {:.3f}] depth {:.4f}, w {:.4f}, so it is {}",
+				ex,
+				ey,
+				ez,
+				(clip[0] / magnitude) * 0.5f + 0.5f,
+				(clip[1] / magnitude) * 0.5f + 0.5f,
+				clip[2] / magnitude,
+				clip[3],
+				clip[3] >= 0.0f ? "ahead" : "behind");
+		} else {
+			REX::INFO(
+				"sun on screen: engine [{:.3f} {:.3f}] depth {:.4f}, "
+				"ours in the plane of the screen, w exactly zero",
+				ex,
+				ey,
+				ez);
+		}
 	}
 
 	std::optional<std::array<float, 4>> ProjectDirection(
