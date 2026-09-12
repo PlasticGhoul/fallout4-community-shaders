@@ -729,6 +729,32 @@ if(FO4CS_BUILD_TESTS)
 
     add_test(NAME ContextTable COMMAND ContextTableTests)
 
+    add_executable(
+        CloudProjectionTests
+        "${CMAKE_SOURCE_DIR}/tests/CloudProjectionTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Features/CloudShadows/CloudProjection.cpp"
+    )
+
+    target_include_directories(
+        CloudProjectionTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(CloudProjectionTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        CloudProjectionTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(CloudProjectionTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            CloudProjectionTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME CloudProjection COMMAND CloudProjectionTests)
+
     # The plausibility check and the world-to-clip arithmetic are what run
     # here. The two functions beside them reach for the world camera, which is
     # exactly what cannot be tested on the host; they link because their

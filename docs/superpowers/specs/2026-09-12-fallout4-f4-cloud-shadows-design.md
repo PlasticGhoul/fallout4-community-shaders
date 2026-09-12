@@ -337,7 +337,8 @@ Basis.
 -   **`CloudProjectionTests`**, neu — die Kugelprojektion als reine Funktion: Sonne im Zenit
     liefert eine Richtung senkrecht über dem Punkt (x, y des Punkts, z = H); Sonne 45° hoch
     versetzt die Richtung um `H` in der Waagerechten; ein Punkt hinter der Kamera rechnet wie
-    einer davor; `H = 0` liefert den Punkt selbst. Dazu der Faktor: Deckung 1 bei `opacity` 0,5
+    einer davor; `H = 0` legt die Schale auf Kamerahöhe, die Richtung landet bei `z = 0`. Dazu
+    der Faktor: Deckung 1 bei `opacity` 0,5
     gibt 0,5, `opacity` 4 klemmt bei 0.
 -   **`DrawObserverTests`**, neu — siehe 5.3.
 -   **`PhaseDispatcherTests`** unverändert; **`SettingsSchemaTests`**, erweitert um den Block.
