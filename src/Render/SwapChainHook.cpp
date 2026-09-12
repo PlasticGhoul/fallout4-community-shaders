@@ -2,6 +2,7 @@
 
 #include "Feature/FeatureSystem.h"
 #include "Menu/MenuSystem.h"
+#include "Render/DrawHook.h"
 #include "Render/Markers.h"
 #include "Render/Profiler.h"
 #include "Render/Renderer.h"
@@ -100,6 +101,10 @@ namespace Render
 		g_installed = true;
 
 		REX::INFO("Present hooked, chaining to {}", g_patch.Original());
+
+		// The context was verified against this swap chain's device by
+		// ValidateAndLog above, so this is the moment its vtable is known.
+		static_cast<void>(InstallDrawHook());
 
 		static_cast<void>(InitMarkers());
 
