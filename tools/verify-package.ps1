@@ -117,6 +117,7 @@ $base = @($archives | Where-Object {
 $addon = @($archives | Where-Object { $_.Name -like "ImagespaceTint-*" })
 $shadows = @($archives | Where-Object { $_.Name -like "ScreenSpaceShadows-*" })
 $fog = @($archives | Where-Object { $_.Name -like "ExponentialHeightFog-*" })
+$clouds = @($archives | Where-Object { $_.Name -like "CloudShadows-*" })
 
 # A stale archive would let a broken rule pass here: the tree half is rebuilt
 # on every run, the archives are only ever whatever was packed last. Both the
@@ -134,9 +135,10 @@ Check ($base.Count -eq 1) "exactly one base archive"
 Check ($addon.Count -eq 1) "exactly one ImagespaceTint archive"
 Check ($shadows.Count -eq 1) "exactly one ScreenSpaceShadows archive"
 Check ($fog.Count -eq 1) "exactly one ExponentialHeightFog archive"
+Check ($clouds.Count -eq 1) "exactly one CloudShadows archive"
 Check ($aio.Count -eq 1) "exactly one all-in-one archive"
 
-if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fog.Count -eq 1 -and $aio.Count -eq 1) {
+if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fog.Count -eq 1 -and $clouds.Count -eq 1 -and $aio.Count -eq 1) {
     # Wrapped at the call site as well: PowerShell unrolls a single element
     # array on assignment, and a lone entry would arrive as a bare string
     # whose .Count is empty.
@@ -144,6 +146,7 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
     $addonEntries = @(Get-Entries $addon[0].FullName)
     $shadowsEntries = @(Get-Entries $shadows[0].FullName)
     $fogEntries = @(Get-Entries $fog[0].FullName)
+    $cloudsEntries = @(Get-Entries $clouds[0].FullName)
     $aioEntries = @(Get-Entries $aio[0].FullName)
 
     Check ($baseEntries -contains "F4SE/Plugins/CommunityShadersFO4.dll") "the base carries the plugin"
@@ -187,7 +190,14 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
         -not ($baseEntries -contains "Shaders/FO4/ExponentialHeightFog/Fog.hlsl")
     ) "and the base does not carry it"
 
-    $union = @($baseEntries + $addonEntries + $shadowsEntries + $fogEntries | Sort-Object -Unique)
+    Check (
+        $cloudsEntries.Count -eq 1 -and $cloudsEntries[0] -eq "Shaders/FO4/CloudShadows/CloudShadows.hlsl"
+    ) "the cloud addon carries its shader and nothing else"
+    Check (
+        -not ($baseEntries -contains "Shaders/FO4/CloudShadows/CloudShadows.hlsl")
+    ) "and the base does not carry that either"
+
+    $union = @($baseEntries + $addonEntries + $shadowsEntries + $fogEntries + $cloudsEntries | Sort-Object -Unique)
     Check (
         $null -eq (Compare-Object $union (@($aioEntries) | Sort-Object -Unique))
     ) "the all-in-one is the union of base and addons"
@@ -197,6 +207,7 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
             @{ Name = "addon"; Entries = $addonEntries },
             @{ Name = "shadow addon"; Entries = $shadowsEntries },
             @{ Name = "fog addon"; Entries = $fogEntries },
+            @{ Name = "cloud addon"; Entries = $cloudsEntries },
             @{ Name = "all-in-one"; Entries = $aioEntries })) {
         $e = $pair.Entries
         Check (-not ($e | Where-Object { $_ -match '(^|/)CORE$' })) "no CORE marker in the $($pair.Name)"
