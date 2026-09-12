@@ -213,6 +213,18 @@ int main()
 		Check(before.Count() == 0 && after.Count() == 0, "and each token unsubscribes in its own");
 	}
 
+	{
+		// A phase can ask whether another has seen this frame, subscribers or
+		// not: the frame phase gates the anchor behind the sky on it.
+		Render::PhaseDispatcher marker;
+		Check(!marker.DispatchedOn(0), "a fresh dispatcher has seen no frame, not even zero");
+		Check(!marker.Dispatch(7), "a dispatch with nobody subscribed runs nobody");
+		Check(marker.DispatchedOn(7), "but it has seen the frame");
+		Check(!marker.DispatchedOn(6) && !marker.DispatchedOn(8), "and no other");
+		static_cast<void>(marker.Dispatch(8));
+		Check(marker.DispatchedOn(8) && !marker.DispatchedOn(7), "the next frame replaces it");
+	}
+
 	std::printf("\n%s\n", g_failures == 0 ? "all checks passed" : "checks failed");
 	return g_failures == 0 ? 0 : 1;
 }

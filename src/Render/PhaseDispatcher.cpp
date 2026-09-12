@@ -79,6 +79,11 @@ namespace Render
 		return count;
 	}
 
+	bool PhaseDispatcher::DispatchedOn(std::uint64_t a_frame) const noexcept
+	{
+		return _dispatched && _lastFrame == a_frame;
+	}
+
 	bool PhaseDispatcher::Dispatch(std::uint64_t a_frame)
 	{
 		if (_dispatched && _lastFrame == a_frame) {

@@ -21,10 +21,19 @@ namespace Render
 		/// drawn. Where a feature modulates the lighting - F2.
 		kBeforeComposite,
 
-		/// The first class after composite and sky. The opaque scene is
-		/// finished in the HDR target; transparents have not drawn. Where a
-		/// feature draws onto the picture - F3. Which class that is was
-		/// measured by FrameTrace; see the table in FramePhase.cpp.
+		/// The first BSEffectShader call after the first BSSkyShader call of
+		/// the frame. The opaque scene is finished in the HDR target;
+		/// transparents have not drawn. Where a feature draws onto the
+		/// picture - F3.
+		///
+		/// The first effect call alone is not it. FrameTrace saw the effects
+		/// begin after the sky in both of its frames, but a count over every
+		/// frame on 2026-09-12 found the firing technique changing up to
+		/// thirty times a second, and two of them (0x10000407, 0x10000021)
+		/// ran before the composite - the fog drawn there was painted over,
+		/// which was the flash in the sky. The sky is the gate because it is
+		/// the last thing the trace shows before the water and the effects,
+		/// and because it runs in every outdoor frame.
 		kAfterOpaque,
 
 		kCount

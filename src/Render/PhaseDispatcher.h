@@ -57,6 +57,11 @@ namespace Render
 		/// how many are to run is fixed before the first callback.
 		bool Dispatch(std::uint64_t a_frame);
 
+		/// Whether Dispatch has been given a_frame, subscribers or not. One
+		/// phase asks it of another before it fires: the anchor behind the
+		/// opaque scene waits until the sky's dispatcher has seen this frame.
+		[[nodiscard]] bool DispatchedOn(std::uint64_t a_frame) const noexcept;
+
 	private:
 		struct Entry
 		{

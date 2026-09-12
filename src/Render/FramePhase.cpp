@@ -24,10 +24,22 @@ namespace Render
 		constexpr std::size_t kSetupTechniqueSlot = 2;
 		constexpr auto kPhaseCount = static_cast<std::size_t>(Phase::kCount);
 
+		/// The sky is patched like a phase but has no subscribers: its
+		/// dispatcher only remembers the frame, so that kAfterOpaque can ask
+		/// whether the sky has drawn yet.
+		constexpr std::size_t kSkyMarker = kPhaseCount;
+		constexpr std::size_t kAnchorCount = kPhaseCount + 1;
+		constexpr std::size_t kNoGate = static_cast<std::size_t>(-1);
+
 		struct Anchor
 		{
 			/// As the RTTI spells it, and as Shader::ShaderClasses lists it.
 			const char* className;
+
+			/// Another anchor whose dispatcher has to have seen the frame
+			/// before this one fires; kNoGate for none.
+			std::size_t after{ kNoGate };
+
 			VTablePatch patch;
 			void* original{ nullptr };
 			PhaseDispatcher dispatcher;
@@ -36,29 +48,34 @@ namespace Render
 			bool installed{ false };
 		};
 
-		// kAfterOpaque: BSEffectShader, measured by FrameTrace on 2026-09-12
-		// in two frames, one with water in view. The composite writes RT_004,
-		// the sky draws into it, the water surfaces follow, and the first
-		// effect technique of the frame comes after all of them. A different
-		// measurement changes this string and nothing else.
-		std::array<Anchor, kPhaseCount> g_anchors{ {
+		// Measured by FrameTrace on 2026-09-12 in two frames, one with water
+		// in view: the composite writes RT_004, the sky draws into it, the
+		// water surfaces follow, then the effects. The gate on the sky came
+		// from a count over every frame the same day; see Phase::kAfterOpaque.
+		// A different measurement changes these entries and nothing else.
+		std::array<Anchor, kAnchorCount> g_anchors{ {
 			{ "BSDFCompositeShader" },
-			{ "BSEffectShader" },
+			{ "BSEffectShader", kSkyMarker },
+			{ "BSSkyShader" },
 		} };
 
 		template <std::size_t N>
 		bool ThunkSetupTechnique(void* a_self, std::uint32_t a_pass) noexcept
 		{
 			auto& anchor = g_anchors[N];
+			const auto frame = FrameCount();
 
-			// Written before the dispatch, because a subscriber reads it from
-			// inside; taken back when this call was not the first of the frame.
-			const auto previous = anchor.lastTechnique;
-			anchor.lastTechnique = a_pass;
-			if (anchor.dispatcher.Dispatch(FrameCount())) {
-				++anchor.hits;
-			} else {
-				anchor.lastTechnique = previous;
+			if (anchor.after == kNoGate || g_anchors[anchor.after].dispatcher.DispatchedOn(frame)) {
+				// Written before the dispatch, because a subscriber reads it
+				// from inside; taken back when this call was not the first of
+				// the frame.
+				const auto previous = anchor.lastTechnique;
+				anchor.lastTechnique = a_pass;
+				if (anchor.dispatcher.Dispatch(frame)) {
+					++anchor.hits;
+				} else {
+					anchor.lastTechnique = previous;
+				}
 			}
 			return reinterpret_cast<SetupTechniqueFn>(anchor.original)(a_self, a_pass);
 		}
@@ -69,7 +86,7 @@ namespace Render
 			return { &ThunkSetupTechnique<I>... };
 		}
 
-		constexpr auto kThunks = MakeThunks(std::make_index_sequence<kPhaseCount>{});
+		constexpr auto kThunks = MakeThunks(std::make_index_sequence<kAnchorCount>{});
 
 		std::uintptr_t VTableOf(std::string_view a_className) noexcept
 		{
@@ -136,10 +153,23 @@ namespace Render
 	bool InstallFramePhase() noexcept
 	{
 		bool before = false;
-		for (std::size_t i = 0; i < kPhaseCount; ++i) {
+		for (std::size_t i = 0; i < kAnchorCount; ++i) {
 			const bool ok = InstallOne(i);
 			if (i == static_cast<std::size_t>(Phase::kBeforeComposite)) {
 				before = ok;
+			}
+		}
+
+		// A gate that is not in place would silence its phase for good; say so
+		// once, next to the install lines, rather than leave a count at zero
+		// as the only symptom.
+		for (std::size_t i = 0; i < kAnchorCount; ++i) {
+			const auto& anchor = g_anchors[i];
+			if (anchor.installed && anchor.after != kNoGate && !g_anchors[anchor.after].installed) {
+				REX::ERROR(
+					"frame phase {} waits for {}, which is not patched - it will never fire",
+					i,
+					g_anchors[anchor.after].className);
 			}
 		}
 		return before;
