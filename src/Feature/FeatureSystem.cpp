@@ -2,6 +2,7 @@
 
 #include "Feature/FeatureRegistry.h"
 #include "Features/FrameCounter.h"
+#include "Features/FrameTrace.h"
 #include "Features/ImagespaceTint.h"
 #include "Features/ScreenSpaceShadows.h"
 #include "Features/ShaderCensus.h"
@@ -19,6 +20,12 @@ namespace Features
 		void RegisterAll()
 		{
 			TheRegistry().Register(std::make_unique<FrameCounter>());
+
+			// A tool, not an effect: patches the same vtable slots the census
+			// does, but never restores them, so its place in the order is
+			// immaterial. Ahead of the effects because it is what measures
+			// where they belong.
+			TheRegistry().Register(std::make_unique<FrameTrace>());
 
 			// Patches thirteen engine vtables, so it belongs ahead of the one
 			// that writes into engine memory: teardown runs in reverse, and the
