@@ -68,4 +68,10 @@ namespace Render
 	/// renders and something is subscribed means the entry has been
 	/// overwritten - see the ordering note above. It is the only symptom.
 	[[nodiscard]] std::uint64_t FramePhaseHits(Phase a_phase) noexcept;
+
+	/// The technique id of the call that fired the phase most recently. The
+	/// anchor is "the first call of this class in the frame", and which
+	/// technique that is was measured in two frames; a feature that logs this
+	/// once a second finds out whether it holds in every frame.
+	[[nodiscard]] std::uint32_t FramePhaseLastTechnique(Phase a_phase) noexcept;
 }

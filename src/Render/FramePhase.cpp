@@ -32,6 +32,7 @@ namespace Render
 			void* original{ nullptr };
 			PhaseDispatcher dispatcher;
 			std::uint64_t hits{ 0 };
+			std::uint32_t lastTechnique{ 0 };
 			bool installed{ false };
 		};
 
@@ -49,8 +50,15 @@ namespace Render
 		bool ThunkSetupTechnique(void* a_self, std::uint32_t a_pass) noexcept
 		{
 			auto& anchor = g_anchors[N];
+
+			// Written before the dispatch, because a subscriber reads it from
+			// inside; taken back when this call was not the first of the frame.
+			const auto previous = anchor.lastTechnique;
+			anchor.lastTechnique = a_pass;
 			if (anchor.dispatcher.Dispatch(FrameCount())) {
 				++anchor.hits;
+			} else {
+				anchor.lastTechnique = previous;
 			}
 			return reinterpret_cast<SetupTechniqueFn>(anchor.original)(a_self, a_pass);
 		}
@@ -167,5 +175,10 @@ namespace Render
 	std::uint64_t FramePhaseHits(Phase a_phase) noexcept
 	{
 		return InRange(a_phase) ? g_anchors[static_cast<std::size_t>(a_phase)].hits : 0;
+	}
+
+	std::uint32_t FramePhaseLastTechnique(Phase a_phase) noexcept
+	{
+		return InRange(a_phase) ? g_anchors[static_cast<std::size_t>(a_phase)].lastTechnique : 0;
 	}
 }

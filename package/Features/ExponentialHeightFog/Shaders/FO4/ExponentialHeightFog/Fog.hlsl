@@ -10,13 +10,17 @@
 // to eighty thousand, and a float has seven digits; only the height needs
 // the camera's z, and that is one number.
 //
-// Two switches for looking at the pass rather than through it, both off in
+// Three switches for looking at the pass rather than through it, all off in
 // the file as shipped and turned on by a define at the top of this file in
 // the game's Data folder, which the feature reloads within a second:
 //
-//   FOG_DEBUG_OPACITY  the picture becomes the fog's opacity, black to white
-//   FOG_DEBUG_COLOR    the picture becomes our rebuild of the game's fog
-//                      colour, to hold against the game's own at the horizon
+//   FOG_DEBUG_OPACITY   the picture becomes the fog's opacity, black to white
+//   FOG_DEBUG_COLOR     the picture becomes our rebuild of the game's fog
+//                       colour, to hold against the game's own at the horizon
+//   FOG_DEBUG_DISTANCE  the picture becomes the distance the fog integrates
+//                       over, white at the cap - a sky that is not pure white
+//                       has a depth of its own, and one that flickers has a
+//                       depth that does not agree with the camera's near plane
 
 Texture2D<float> DepthTexture : register(t0);
 
@@ -145,6 +149,9 @@ float4 main(PixelInput input) : SV_TARGET0
 
 #if defined(FOG_DEBUG_OPACITY)
 	return float4(opacity.xxx, 1.0);
+#endif
+#if defined(FOG_DEBUG_DISTANCE)
+	return float4((viewDepth / kMaxFogDistance).xxx, 1.0);
 #endif
 #if defined(FOG_DEBUG_COLOR)
 	return float4(color, 1.0);

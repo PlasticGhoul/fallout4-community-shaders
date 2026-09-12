@@ -153,6 +153,18 @@ namespace Features
 			return false;
 		}
 
+		// The composite reads fogState in the call this anchor sits in front
+		// of. Written here, the value cannot be refreshed by the engine between
+		// our write and that read - see the class comment.
+		_vanillaPhase = Render::SubscribeFramePhase(
+			Render::Phase::kBeforeComposite, "ExponentialHeightFog/VanillaFog", [this] { ApplyVanillaFog(); });
+		if (_vanillaPhase == Render::PhaseDispatcher::kNoToken) {
+			REX::ERROR("ExponentialHeightFog: the composite phase has no room left");
+			Render::UnsubscribeFramePhase(Render::Phase::kAfterOpaque, _phase);
+			_phase = Render::PhaseDispatcher::kNoToken;
+			return false;
+		}
+
 		return true;
 	}
 
@@ -162,16 +174,14 @@ namespace Features
 			REX::INFO("ExponentialHeightFog: shader changed, recompiling");
 			static_cast<void>(Compile());
 		}
-
-		// Written from Present, it survives to the composite with one frame
-		// of delay: measured on 2026-09-12, the first outcome the spec named.
-		ApplyVanillaFog();
 	}
 
 	void ExponentialHeightFog::Shutdown()
 	{
 		Render::UnsubscribeFramePhase(Render::Phase::kAfterOpaque, _phase);
 		_phase = Render::PhaseDispatcher::kNoToken;
+		Render::UnsubscribeFramePhase(Render::Phase::kBeforeComposite, _vanillaPhase);
+		_vanillaPhase = Render::PhaseDispatcher::kNoToken;
 
 		RestoreVanillaFog();
 
@@ -189,6 +199,19 @@ namespace Features
 	void ExponentialHeightFog::Draw()
 	{
 		++_draws;
+		++_framesSinceLog;
+
+		// The anchor is "the first BSEffectShader call of the frame", and the
+		// trace saw the same technique there in both of its frames. Counted
+		// here for every frame, not sampled: a change means a frame in which
+		// some other effect drew first, possibly before the sky.
+		const auto technique = Render::FramePhaseLastTechnique(Render::Phase::kAfterOpaque);
+		if (technique != _anchorTechnique) {
+			if (_draws > 1) {
+				++_anchorChanges;
+			}
+			_anchorTechnique = technique;
+		}
 
 		const auto* const sky = RE::Sky::GetSingleton();
 		if (sky == nullptr || sky->mode.get() != RE::Sky::Mode::kFull ||
@@ -260,6 +283,13 @@ namespace Features
 
 		const auto& fog = state->fogState;
 
+		// Ours went in at the composite; by now the sky and the water have
+		// drawn. Not ours any more means the engine refreshed it in between,
+		// and the sky saw the game's full fog while the ground saw the dimmed one.
+		if (_clampOverridden && fog.clamp != _clampWritten) {
+			++_clampForeignFrames;
+		}
+
 		FogConstants data{};
 		data.cameraForward[0] = camera.forward[0];
 		data.cameraForward[1] = camera.forward[1];
@@ -321,14 +351,19 @@ namespace Features
 			REX::INFO(
 				"fog: camera height {:.1f}, near {:.2f}, forward [{:.3f} {:.3f} {:.3f}], "
 				"vanilla clamp {:.3f} (engine {:.3f}), range [{:.0f} {:.0f}], nearLow [{:.3f} {:.3f} {:.3f}], "
-				"sun [{:.3f} {:.3f} {:.3f}] colour [{:.3f} {:.3f} {:.3f}]",
+				"sun [{:.3f} {:.3f} {:.3f}] colour [{:.3f} {:.3f} {:.3f}], "
+				"anchor 0x{:X} changed {} time(s), clamp foreign in {} of {} frames",
 				camera.height, camera.near,
 				camera.forward[0], camera.forward[1], camera.forward[2],
 				fog.clamp, data.fogRange[3],
 				fog.rangeData.x, fog.rangeData.y,
 				fog.nearLowColor.r, fog.nearLowColor.g, fog.nearLowColor.b,
 				towardsSun[0], towardsSun[1], towardsSun[2],
-				light->diff.r, light->diff.g, light->diff.b);
+				light->diff.r, light->diff.g, light->diff.b,
+				_anchorTechnique, _anchorChanges, _clampForeignFrames, _framesSinceLog);
+			_anchorChanges = 0;
+			_clampForeignFrames = 0;
+			_framesSinceLog = 0;
 		}
 
 		const Render::StateGuard guard;
@@ -438,7 +473,7 @@ namespace Features
 
 		// Whose value is this? Ours from last frame means the engine did not
 		// refresh it, and the original stands; anything else is a fresh
-		// original. Without this the value halves every frame.
+		// original. Without this the value shrinks every frame.
 		if (!_clampOverridden || clamp != _clampWritten) {
 			_clampOriginal = clamp;
 		}
