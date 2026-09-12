@@ -46,6 +46,8 @@
     "feature.shader_census.name": "Shader Census",
     "feature.shader_census.names": "Ask the engine for technique names",
     "feature.shader_census.names_help": "Calls the engine's own GetTechniqueName for every technique found, which is a call into the game rather than a read of it. Turn it off if the census does not survive a run.",
+    "feature.sky_probe.help": "Diagnostic for F4. Goes away after the run.",
+    "feature.sky_probe.name": "Sky Probe",
     "menu.close": "Close",
     "menu.features": "Features",
     "menu.frame": "Frame",
