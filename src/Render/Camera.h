@@ -25,6 +25,32 @@ namespace Render
 		const float (&a_worldToCam)[4][4],
 		const float (&a_direction)[3]) noexcept;
 
+	/// What a full-screen pass needs to turn a pixel and its depth into a
+	/// place in the world, relative to the camera.
+	///
+	/// A pixel's ray is forward + ndc.x * rightOverScaleX + ndc.y * upOverScaleY,
+	/// unnormalised; the depth buffer's z gives d = near / (1 - z) along
+	/// forward; the point is ray * d, and its height is height + that z.
+	struct FogCamera
+	{
+		float forward[3];
+		float height;
+		float rightOverScaleX[3];
+		float near;
+		float upOverScaleY[3];
+	};
+
+	/// All of it from the world-to-clip matrix alone. Row three is forward,
+	/// a unit vector, because w is forward dotted with the point; row zero is
+	/// the horizontal scale times right, so right over the scale is that row
+	/// divided by its own squared length, and row one the same for up; and
+	/// the near plane is m[3][3] - m[2][3], because z is w minus near.
+	/// Neither the camera's rotation nor its position is needed - only the
+	/// height, which is the caller's to supply.
+	[[nodiscard]] FogCamera FogCameraFromMatrix(
+		const float (&a_worldToCam)[4][4],
+		float a_cameraHeight) noexcept;
+
 	/// The direction towards the sun in homogeneous clip space, which is what
 	/// Bend's dispatch builder asks for: float4(direction, 0) through the view
 	/// projection, no divide.

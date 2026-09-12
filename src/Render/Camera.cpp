@@ -49,6 +49,27 @@ namespace Render
 		return clip;
 	}
 
+	FogCamera FogCameraFromMatrix(const float (&a_worldToCam)[4][4], float a_cameraHeight) noexcept
+	{
+		const auto overSquaredLength = [](const float (&a_row)[4], float (&a_out)[3]) {
+			const auto squared = a_row[0] * a_row[0] + a_row[1] * a_row[1] + a_row[2] * a_row[2];
+			const auto scale = squared > 0.0f ? 1.0f / squared : 0.0f;
+			a_out[0] = a_row[0] * scale;
+			a_out[1] = a_row[1] * scale;
+			a_out[2] = a_row[2] * scale;
+		};
+
+		FogCamera camera{};
+		camera.forward[0] = a_worldToCam[3][0];
+		camera.forward[1] = a_worldToCam[3][1];
+		camera.forward[2] = a_worldToCam[3][2];
+		camera.height = a_cameraHeight;
+		overSquaredLength(a_worldToCam[0], camera.rightOverScaleX);
+		overSquaredLength(a_worldToCam[1], camera.upOverScaleY);
+		camera.near = a_worldToCam[3][3] - a_worldToCam[2][3];
+		return camera;
+	}
+
 	std::optional<std::array<float, 4>> ProjectPoint(const float (&a_direction)[3]) noexcept
 	{
 		auto* const world = RE::Main::WorldRootCamera();

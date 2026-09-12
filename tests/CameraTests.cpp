@@ -66,12 +66,19 @@ namespace
 			a_out[3][column] = a_forward[column];
 		}
 
-		// The translation column plays no part for a direction. It is filled
-		// in so the matrix is a whole one and not a corner of one.
-		a_out[0][3] = 0.0f;
-		a_out[1][3] = 0.0f;
-		a_out[2][3] = -kNear;
-		a_out[3][3] = 0.0f;
+		// The translation column plays no part for a direction, but it is
+		// filled in with a real camera position - Sanctuary's - so that the
+		// near plane has to be dug out from under it: m[2][3] is minus forward
+		// dot t minus near, m[3][3] minus forward dot t alone. On the loading
+		// screen both terms happen to be zero, which is why that fixture alone
+		// could not catch a near plane read from m[2][3] by itself.
+		constexpr float kSanctuary[3]{ -80352.0f, 89600.0f, 7904.8f };
+		const float forwardDotT =
+			a_forward[0] * kSanctuary[0] + a_forward[1] * kSanctuary[1] + a_forward[2] * kSanctuary[2];
+		a_out[0][3] = -(a_right[0] * kSanctuary[0] + a_right[1] * kSanctuary[1] + a_right[2] * kSanctuary[2]) * kScaleX;
+		a_out[1][3] = -(a_up[0] * kSanctuary[0] + a_up[1] * kSanctuary[1] + a_up[2] * kSanctuary[2]) * kScaleY;
+		a_out[2][3] = -forwardDotT - kNear;
+		a_out[3][3] = -forwardDotT;
 	}
 
 	/// What the engine reports: normalised screen coordinates and a depth,
@@ -273,6 +280,57 @@ int main()
 		// the crossing can only be placed, not measured. The column the code
 		// used to take gave -0.29 here, which is not a crossing at all.
 		Check(Near(clip[3], 0.0f, 0.005f), "the crossing: w is within a thousandth of zero");
+	}
+
+	{
+		const auto fog = Render::FogCameraFromMatrix(kLoadingScreen, 128.0f);
+
+		Check(
+			Near(fog.forward[0], 0.0f, 1e-6f) && Near(fog.forward[1], 1.0f, 1e-6f) && Near(fog.forward[2], 0.0f, 1e-6f),
+			"loading screen: forward is world y");
+		Check(Near(fog.near, 15.0f, 1e-4f), "and the near plane is fifteen");
+		Check(Near(fog.height, 128.0f, 1e-6f), "and the height is the camera's z");
+		Check(
+			Near(fog.rightOverScaleX[0], 1.0f / kScaleX, 1e-5f) && Near(fog.rightOverScaleX[1], 0.0f, 1e-6f),
+			"right over the horizontal scale points along world x");
+		Check(
+			Near(fog.upOverScaleY[2], 1.0f / kScaleY, 1e-5f) && Near(fog.upOverScaleY[0], 0.0f, 1e-6f),
+			"up over the vertical scale points along world z");
+	}
+
+	{
+		// The ray of the right screen edge, pushed back through the matrix,
+		// has to land at x over w of one: that is what "over the scale" is for.
+		const auto fog = Render::FogCameraFromMatrix(kLoadingScreen, 128.0f);
+		const float ray[3]{
+			fog.forward[0] + fog.rightOverScaleX[0],
+			fog.forward[1] + fog.rightOverScaleX[1],
+			fog.forward[2] + fog.rightOverScaleX[2]
+		};
+		const auto clip = Render::ClipFromWorldToCam(kLoadingScreen, ray);
+		Check(Near(clip[0] / clip[3], 1.0f, 1e-5f), "the right edge ray projects to x over w of one");
+		Check(Near(clip[1] / clip[3], 0.0f, 1e-5f), "and stays on the horizon");
+	}
+
+	{
+		// On a real frame the centre ray is the camera's forward row, the
+		// scales survive the rotation, and the near plane has to be dug out
+		// from under a real translation.
+		const auto& frame = kFrames[0];
+		float worldToCam[4][4]{};
+		BuildWorldToCam(frame.rotation[0], frame.rotation[1], frame.rotation[2], worldToCam);
+		const auto fog = Render::FogCameraFromMatrix(worldToCam, 7904.8f);
+
+		Check(
+			Near(fog.forward[0], frame.rotation[0][0], 1e-5f) &&
+				Near(fog.forward[1], frame.rotation[0][1], 1e-5f) &&
+				Near(fog.forward[2], frame.rotation[0][2], 1e-5f),
+			"sun ahead frame: forward is row zero of the rotation");
+		Check(Near(fog.near, kNear, 1e-3f), "and the near plane is still fifteen under a real translation");
+
+		const float up[3]{ fog.upOverScaleY[0], fog.upOverScaleY[1], fog.upOverScaleY[2] };
+		const float length = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
+		Check(Near(length, 1.0f / kScaleY, 1e-4f), "and up over scale has the length one over the vertical scale");
 	}
 
 	std::printf("\n%s\n", g_failures == 0 ? "all checks passed" : "checks failed");
