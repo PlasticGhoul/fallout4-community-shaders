@@ -17,6 +17,8 @@
 //   2  direction  normalize(direction) * 0.5 + 0.5
 //   3  cube       the six faces of the coverage map, three by two:
 //                 +X -X +Y over -Y +Z -Z, each face as D3D lays it out
+//   4  sky        the coverage along the view ray, on sky pixels only:
+//                 has to line up with the clouds the eye sees
 // All are drawn with a plain blend state onto RT_058 alone.
 
 TextureCube<float4> Coverage : register(t0);
@@ -96,12 +98,20 @@ PixelOutput main(PixelInput input)
 		return Output(float3(value, value + edge, value));
 	}
 
+	const float2 ndc = float2(input.uv.x * 2.0 - 1.0, 1.0 - input.uv.y * 2.0);
+	const float3 ray = CameraForward.xyz + ndc.x * CameraRight.xyz + ndc.y * CameraUp.xyz;
+
+	// The coverage along the view ray itself: on the sky this has to lie on
+	// the clouds the eye sees, or the cube is oriented wrong.
+	if (debugView == 4) {
+		const float seen = Coverage.SampleLevel(LinearClamp, ray, 0).a;
+		return Output(depth >= 0.9999 ? seen.xxx : float3(0.0, 0.0, 0.25));
+	}
+
 	// Sky: no surface, no shadow.
 	if (depth >= 0.9999)
 		return Output(debugView == 0 ? 1.0.xxx : 0.0.xxx);
 
-	const float2 ndc = float2(input.uv.x * 2.0 - 1.0, 1.0 - input.uv.y * 2.0);
-	const float3 ray = CameraForward.xyz + ndc.x * CameraRight.xyz + ndc.y * CameraUp.xyz;
 	const float nearPlane = CameraRight.w;
 	const float viewDepth = nearPlane / max(1.0 - depth, 1e-6);
 	const float3 relative = ray * viewDepth;

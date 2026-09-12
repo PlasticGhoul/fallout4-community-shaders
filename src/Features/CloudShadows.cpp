@@ -125,6 +125,9 @@ namespace Features
 			if (a_choice == "cube") {
 				return 3.0f;
 			}
+			if (a_choice == "sky") {
+				return 4.0f;
+			}
 			return 0.0f;
 		}
 
@@ -236,12 +239,13 @@ namespace Features
 		Settings::DeclareChoice(
 			"CloudShadows/debugView",
 			"off",
-			std::vector<std::string>{ "off", "coverage", "direction", "cube" })
+			std::vector<std::string>{ "off", "coverage", "direction", "cube", "sky" })
 			.Label("feature.cloud_shadows.debug_view", "Debug View")
 			.Help(
 				"feature.cloud_shadows.debug_view_help",
 				"Shows the pass instead of the picture: the cloud coverage as the ground sees "
-				"it, the direction it is sampled in, or the six faces of the coverage map.");
+				"it, the direction it is sampled in, the six faces of the coverage map, or the "
+				"map laid over the sky, where it has to match the clouds.");
 	}
 
 	bool CloudShadows::Setup()
