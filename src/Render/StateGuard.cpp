@@ -41,6 +41,9 @@ namespace Render
 		_context->OMGetBlendState(
 			std::addressof(_blendState), _blendFactor, std::addressof(_sampleMask));
 		_context->RSGetViewports(std::addressof(_viewportCount), _viewports);
+		_context->RSGetState(std::addressof(_rasterizer));
+		_context->OMGetDepthStencilState(
+			std::addressof(_depthStencilState), std::addressof(_stencilReference));
 		_context->IAGetPrimitiveTopology(std::addressof(_topology));
 
 		_context->VSGetShader(std::addressof(_vertexShader), nullptr, nullptr);
@@ -66,6 +69,8 @@ namespace Render
 		_context->OMSetRenderTargets(kRenderTargets, _renderTargets, _depthStencil);
 		_context->OMSetBlendState(_blendState, _blendFactor, _sampleMask);
 		_context->RSSetViewports(_viewportCount, _viewports);
+		_context->RSSetState(_rasterizer);
+		_context->OMSetDepthStencilState(_depthStencilState, _stencilReference);
 		_context->IASetPrimitiveTopology(_topology);
 
 		_context->VSSetShader(_vertexShader, nullptr, 0);
@@ -85,6 +90,8 @@ namespace Render
 		ReleaseAll(_renderTargets, kRenderTargets);
 		ReleaseOne(_depthStencil);
 		ReleaseOne(_blendState);
+		ReleaseOne(_rasterizer);
+		ReleaseOne(_depthStencilState);
 		ReleaseOne(_vertexShader);
 		ReleaseOne(_pixelShader);
 		ReleaseOne(_computeShader);

@@ -15,8 +15,16 @@ namespace Render
 	/// it; this exists so that the module can be torn down at all.
 	void ReleaseFullscreenPass() noexcept;
 
-	/// Binds the shared vertex shader and a triangle list, then draws three
-	/// vertices. The caller owns everything else: the pixel shader, the
-	/// targets, the blend state.
+	/// Binds the shared vertex shader, a triangle list, a rasteriser state
+	/// that culls nothing and clips to no scissor, and a depth-stencil state
+	/// that tests neither - then draws three vertices. The caller owns
+	/// everything else: the pixel shader, the targets, the blend state.
+	///
+	/// The two states are set here rather than inherited because what is
+	/// bound when a feature runs is whatever the engine's last draw left: a
+	/// light volume's culling would swallow the triangle, and a stencil test
+	/// would cut holes in it. Both were inherited in the first version of F2
+	/// and happened to work, which is not the same as being right. The
+	/// caller's StateGuard puts the engine's own back.
 	void DrawFullscreen() noexcept;
 }

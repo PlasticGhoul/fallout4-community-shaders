@@ -50,6 +50,14 @@ namespace Render
 		float _blendFactor[4]{};
 		std::uint32_t _sampleMask{ 0 };
 
+		/// Rasteriser and depth-stencil state, because the full-screen draw
+		/// sets its own. Left unsaved, whatever kDFLight had bound - a light
+		/// volume's front-face culling, a stencil test - would decide whether
+		/// our triangle arrives at all, and the composite would inherit ours.
+		REX::W32::ID3D11RasterizerState* _rasterizer{ nullptr };
+		REX::W32::ID3D11DepthStencilState* _depthStencilState{ nullptr };
+		std::uint32_t _stencilReference{ 0 };
+
 		REX::W32::D3D11_VIEWPORT _viewports[kViewports]{};
 		std::uint32_t _viewportCount{ kViewports };
 
