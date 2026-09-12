@@ -574,6 +574,7 @@ if(FO4CS_BUILD_TESTS)
         KeyLatchTests
         "${CMAKE_SOURCE_DIR}/tests/KeyLatchTests.cpp"
         "${CMAKE_SOURCE_DIR}/src/Menu/KeyLatch.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Menu/Hotkeys.cpp"
     )
 
     target_include_directories(

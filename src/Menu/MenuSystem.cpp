@@ -1,6 +1,7 @@
 #include "Menu/MenuSystem.h"
 
 #include "I18n/I18n.h"
+#include "Menu/Hotkeys.h"
 #include "Menu/InputLayer.h"
 #include "Menu/KeyLatch.h"
 #include "Menu/MenuGate.h"
@@ -185,7 +186,10 @@ namespace Menu
 			[](std::uint32_t a_key) { return TheGate().IsToggleKey(a_key); },
 			[] { TheGate().RequestToggle(); },
 			[] { return TheGate().IsOpen(); },
-			[](std::uint32_t a_key) { TheLogLatch().Offer(a_key); });
+			[](std::uint32_t a_key) {
+				TheLogLatch().Offer(a_key);
+				TheHotkeys().Offer(a_key);
+			});
 
 		// Read every frame like every other setting, so a rebind through the
 		// capture button takes effect without a restart.

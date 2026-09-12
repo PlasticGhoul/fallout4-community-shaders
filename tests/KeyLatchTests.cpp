@@ -1,5 +1,7 @@
+#include "Menu/Hotkeys.h"
 #include "Menu/KeyLatch.h"
 
+#include <cstddef>
 #include <cstdio>
 
 namespace
@@ -67,6 +69,43 @@ int main()
 		latch.Offer(0x7A);
 		latch.SetKey(0x70);
 		Check(latch.Take(), "a pending press survives a rebind");
+	}
+
+	{
+		Menu::Hotkeys hotkeys;
+		Menu::KeyLatch a;
+		Menu::KeyLatch b;
+		a.SetKey(0x79);
+		b.SetKey(0x7A);
+
+		Check(hotkeys.Register(a), "a latch registers");
+		Check(hotkeys.Register(b), "and a second");
+		Check(hotkeys.Count() == 2, "both are counted");
+		Check(!hotkeys.Register(a), "registering the same latch twice is refused");
+
+		hotkeys.Offer(0x79);
+		Check(a.Take(), "an offered key reaches the latch bound to it");
+		Check(!b.Take(), "and not the other");
+
+		hotkeys.Unregister(a);
+		Check(hotkeys.Count() == 1, "unregistering removes exactly one");
+		hotkeys.Offer(0x79);
+		Check(!a.Take(), "an unregistered latch is offered nothing");
+
+		hotkeys.Unregister(a);
+		Check(hotkeys.Count() == 1, "unregistering twice is harmless");
+	}
+
+	{
+		// The table is fixed; the ninth is refused rather than dropped silently.
+		Menu::Hotkeys hotkeys;
+		Menu::KeyLatch latches[Menu::Hotkeys::kMaxLatches + 1];
+		bool allIn = true;
+		for (std::size_t i = 0; i < Menu::Hotkeys::kMaxLatches; ++i) {
+			allIn = hotkeys.Register(latches[i]) && allIn;
+		}
+		Check(allIn, "the table takes kMaxLatches latches");
+		Check(!hotkeys.Register(latches[Menu::Hotkeys::kMaxLatches]), "and refuses one more");
 	}
 
 	std::printf("\n%s\n", g_failures == 0 ? "all checks passed" : "checks failed");
