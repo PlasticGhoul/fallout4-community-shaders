@@ -144,6 +144,13 @@ int main()
 		Check(same(Settings::SliderFormat(10.0, 30.0), "%.1f"), "a span of twenty gets one");
 		Check(same(Settings::SliderFormat(0.0, 500.0), "%.0f"), "a span of five hundred gets none");
 
+		// F3's ranges. Density is 0 to 0.1 and not 0 to 1 for exactly this
+		// reason: at two decimals its default of 0.005 could not be set.
+		Check(same(Settings::SliderFormat(0.0, 0.1), "%.3f"), "density gets three decimals");
+		Check(same(Settings::SliderFormat(-22000.0, 22000.0), "%.0f"), "a height in world units gets none");
+		Check(same(Settings::SliderFormat(0.001, 2.0), "%.2f"), "the height falloff gets two");
+		Check(same(Settings::SliderFormat(-0.99, 0.99), "%.2f"), "and so does the anisotropy");
+
 		// The case that started it: 0.005 to 0.05 was drawn as "0.0" to "0.1"
 		// and could take no value in between.
 		Check(

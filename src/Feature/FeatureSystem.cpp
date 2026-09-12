@@ -1,6 +1,7 @@
 #include "Feature/FeatureSystem.h"
 
 #include "Feature/FeatureRegistry.h"
+#include "Features/ExponentialHeightFog.h"
 #include "Features/FrameCounter.h"
 #include "Features/FrameTrace.h"
 #include "Features/ImagespaceTint.h"
@@ -36,6 +37,12 @@ namespace Features
 			// but writes into no engine memory - so it goes back after the
 			// shader pointer does.
 			TheRegistry().Register(std::make_unique<ScreenSpaceShadows>());
+
+			// Writes into engine memory - fogState.clamp - and gives it back in
+			// Shutdown, so it sits behind the shadows and ahead of the tint:
+			// torn down before the pass that only draws, after the one that
+			// swaps a shader pointer.
+			TheRegistry().Register(std::make_unique<ExponentialHeightFog>());
 
 			// Registered last so that it is torn down first: teardown runs in
 			// reverse, and the one that writes into engine memory should be the
