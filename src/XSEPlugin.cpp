@@ -3,6 +3,7 @@
 #include "Plugin.h"
 #include "Render/FramePhase.h"
 #include "Render/SwapChainHook.h"
+#include "Render/TechniqueTracker.h"
 #include "Runtime.h"
 
 namespace
@@ -34,6 +35,10 @@ namespace
 			// survives that restore; on top of it, it would be overwritten and
 			// the phase would go silent without a word.
 			static_cast<void>(Render::InstallFramePhase());
+
+			// Same slots, same rule: before the Present hook, so that a census
+			// restores our thunk and not the engine's entry over it.
+			static_cast<void>(Render::InstallTechniqueTracker());
 
 			Render::InstallSwapChainHook();
 			break;
