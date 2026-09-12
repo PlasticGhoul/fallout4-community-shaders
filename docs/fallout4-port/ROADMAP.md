@@ -1,8 +1,9 @@
 # Fallout 4 Port — Roadmap
 
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
-Messspike in **F1…F14 aufwärts** zerlegt, und **F1 (Performance Overlay) ist abgeschlossen**.
-Als Nächstes steht **F2** an, Screen-Space Shadows. Stand 2026-09-05.
+Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay) und F2 (Screen-Space
+Shadows) sind abgeschlossen**. Als Nächstes steht **F3** an, Exponential Height Fog. Stand
+2026-09-12.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -53,7 +54,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | E1   | **Overlay und Eingabe** — ImGui-Overlay, Fensterprozedur, Eingabesperre, eigener Zeiger                                | Overlay im Spiel bedienbar, Spieleingabe steht, solange es offen ist       | **abgeschlossen** |
 | E2   | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                        | Einstellungen im Overlay ändern, sie überleben einen Neustart              | **abgeschlossen** |
 | F1   | **Performance Overlay** — CPU- und GPU-Zeitmessung je Pass, im Overlay dargestellt                                     | Zahlen im Spiel ablesbar, die sich unter Last bewegen                      | **abgeschlossen** |
-| F2   | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F2   | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | **abgeschlossen** |
 | F3   | **Exponential Height Fog**                                                                                             | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | F4   | **Cloud Shadows**                                                                                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | F5   | **Skylighting**                                                                                                        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
@@ -650,6 +651,102 @@ Ab F2 wird jedes Teilprojekt gegen diese Zeilen abgenommen.
 -   **Der Frame-Wert ist Wandzeit zwischen zwei `Present`**, einschließlich einer etwaigen
     Vsync-Wartezeit. Er steht in der Tafel mit genau diesem Hinweis. Pässe ab F2 sind exakt.
 
+## Aus Teilprojekt F2 bestätigt
+
+Dreizehn Spielläufe, zehn am 2026-09-06 und drei am 2026-09-12. Der erste eigene Renderpass des
+Ports zeichnet, und die Naht für F3 bis F11 steht: `Render::FramePhase`, `Render::Targets`,
+`Render::Resources`, `Render::StateGuard`, `Render::FullscreenPass`, dazu `Shader::ShaderCompiler`
+mit drei Profilen und Defines.
+
+### Die Zahlen
+
+Gemessen in Sanctuary, 2560×1440, 80 Samples, Vorgaben 0,005 / 0,02 / 1:
+
+```
+=== performance snapshot over 300 frames ===
+  pass                     gpu avg   cpu avg   gpu p95   gpu p99
+  Frame                      6.041     5.748     6.547     7.494
+    Features                 0.000     0.135     0.000     0.000
+      FrameCounter           0.000     0.003     0.000     0.000
+    ScreenSpaceShadows       0.100     0.017     0.202     0.202
+    Overlay                  0.000     0.048     0.001     0.001
+      ScreenSpaceShadows/RayMarch     0.154     0.005     0.155     0.157
+      ScreenSpaceShadows/Modulate     0.043     0.002     0.047     0.047
+  156.2 fps, cpu 6.08 ms, gpu 6.40 ms, 0 frame(s) discarded
+```
+
+**Das Feature kostet 0,197 ms GPU und 0,007 ms CPU je Frame**, die Summe der beiden Passzeilen.
+Die Zeile `ScreenSpaceShadows` darüber ist ein Artefakt, das dieser Schnappschuss aufgedeckt hat:
+der Profiler schlüsselt seine Zeilen nach dem Namen allein, und die Registry misst `Frame()`
+jedes Features unter dessen Namen aus `Present` heraus, während die Frame-Phase den Rückruf unter
+demselben Namen gemessen hat — zwei Messungen je Frame in einer Historie, das Mittel halbiert,
+das p95 exakt das Doppelte. Der Rückruf heißt seit `ScreenSpaceShadows/Draw`;
+`SubscribeFramePhase` dokumentiert die Regel. Der Frame ist gegen die F1-Grundlinie (6,598 ms
+GPU) nicht direkt vergleichbar, weil Blickrichtung und Tageszeit andere waren; die Passzeilen
+sind es.
+
+### Die Gabelungen der Spec
+
+-   **`RT_058` und `RT_059` tragen das direkte Licht getrennt vom Rest** — bestätigt. Himmel und
+    Leuchtreklamen bleiben unverändert, wenn die Maske aufmultipliziert wird.
+-   **Tiefenkonvention nah 0, fern 1** — bestätigt, aus `worldToCam` abgeleitet: `z/w = 1 − 15/d`,
+    ohne Fernebene. Bends Header nennt das Gegenteil „typisch".
+-   **Die Lichtrichtung wird wie in der Vorlage negiert** — bestätigt. Die Kontaktschatten fallen
+    mit Sonne vorn wie hinten auf dieselbe Seite wie die Schatten des Spiels.
+-   **Der Einhängepunkt** — bestätigt: Slot 02 der Haupt-vtable von `BSDFCompositeShader`, einmal
+    installiert, feuert genau einmal je Frame und in Innenräumen gar nicht.
+
+### Die Abnahme
+
+Schritte 1 bis 8 der Spec stehen: Block im Overlay, Schalter aus und an, Himmel unverändert,
+Regler wirken (der `sampleCount`-Regler übersetzt nachweislich von 80 bis 168 Samples neu),
+Passzeilen in der Tafel, Root Cellar meldet „no sun, standing down", Pip-Boy und Alt-Tab ohne
+Befund, sechsmal im laufenden Spiel aus- und angeschaltet ohne Absturz. **Schritt 9, das
+Nachladen bei Dateiänderung, ist in dieser Fassung nicht ausgeführt worden**; der Nutzer hat ihn
+als abgenommen gesetzt. Der Mechanismus ist derselbe wie bei `ImagespaceTint`, mit dem in D2
+gefundenen Fehler behoben.
+
+### Was die Läufe ergeben haben
+
+Die zehn Läufe des 6.9. galten einer einzigen Größe, der Lichtkoordinate. Was dabei herauskam,
+steht ausführlich in der Spec-Notiz und in `Render/Camera.h`; das Wesentliche:
+
+-   **`NiCamera::worldToCam` ist die vollständige Welt-nach-Clip-Matrix**, Spaltenvektor-
+    Konvention, Rotation eingeschlossen. Auf dem Ladebildschirm ist die Kamerarotation eine reine
+    Achsenvertauschung, und die Matrix las sich dort als rotationsfrei — zwei Commits haben
+    daraufhin die Kamerarotation davorgeschaltet und doppelt rotiert. Der Weg, der trägt, ist
+    `worldToCam · (Richtung, 0)`, genau das, was Bends Kopfkommentar verlangt und was der
+    unabhängige FO4-Port ebenso tut. Der Host-Test hält die Rechnung gegen drei Frames aus dem
+    Log; im Spiel stimmen über 200 Vergleichszeilen mit `WorldPtToScreenPt3` auf drei Stellen.
+-   **`NiCamera::WorldPtToScreenPt3` teilt durch |w|.** Hinter der Kamera liefert sie die
+    gespiegelte Position und eine negative Tiefe. Als Schiedsrichter fürs Log taugt sie, als
+    Quelle für Bend nicht: der Rückbau trug drei Fehler auf einmal — falsche Vorwärtsachse für das
+    Vorzeichen von w, Spiegelung nicht zurückgenommen, `z/w = −1` statt `+1` hinten. Der letzte
+    war der dunkle Blitz am Sonnenübergang: mit falschem `LightCoordinate.z` liest Bends
+    perspektivische Korrektur flachen Boden als Schatten, sobald die Lichtkoordinate weit
+    außerhalb liegt.
+-   **Die Kamerarotation hält vorwärts in Zeile 0, oben in Zeile 1, rechts in Zeile 2.**
+    Gamebryo: eine Kamera blickt und ein Licht leuchtet entlang der lokalen x-Achse. Die
+    Sonnenrichtung steht deshalb in Zeile 0 der Rotation des `NiDirectionalLight`, dessen
+    Zeilen 1 und 2 die Engine gar nicht erst füllt.
+-   **`Main::WorldRootCamera()` ist die Kamera, mit der gezeichnet wird.**
+    `BSGraphics::State::cameraState` ist an `kDFComposite` die Schattenkamera der Sonne, und
+    `BSGraphics::RendererData::shadowState` ist kein Zeiger, sondern der Offset `0x1B70`; ihm zu
+    folgen stürzt ab.
+-   **Die These, Fallout 4 rebasiere die Welt um die Kamera, war falsch.** Sie stammte aus dem
+    Ladebildschirm. In der Welt trägt die Kamera eine echte Weltposition; der Sonnenknoten liegt
+    ein paar hundert Einheiten daneben und neun Grad höher als die Lichtrichtung.
+-   **Ein Vollbildpass darf Rasterizer- und Depth-Stencil-State nicht erben.** Die erste Fassung
+    tat es und funktionierte zufällig. `DrawFullscreen` bindet jetzt eigenen State, `StateGuard`
+    sichert ihn.
+-   **Bends `SurfaceThickness` steht auf dessen eigener Vorgabe 0,005**, Bereich 0,0005 bis 0,05.
+    Die Begründung, Fallout 4s Tiefenverteilung sei gröber als Skyrims, trägt nicht — beide
+    projizieren mit Nahebene 15 und ohne nennenswerte Fernebene —, die Vorgabe ist trotzdem die
+    richtige: mit ihr war das Bild plausibel, mit Skyrims 0,02 flächig dunkel.
+-   **Werte, die sich ändern, gehören periodisch ins Log.** Drei einmalige Logzeilen haben in
+    einer Sitzung dreimal den Ladebildschirm erwischt. Ebenso: eine Ablehnung, die nur beim
+    ersten Mal spricht, macht danach jeden Lauf zum Scheinerfolg.
+
 ## Bekannte Lücken in CommonLibF4
 
 Diese fehlen in **allen** geprüften Forks und müssen selbst reverse-engineert werden:
@@ -666,6 +763,12 @@ Diese fehlen in **allen** geprüften Forks und müssen selbst reverse-engineert 
 -   Ein benanntes `RENDER_TARGET`-Enum — FO4s Targets liegen als anonymes `renderTargets[101]`
     in `BSGraphics::RendererData`. Der geerbte Code referenziert `RE::RENDER_TARGET::k*` 132-mal.
 -   `ShadowSceneNode`, `BSLight`.
+-   `BSGraphics::RendererData::shadowState` ist als Zeiger deklariert und keiner: das Feld liest
+    `0x1B70`, den Offset von `RendererShadowState` innerhalb von `BSGraphics::Context`. Ihm zu
+    folgen stürzt ab. Gemessen in F2.
+-   `RE/S/Sun.h` ist nicht selbstgenügsam — nennt `SkyObject`, `NiBillboardNode`, `BSTriShape`,
+    `BSShaderAccumulator`, `NiDirectionalLight` ohne Deklaration — und `NiDirectionalLight` ist
+    überall nur vorwärtsdeklariert. Gelesen wird über `NiLight` bei Offset null.
 
 Vorhanden und brauchbar sind dagegen `BSGraphics::{Renderer, RendererData, RendererShadowState,
 RenderTargetManager, Context, State, ViewData}`, `BSShader`, `BSShaderManager`, `TESWeather`,
