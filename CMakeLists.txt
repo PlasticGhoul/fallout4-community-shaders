@@ -411,6 +411,32 @@ if(FO4CS_BUILD_TESTS)
 
     add_test(NAME MenuGate COMMAND MenuGateTests)
 
+    add_executable(
+        MenuPagesTests
+        "${CMAKE_SOURCE_DIR}/tests/MenuPagesTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Menu/PageList.cpp"
+    )
+
+    target_include_directories(
+        MenuPagesTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(MenuPagesTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        MenuPagesTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(MenuPagesTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            MenuPagesTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME MenuPages COMMAND MenuPagesTests)
+
     # Schema only, deliberately: the whole point of the split is that the
     # description of a setting needs neither REX nor a file to be exercised.
     add_executable(
