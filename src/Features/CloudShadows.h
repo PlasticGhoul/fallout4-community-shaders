@@ -75,16 +75,20 @@ namespace Features
 		Util::FileWatch _watch;
 		Render::PhaseDispatcher::Token _phase{ Render::PhaseDispatcher::kNoToken };
 
-		// The sky's vertex constants, a frame old: copied into staging at the
+		// The sky's vertex constants, kRing - 1 frames old: copied into staging at the
 		// first clouds draw, read back from Present, written out with one
 		// face's matrices each. Sized from the engine's own buffer.
-		/// Copies go into a ring and are read two frames later. A read with
-		/// DO_NOT_WAIT one frame after the copy failed in about half the
+		/// Copies go into a ring and are read kRing - 1 frames later. A read
+		/// with DO_NOT_WAIT one frame after the copy failed in about half the
 		/// frames at 180 fps - the GPU runs that far behind - and a layer left
-		/// out for a frame was the flicker the user saw.
-		static constexpr std::uint32_t kRing = 3;
-		static std::uint32_t WriteSlot(std::uint64_t a_frame) noexcept { return static_cast<std::uint32_t>(a_frame % kRing); }
-		static std::uint32_t ReadSlot(std::uint64_t a_frame) noexcept { return static_cast<std::uint32_t>((a_frame + 1) % kRing); }
+		/// out for a frame was the flicker the user saw. Two frames later
+		/// still failed for seconds at a time whenever the GPU was the
+		/// bottleneck: D3D11 lets the CPU queue three frames, so the copy from
+		/// two frames ago need not have run yet. Six is the depth the profiler
+		/// keeps its timestamp queries in flight for, for the same reason.
+		static constexpr std::uint32_t kRing = 6;
+		static constexpr std::uint32_t WriteSlot(std::uint64_t a_frame) noexcept { return static_cast<std::uint32_t>(a_frame % kRing); }
+		static constexpr std::uint32_t ReadSlot(std::uint64_t a_frame) noexcept { return static_cast<std::uint32_t>((a_frame + 1) % kRing); }
 
 		REX::W32::ID3D11Buffer* _staging[kRing]{};
 		std::uint64_t _stagingWrittenFrame[kRing]{};

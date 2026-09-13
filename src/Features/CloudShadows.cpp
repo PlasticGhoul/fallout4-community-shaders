@@ -222,11 +222,11 @@ namespace Features
 				"Shadows of the clouds overhead, moving across the landscape with them. Taken "
 				"from the clouds the game draws, so they match the sky.");
 
-		Settings::DeclareSlider("CloudShadows/opacity", 0.5, 0.0, 4.0)
+		Settings::DeclareSlider("CloudShadows/opacity", 0.75, 0.0, 4.0)
 			.Label("feature.cloud_shadows.opacity", "Opacity")
 			.Help("feature.cloud_shadows.opacity_help", "How dark the cloud shadows are.");
 
-		Settings::DeclareSlider("CloudShadows/cloudHeight", 2000.0, 500.0, 20000.0)
+		Settings::DeclareSlider("CloudShadows/cloudHeight", 500.0, 500.0, 20000.0)
 			.Label("feature.cloud_shadows.cloud_height", "Cloud Height")
 			.Help(
 				"feature.cloud_shadows.cloud_height_help",
@@ -448,10 +448,12 @@ namespace Features
 
 	bool CloudShadows::ReadLayerGeometry(REX::W32::ID3D11DeviceContext& a_context, std::uint32_t a_layer) noexcept
 	{
-		// The copy of this layer's constants from two frames ago. The GPU has
-		// long finished it, so the map is not expected to wait; if it would,
-		// the layer keeps the image it has rather than stall the thread or
-		// sit the frame out.
+		// The copy of this layer's constants from kRing - 1 frames ago. The
+		// GPU has long finished it, so the map is not expected to wait; if it
+		// would, the layer keeps the image it has rather than stall the
+		// thread or sit the frame out.
+		static_assert(ReadSlot(kRing + 7) == WriteSlot(kRing + 7 - (kRing - 1)),
+			"the read slot must be the one written kRing - 1 frames earlier");
 		const auto frame = Render::FrameCount();
 		const auto slot = ReadSlot(frame);
 		if (_layerWrittenFrame[a_layer][slot] == 0) {
@@ -582,8 +584,8 @@ namespace Features
 			return;
 		}
 
-		// The copy from two frames ago, never waiting: the render thread must
-		// not stall on its own copy. A failed map keeps the image it has.
+		// The copy from kRing - 1 frames ago, never waiting: the render thread
+		// must not stall on its own copy. A failed map keeps the image it has.
 		const auto slot = ReadSlot(Render::FrameCount());
 		if (_stagingWrittenFrame[slot] == 0) {
 			return;
@@ -637,7 +639,7 @@ namespace Features
 		}
 
 		// Once a frame: the sky's per-view constants are the same for all
-		// nine layers. Copied now, read from Present two frames later.
+		// nine layers. Copied now, read from Present kRing - 1 frames later.
 		const auto frame = Render::FrameCount();
 		if (_stagingFrame != frame) {
 			const auto slot = WriteSlot(frame);
@@ -663,7 +665,7 @@ namespace Features
 			return;
 		}
 
-		// The constants of this layer from two frames ago first - a failed
+		// The constants of this layer from kRing - 1 frames ago first - a failed
 		// read keeps the image the layer has - then this frame's copy into
 		// the ring.
 		if (ReadLayerGeometry(a_context, _layer)) {
