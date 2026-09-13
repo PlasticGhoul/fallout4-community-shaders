@@ -8,6 +8,7 @@
 #include "Features/ImagespaceTint.h"
 #include "Features/ScreenSpaceShadows.h"
 #include "Features/ShaderCensus.h"
+#include "Features/TargetView.h"
 #include "Render/Profiler.h"
 #include "Settings/Settings.h"
 
@@ -28,6 +29,10 @@ namespace Features
 			// immaterial. Ahead of the effects because it is what measures
 			// where they belong.
 			TheRegistry().Register(std::make_unique<FrameTrace>());
+
+			// A tool like the trace: draws one engine target over the picture
+			// from kAfterOpaque and owns nothing of the engine's.
+			TheRegistry().Register(std::make_unique<TargetView>());
 
 			// Patches thirteen engine vtables, so it belongs ahead of the one
 			// that writes into engine memory: teardown runs in reverse, and the

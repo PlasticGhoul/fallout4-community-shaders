@@ -167,6 +167,9 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
         $baseEntries -contains "Shaders/FO4/Fullscreen.hlsl"
     ) "and the shared full-screen vertex shader"
     Check (
+        $baseEntries -contains "Shaders/FO4/TargetView/TargetView.hlsl"
+    ) "and the target view's shader, a core tool"
+    Check (
         -not ($baseEntries -contains "Shaders/FO4/ScreenSpaceShadows/RaymarchCS.hlsl")
     ) "and not the shadow feature's shaders"
 
