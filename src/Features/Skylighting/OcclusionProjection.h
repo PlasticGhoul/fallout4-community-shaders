@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace Features::Skylighting
+namespace Features::SkyOcclusion
 {
 	/// The cube the sky is seen from, in game units: the template's
 	/// occlusionDistance. Centred on the camera.

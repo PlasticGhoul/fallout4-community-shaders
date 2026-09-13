@@ -8,6 +8,7 @@
 #include "Features/ImagespaceTint.h"
 #include "Features/ScreenSpaceShadows.h"
 #include "Features/ShaderCensus.h"
+#include "Features/Skylighting.h"
 #include "Features/TargetView.h"
 #include "Render/Profiler.h"
 #include "Settings/Settings.h"
@@ -38,6 +39,12 @@ namespace Features
 			// that writes into engine memory: teardown runs in reverse, and the
 			// entries should go back after the shader pointer does.
 			TheRegistry().Register(std::make_unique<ShaderCensus>());
+
+			// Watches the shadow casters through the draw hook and multiplies
+			// into RT_028 right before the composite. Ahead of the cloud
+			// shadows so that the two observers read in the order the frame
+			// draws them: shadow map first, sky later.
+			TheRegistry().Register(std::make_unique<Skylighting>());
 
 			// Before the contact shadows: both multiply the same light targets
 			// from the same phase, and this order reads sensibly in the profiler.

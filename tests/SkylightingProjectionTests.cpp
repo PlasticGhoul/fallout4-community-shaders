@@ -32,7 +32,7 @@ namespace
 
 int main()
 {
-	using namespace Features::Skylighting;
+	using namespace Features::SkyOcclusion;
 
 	// Directions: down, unit, within the zenith angle, not all the same.
 	{

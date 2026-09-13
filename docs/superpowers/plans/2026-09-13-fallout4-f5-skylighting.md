@@ -760,8 +760,9 @@ git commit -m "feat: a depth target and a volume texture of our own"
 
 **Interfaces:**
 
--   Produces: Namensraum `Features::Skylighting` (Datei `Skylighting/OcclusionProjection.h`) mit
-    den Konstanten und drei Funktionen unten.
+-   Produces: Namensraum `Features::SkyOcclusion` (Datei `Skylighting/OcclusionProjection.h`) mit
+    den Konstanten und drei Funktionen unten. (Im Plan zuerst `Features::Skylighting` genannt;
+    das kollidiert mit der Klasse `Features::Skylighting` aus Task 10 und wurde beim Bau umbenannt.)
 
 -   [ ] **Step 1: Header**
 

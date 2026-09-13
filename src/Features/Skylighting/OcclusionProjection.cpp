@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace Features::Skylighting
+namespace Features::SkyOcclusion
 {
 	namespace
 	{
