@@ -60,6 +60,16 @@ namespace Render::Targets
 		return data->depthStencilTargets[a_slot].srViewDepth;
 	}
 
+	REX::W32::ID3D11DepthStencilView* DepthStencilView(std::size_t a_slot) noexcept
+	{
+		const auto* const data = RE::BSGraphics::GetRendererData();
+		if (data == nullptr || a_slot >= std::size(data->depthStencilTargets)) {
+			return nullptr;
+		}
+
+		return data->depthStencilTargets[a_slot].dsView[0];
+	}
+
 	void LogSlots() noexcept
 	{
 		const auto* const data = RE::BSGraphics::GetRendererData();
@@ -88,6 +98,14 @@ namespace Render::Targets
 			kSceneDepth,
 			depth != nullptr ?
 				GetViewTargetName(reinterpret_cast<REX::W32::ID3D11View*>(depth)) :
+				std::string{ "<empty>" });
+
+		auto* const shadow = DepthStencilView(kShadowMap);
+		REX::INFO(
+			"shadow map slot {} is {}",
+			kShadowMap,
+			shadow != nullptr ?
+				GetViewTargetName(reinterpret_cast<REX::W32::ID3D11View*>(shadow)) :
 				std::string{ "<empty>" });
 	}
 }

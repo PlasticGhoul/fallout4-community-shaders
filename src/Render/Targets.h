@@ -20,6 +20,10 @@ namespace Render::Targets
 
 	/// FO4_DS_002, R24G8_TYPELESS. The scene depth the world is drawn against.
 	inline constexpr std::size_t kSceneDepth = 2;
+	/// FO4_DS_008, R16_TYPELESS, 4096 square. The sun's shadow map: what
+	/// BSUtilityShader draws into, around forty calls a frame, before
+	/// kDFLight. Measured by FrameTrace on 2026-09-12.
+	inline constexpr std::size_t kShadowMap = 8;
 
 	/// FO4_RT_058 and FO4_RT_059, R11G11B10_FLOAT. Written by kDFLight and
 	/// carried on by kDFComposite.
@@ -51,6 +55,10 @@ namespace Render::Targets
 	/// The depth as a shader resource: DepthStencilTarget::srViewDepth, which
 	/// hands R24G8_TYPELESS over as R24_UNORM_X8_TYPELESS.
 	[[nodiscard]] REX::W32::ID3D11ShaderResourceView* DepthSRV(std::size_t a_slot) noexcept;
+	/// The depth as a target: DepthStencilTarget::dsView[0]. What a draw into
+	/// this slot has bound, which is how an observer recognises the shadow
+	/// casters.
+	[[nodiscard]] REX::W32::ID3D11DepthStencilView* DepthStencilView(std::size_t a_slot) noexcept;
 
 	/// Logs the debug name behind each named slot.
 	///
