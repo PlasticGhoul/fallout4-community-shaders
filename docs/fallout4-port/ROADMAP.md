@@ -2,8 +2,9 @@
 
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
 Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay), F2 (Screen-Space Shadows),
-F3 (Exponential Height Fog) und F4 (Cloud Shadows) sind abgeschlossen**. Als Nächstes steht
-**F5** an, Skylighting. Stand 2026-09-13.
+F3 (Exponential Height Fog) und F4 (Cloud Shadows) sind abgeschlossen**. Dazwischen geschoben ist
+**F4.5**, das Menü in zwei Spalten, weil das Overlay mit sieben Blöcken voll ist; danach **F5**,
+Skylighting. Stand 2026-09-13.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -43,31 +44,32 @@ RE-Header und laut eigenem README unfertige NG-Unterstützung) sowie
 Reihenfolge ist bindend, solange nichts anderes vereinbart wird: jedes Teilprojekt setzt auf dem
 vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem beschreibt.
 
-| #    | Teilprojekt                                                                                                            | Abnahmekriterium                                                           | Status            |
-| ---- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------- |
-| A    | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab       | **abgeschlossen** |
-| B1   | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                     | **abgeschlossen** |
-| B2   | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle | **abgeschlossen** |
-| C    | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt   | **abgeschlossen** |
-| D1   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz                             | Zwei Features unabhängig an-/abschaltbar                                   | **abgeschlossen** |
-| D2   | **Paketierung** — `dist/`, Basis-, Addon- und AIO-Archive                                                              | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel               | **abgeschlossen** |
-| E1   | **Overlay und Eingabe** — ImGui-Overlay, Fensterprozedur, Eingabesperre, eigener Zeiger                                | Overlay im Spiel bedienbar, Spieleingabe steht, solange es offen ist       | **abgeschlossen** |
-| E2   | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                        | Einstellungen im Overlay ändern, sie überleben einen Neustart              | **abgeschlossen** |
-| F1   | **Performance Overlay** — CPU- und GPU-Zeitmessung je Pass, im Overlay dargestellt                                     | Zahlen im Spiel ablesbar, die sich unter Last bewegen                      | **abgeschlossen** |
-| F2   | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | **abgeschlossen** |
-| F3   | **Exponential Height Fog** — erster Pass hinter der opaken Szene, dazu `FrameTrace` als Werkzeug für alle Anker        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | **abgeschlossen** |
-| F4   | **Cloud Shadows** — die Wolken der Engine ein zweites Mal gezeichnet, in eine eigene Cubemap; dazu der Draw-Hook       | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | **abgeschlossen** |
-| F5   | **Skylighting**                                                                                                        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
-| F6   | **Volumetric Lighting**                                                                                                | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
-| F7   | **Volumetric Shadows**                                                                                                 | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
-| F8   | **Screen Space GI**                                                                                                    | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
-| F9   | **Subsurface Scattering**                                                                                              | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
-| F10  | **Dynamic Cubemaps**                                                                                                   | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
-| F11  | **IBL**                                                                                                                | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
-| F12  | **Forschung: Permutations-Cache** — Shader-Cache über die Technikkarten, belegt am kleinsten Gruppe-2-Feature          | Eine Permutation von `kDFPrepass` nachweislich durch eine eigene ersetzt   | offen             |
-| F13  | **Frame Generation** — DX12-Swapchain-Stellvertreter, FSR3 über die FidelityFX-SDK, optional DLSS über Streamline      | Mehr Bilder je Sekunde, gemessen, bei stehendem Overlay                    | offen             |
-| F14+ | **Objekt-Shader** — die tragenden Gruppe-2-Features, Zuschnitt und Zahl folgen aus F12                                 | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
-| Fx   | **Werkzeuge** — Screenshot, RenderDoc-Anbindung                                                                        | Werkzeug tut, was sein Name sagt                                           | offen             |
+| #    | Teilprojekt                                                                                                            | Abnahmekriterium                                                            | Status            |
+| ---- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------- |
+| A    | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab        | **abgeschlossen** |
+| B1   | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker            | RenderDoc-Capture zeigt einen von uns gesetzten Marker                      | **abgeschlossen** |
+| B2   | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen         | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle  | **abgeschlossen** |
+| C    | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                              | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt    | **abgeschlossen** |
+| D1   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz                             | Zwei Features unabhängig an-/abschaltbar                                    | **abgeschlossen** |
+| D2   | **Paketierung** — `dist/`, Basis-, Addon- und AIO-Archive                                                              | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel                | **abgeschlossen** |
+| E1   | **Overlay und Eingabe** — ImGui-Overlay, Fensterprozedur, Eingabesperre, eigener Zeiger                                | Overlay im Spiel bedienbar, Spieleingabe steht, solange es offen ist        | **abgeschlossen** |
+| E2   | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                        | Einstellungen im Overlay ändern, sie überleben einen Neustart               | **abgeschlossen** |
+| F1   | **Performance Overlay** — CPU- und GPU-Zeitmessung je Pass, im Overlay dargestellt                                     | Zahlen im Spiel ablesbar, die sich unter Last bewegen                       | **abgeschlossen** |
+| F2   | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
+| F3   | **Exponential Height Fog** — erster Pass hinter der opaken Szene, dazu `FrameTrace` als Werkzeug für alle Anker        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
+| F4   | **Cloud Shadows** — die Wolken der Engine ein zweites Mal gezeichnet, in eine eigene Cubemap; dazu der Draw-Hook       | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
+| F4.5 | **Menü in zwei Spalten** — Seitenliste links mit den Schaltern, eine Seite je Eintrag rechts, Performance als Seite    | Jede Seite erreichbar, Schalten aus der Liste, Zahlen der Tafel unverändert | in Arbeit         |
+| F5   | **Skylighting**                                                                                                        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F6   | **Volumetric Lighting**                                                                                                | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F7   | **Volumetric Shadows**                                                                                                 | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F8   | **Screen Space GI**                                                                                                    | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F9   | **Subsurface Scattering**                                                                                              | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F10  | **Dynamic Cubemaps**                                                                                                   | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F11  | **IBL**                                                                                                                | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F12  | **Forschung: Permutations-Cache** — Shader-Cache über die Technikkarten, belegt am kleinsten Gruppe-2-Feature          | Eine Permutation von `kDFPrepass` nachweislich durch eine eigene ersetzt    | offen             |
+| F13  | **Frame Generation** — DX12-Swapchain-Stellvertreter, FSR3 über die FidelityFX-SDK, optional DLSS über Streamline      | Mehr Bilder je Sekunde, gemessen, bei stehendem Overlay                     | offen             |
+| F14+ | **Objekt-Shader** — die tragenden Gruppe-2-Features, Zuschnitt und Zahl folgen aus F12                                 | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| Fx   | **Werkzeuge** — Screenshot, RenderDoc-Anbindung                                                                        | Werkzeug tut, was sein Name sagt                                            | offen             |
 
 Das ursprüngliche Teilprojekt D wurde am 2026-08-30 in D1 und D2 geteilt: Laufzeitverhalten und
 Auslieferung sind zwei Subsysteme ohne Berührung. Das Abnahmekriterium von D1 heißt „zwei
