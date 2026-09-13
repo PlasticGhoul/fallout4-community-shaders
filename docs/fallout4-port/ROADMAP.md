@@ -1,9 +1,9 @@
 # Fallout 4 Port — Roadmap
 
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
-Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay), F2 (Screen-Space Shadows)
-und F3 (Exponential Height Fog) sind abgeschlossen**. Als Nächstes steht **F4** an, Cloud
-Shadows. Stand 2026-09-12.
+Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay), F2 (Screen-Space Shadows),
+F3 (Exponential Height Fog) und F4 (Cloud Shadows) sind abgeschlossen**. Als Nächstes steht
+**F5** an, Skylighting. Stand 2026-09-13.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -56,7 +56,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | F1   | **Performance Overlay** — CPU- und GPU-Zeitmessung je Pass, im Overlay dargestellt                                     | Zahlen im Spiel ablesbar, die sich unter Last bewegen                      | **abgeschlossen** |
 | F2   | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | **abgeschlossen** |
 | F3   | **Exponential Height Fog** — erster Pass hinter der opaken Szene, dazu `FrameTrace` als Werkzeug für alle Anker        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | **abgeschlossen** |
-| F4   | **Cloud Shadows**                                                                                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
+| F4   | **Cloud Shadows** — die Wolken der Engine ein zweites Mal gezeichnet, in eine eigene Cubemap; dazu der Draw-Hook       | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | **abgeschlossen** |
 | F5   | **Skylighting**                                                                                                        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | F6   | **Volumetric Lighting**                                                                                                | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
 | F7   | **Volumetric Shadows**                                                                                                 | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                     | offen             |
@@ -872,6 +872,175 @@ auf dem liegt, was hinter ihnen ist; der Spielnebel auf ihnen bleibt. Das ist de
 Passes gegenüber F12. Ob F3 einen volumetrischen Anteil bekommt (die Vorlage hat einen, mit
 Froxel-Volumen und Lichtstreuung), wird bei **F6** mitentschieden, wenn feststeht, welche
 Volumeninfrastruktur dort entsteht.
+
+## Aus Teilprojekt F4 bestätigt
+
+Läufe am 2026-09-12 (Sonde, drei Anläufe) und 2026-09-13 (Abnahme). Das erste Feature, das einen
+Zeichenaufruf der Engine umgibt statt einen eigenen Pass anzuhängen, und das Werkzeug dafür:
+`Render::TechniqueTracker` (Slot 02 aller dreizehn Shader-Klassen → aktuelle Technik),
+`Render::DrawObserver` mit `TechniqueFilter` und `DrawCall::Repeat`, `Render::DrawHook` (Draw,
+DrawIndexed, DrawIndexedInstanced, DrawInstanced, ExecuteCommandList), `Render::ContextTable`
+(eigene vtable für den Gerätekontext), `Render::CubeTarget`, `Clouds::CloudProjection` (rein,
+`double`, mit Host-Test) und ein `StateGuard`, der jetzt auch PS-Sampler 0 und zwei PS-SRVs
+sichert. Die Erfassung ist **Weg B** der Spec.
+
+### Die Zahlen
+
+Gemessen in Sanctuary am 2026-09-13, 2560×1440, an derselben Stelle ohne Bewegung, erst mit dem
+Feature, neun Sekunden später ohne:
+
+```
+=== performance snapshot over 300 frames ===          Cloud Shadows an
+  pass                     gpu avg   cpu avg   gpu p95   gpu p99
+  Frame                      6.021     4.945     6.882     8.297
+      CloudShadows           0.000     0.012     0.000     0.000
+    CloudShadows/Draw        0.050     0.013     0.050     0.050
+      CloudShadows/Shadow    0.050     0.003     0.050     0.050
+    ScreenSpaceShadows/Draw  0.377     0.010     0.379     0.379
+    ExponentialHeightFog/Draw 0.029    0.008     0.029     0.030
+
+=== performance snapshot over 300 frames ===          Cloud Shadows aus
+  Frame                      5.836     5.072     6.591     7.587
+    ScreenSpaceShadows/Draw  0.380     0.016     0.381     0.382
+    ExponentialHeightFog/Draw 0.028    0.009     0.029     0.029
+```
+
+**Das Feature kostet rund 0,19 ms GPU je Frame** (Differenz der Frame-Zeilen; p95 0,29 ms, p99
+0,71 ms). Davon sind 0,05 ms der Schattenpass in der eigenen Zeile; der Rest sind die **45
+Wiederholungen der Wolkenzüge je Frame**, die innerhalb der Sky-Züge der Engine laufen und
+deshalb in keiner Passzeile auftauchen, sondern nur in der Differenz. Die CPU-Seite dieser
+Wiederholungen ist aus demselben Grund nicht gemessen; die eigenen Zeilen zeigen 0,025 ms. Die
+fps-Zeile unter dem Schnappschuß ist das eine Frame des Tastendrucks und taugt nicht zum
+Vergleich.
+
+**Der Draw-Hook** sieht je Frame rund 4.000–4.400 `DrawIndexed`, 730–860 `Draw`, 120–130
+`DrawIndexedInstanced`, kein `DrawInstanced` und kein `ExecuteCommandList` — Fallout 4 zeichnet
+alles auf dem unmittelbaren Kontext, vom Render-Thread; beim Laden kurz auch von einem zweiten.
+Jeder Aufruf kostet einen Vergleich der aktuellen Technik mit dem Filter; in der Frame-Zeile ist
+davon nichts abzulesen.
+
+### Die Sonde
+
+Lauf 1 brauchte drei Anläufe, weil die ersten beiden **null Aufrufe** zählten, auch für einen
+eigenen `Draw(3, 0)`: **die D3D11-Runtime hält die vtable des Gerätekontexts im Objekt selbst
+(Offset 8) und schreibt die Einträge `Draw`, `DrawIndexed` und `DrawIndexedInstanced` bei jedem
+`Flush` auf andere Varianten um** — Present flusht jedes Frame, ein Slot-Patch hält also keinen
+Frame. Offline mit Python und ctypes gegen ein nacktes Gerät in einer Viertelstunde geklärt, statt
+einen dritten Spiellauf zu raten. `Render::ContextTable` biegt stattdessen den vtable-**Zeiger**
+auf eine eigene Tabelle aus Neun-Byte-Weiterleitern (`mov rax,[rcx+8+i*8]; jmp rax`), die zur
+Aufrufzeit in die eingebettete Tabelle springen; Overrides ketten genauso. Host-Test mit 18
+Prüfungen. Der Present-Patch aus B1 ist nicht betroffen, die Swap-Chain-vtable liegt im Abbild.
+
+Was der dritte Anlauf ergab, bei 180 fps je Sekunde:
+
+| Technik                      | Ziel                      | Aufrufe je Sekunde | Bedeutung                                |
+| ---------------------------- | ------------------------- | ------------------ | ---------------------------------------- |
+| `0x0001` `BSSky`             | `FO4_RT_004`              | 180                | einmal je Frame                          |
+| `0x0004` `BSSkyTexture`      | `FO4_RT_004`              | 180                | einmal je Frame                          |
+| `0x0005` `BSSkyClouds`       | `FO4_RT_004` (+ `RT_029`) | 1620               | **neun Lagen je Frame**, im Kamerabild   |
+| `0x0005` `BSSkyClouds`       | `FO4_RT_002`              | 180                | einmal je Frame, planare Wasserreflexion |
+| `0x0008`                     | `FO4_RT_004`              | 213 seit Start     | selten                                   |
+| `0x0000` `BSSkySunOcclude` … | `RT_037`, `RT_064–070`, … | —                  | danach ungetrackte Imagespace-Pässe      |
+| beliebig                     | **`FO4_CUBE_000`**        | **0**              | die Engine zeichnet ihre Cubemap **nie** |
+
+Blend-State der Wolken: Farbe und Alpha `SRC_ALPHA / INV_SRC_ALPHA`, Schreibmaske RGB — **das
+Shader-Alpha ist die Deckung**, der Blend-Trick der Spec trägt. `A8_UNORM` ist auf der RTX 5080
+Renderziel und mischbar. Die Wolken laufen über `DrawIndexed`, nicht instanziert.
+
+**Die Matrix.** Beim Wolkenzug sind sieben VS-Konstantenpuffer gebunden. Slot 12 (752 B, je Sicht)
+hält vier Matrizen in Zeilen: Kamerarotation, Projektion `[1,192 0 0 0][0 2,119 0 0][0 0 1 −15]
+[0 0 1 0]`, ihr Produkt **ohne Translation**, die transponierte Rotation — die Suche nach
+`worldToCam` schlug deshalb fehl: der Himmel ist kamerazentriert. Slot 2 (224 B, je Lage) hält bei
+Byte 0 die **WorldViewProj**, mit der der Sky-Vertex-Shader tatsächlich positioniert, bei Byte 64
+die Weltmatrix der Lage als drei Zeilen (Drehung um die Senkrechte, Translation `0 0 −15`), bei
+112 eine Farbe mit Alpha, ab 176 PreviousWorld. Slots 9 und 10 tragen weitere Weltmatrizen, die
+der Sky-VS nicht liest.
+
+### Der gewählte Weg
+
+Weg A (Umlenken an der Engine-Cubemap) und A′ (`bReflectSky`) entfielen mit der Zeile
+`FO4_CUBE_000: nie`. **Weg B:** jeder `BSSkyClouds`-Zug, dessen RTV0 `kSceneHDR` ist (der eine
+je Frame in die Wasserreflexion wird ausgelassen), wird nach dem Zug der Engine **fünfmal
+wiederholt**, einmal je Fläche 0–4 einer eigenen `A8_UNORM`-Cubemap mit 512 Pixeln Kantenlänge
+(`FO4CS_CUBE_CloudCoverage`); die sechste Fläche, der Blick nach unten, wird nicht gebraucht. Dabei werden
+alle acht Render-Targets, Tiefensicht, Blend-, Rasterizer-State und Viewports gesichert, kein
+Tiefenziel gebunden (die Cubemap hat keines, ohne eines entfallen Tiefen- und Stencil-Test), Cull
+None gesetzt (die Flächenbasen haben die andere Händigkeit als die Engine-Sicht, was die Wicklung
+umdreht) und Alpha über `ONE / INV_SRC_ALPHA` mit Schreibmaske `ALPHA` akkumuliert. Slot 12 wird
+durch eine Kopie mit den vier Flächenmatrizen ersetzt, Slot 2 durch eine Kopie mit
+`Flächenprojektion × Weltmatrix der Lage` an Byte 0. Die Kopien der Engine-Puffer laufen über
+Staging-Ringe (siehe unten). Ein Feature, das einen Zeichenaufruf wiederholt, sieht seine eigenen
+Wiederholungen im selben Hook; `Wants` blendet sie über ein Flag aus.
+
+Der Schattenpass hängt wie F2 an `kBeforeComposite` und multipliziert in `RT_058/059`: je Pixel
+der Weltpunkt aus Tiefe und Kamerabasis (`FogCameraFromMatrix` aus F3), von dort der Strahl zur
+Sonne bis zur Wolkenschale in `cloudHeight` über einer Kugel mit Erdradius, die Richtung des
+Schnittpunkts in die Cubemap, `Faktor = 1 − Deckung · Opacity`. Debug-Ansichten `coverage`,
+`direction` und `cube` (die sechs Flächen als 3×2-Gitter, grüne Rahmen) über `DeclareChoice`.
+
+### Die Gabelungen der Spec
+
+-   **Das tragende Risiko ist eingetreten, aber nur für A und A′.** Weg B war gangbar, weil die
+    Matrix gefunden wurde — nicht in Slot 12, wie die Sonde zuerst nahelegte, sondern in Slot 2.
+    Slot 12 allein zu ersetzen zeigte in der `cube`-Ansicht das Kamerabild in jeder Fläche; erst
+    die WVP in Slot 2 brachte die Flächen zum Stimmen (`5dc20069`).
+-   **Alpha ist die Deckung** — bestätigt durch den Blend-State. **Die Engine-Cubemap ist nicht
+    weltachsig** — gegenstandslos, wir zeichnen in eine eigene. **`A8_UNORM`** — Renderziel, ja.
+    **Instanziert** — nein.
+-   **Spec 9.1 nannte eine Erweiterung von `SettingsSchemaTests`** — ein Irrtum: der Test prüft
+    das Schema an synthetischen Blöcken, nicht an Features. Die dort auch genannte Erweiterung von
+    `CameraTests` um die Flächenmatrizen ist nicht gebaut; die Flächen wurden im Spiel über die
+    `cube`-Ansicht geprüft (Fläche `+Z` zeigt Wolken, wenn oben Wolken sind, und ist leer bei
+    blauem Zenit). Neu sind `CloudProjectionTests` (14 Prüfungen), `ContextTableTests` (18) und
+    neun weitere in `DrawObserverTests`.
+
+### Die Abnahme
+
+Block mit Schalter, zwei Reglern und der Debug-Ansicht im Overlay; Schalter aus und an mit
+sichtbarem Unterschied; `coverage` zeigt die Wolkenkarte, sie zieht mit dem Himmel; `direction`
+ohne Sprünge; Schatten wandern in Zugrichtung der Wolken; beide Passzeilen in der Tafel und zwei
+Schnappschüsse per F11; Feature im laufenden Spiel aus und an, Shader neu übersetzt, Erfassung
+sofort wieder auf 1620 Zügen je 180 Frames; **Pip-Boy und Alt-Tab** vom Nutzer ohne Befund
+gemeldet. Keine `[W]`- und keine `[E]`-Zeile im Abnahmelauf.
+
+**Nicht ausgeführt, vom Nutzer als OK gesetzt:** Root Cellar (das Log zeigt den ganzen Lauf zwei
+Kamerapositionen im Freien) und der Hot-Reload beider Shader (0 Neuübersetzungen; der Mechanismus
+ist derselbe wie in F2 und F3, dort ebenfalls nicht ausgeführt). **Nicht berichtet:** der
+Farbabgleich des Nebels über dessen `color`-Ansicht aus F3, zum dritten Mal; der Nebel wurde im
+Lauf einmal aus- und wieder eingeschaltet.
+
+### Was die Läufe ergeben haben
+
+-   **Nur RTV0 zu sichern nahm den Wolkenlagen `RT_029`**, die Bewegungsvektoren als RTV1 — TAA
+    flackerte am Himmel. Seit `9a0e922c` werden alle acht Ziele gesichert und zurückgegeben. Wer
+    einen Engine-Zug umgibt, gibt **alles** zurück, nicht nur, was er selbst gebraucht hat.
+-   **`DO_NOT_WAIT` auf eine Staging-Kopie braucht einen Ring von sechs.** Ein Frame nach
+    `CopyResource` schlug die Map in etwa der Hälfte der Frames fehl (Flackern: eine Lage fiel
+    für ein Frame aus). Zwei Frames später aus einem Ring von drei war noch einen Frame zu kurz:
+    D3D11 lässt die CPU bis zu drei Frames vor der GPU laufen, und sobald die GPU der Engpass war,
+    schlugen **1800 von 1800** Maps fünf Sekunden lang fehl — die Matrix der Lage fror ein und
+    sprang danach. Seit `ab218615` ist der Ring sechs tief und wird fünf Frames später gelesen,
+    dieselbe Tiefe wie die Timestamp-Queries des Profilers; im Abnahmelauf 0 Fehlschläge in 108
+    Intervallen. Bei Fehlschlag behält die Lage ihr altes Bild, der Render-Thread wartet nie.
+-   **Debug-Ausgaben in `RT_058` sind auf Himmelspixeln unsichtbar** — der Himmel wird nach dem
+    Composite gemalt. Eine `sky`-Ansicht, die die Deckung über den Himmel legt, war deshalb ein
+    Denkfehler und wurde entfernt (`86959c16`); die `cube`-Ansicht liest man auf Boden und
+    Objekten.
+-   **Opacity 0,5 war unsichtbar.** Die Wolken-Alpha ist wispy; bei 0,5 lag der Faktor über 0,85.
+    Der Nutzer fand 0,75 bis 1,0 richtig, die Vorgaben stehen seit `ab218615` auf 0,75 und einer
+    Wolkenhöhe von 500 m — dem geprüften Wert; 2000 m sind auf ihre Wirkung nicht geprüft.
+-   **Der Sky-VS nimmt die WVP aus Slot 2**, nicht aus den Sichtmatrizen in Slot 12 — siehe
+    Gabelungen. Ein Rohabzug beider Puffer ins Log hätte das vor dem ersten Bau gezeigt.
+
+### Zugeständnisse
+
+Die Deckungskarte ist alt: die Cubemap wird im Himmelsabschnitt eines Frames beschrieben und vom
+Pass des nächsten gelesen, die Konstanten der Lagen stammen von fünf Frames davor — bei 180 fps
+zusammen rund 35 ms auf Wolken, die sich in der Zeit nicht messbar bewegen. Die Kosten der
+Wiederholungen stehen in keiner Passzeile, nur in der Differenz zweier Schnappschüsse. Der Blick
+nach unten (Fläche `−Z`) wird nicht erfaßt. Die Wasserreflexion behält ihre Wolken, weil ihr Zug
+nicht wiederholt wird. Das Feature steht ab, sobald `Sky::mode` nicht `kFull` ist oder die Sonne
+unter dem Horizont steht — in Innenräumen also von selbst.
 
 ## Bekannte Lücken in CommonLibF4
 

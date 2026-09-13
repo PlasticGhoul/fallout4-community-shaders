@@ -25,6 +25,21 @@ Sichten sind Texturen der Szene (Materialien, Schattenkarten-Sampler), keine Ren
     `[1600 250000 64 15000]`, `highLowRangeData` die Fernvariante `[64 15000 64 10000]` — nicht
     die Rampenkoeffizienten des Shaders; die rechnet der Uploader daraus.
 
+**Was der Draw-Hook dazu ergeben hat** (Teilprojekt F4, Sonde vom 2026-09-12 über eine Minute,
+je Zeichenaufruf statt je `SetupTechnique`):
+
+-   Der Himmelsabschnitt besteht je Frame aus einem `BSSky`, einem `BSSkyTexture` und **neun bis
+    elf `BSSkyClouds`** (eine je Wolkenlage) nach `RT_004`, alle mit `RT_029` als RTV1 für die
+    Bewegungsvektoren; in der Wasserreflexion nach `RT_002` folgt ein weiterer `BSSkyClouds`.
+-   **`FO4_CUBE_000` wurde in der ganzen Minute nie gezeichnet**, mit Wolken und Wasser im Bild.
+    Fallout 4 füllt seine Reflexions-Cubemap dort jedenfalls nicht im Frame; wer eine Cubemap des
+    Himmels braucht, zeichnet sie selbst (F4, und F9 wird davon ausgehen müssen).
+-   Nach `BSSkySunOcclude` (`0x0000`) laufen die Imagespace-Pässe nach `RT_037`, `RT_064`–`RT_070`
+    und `RT_018` (instanziert); der Tracker rechnet sie der zuletzt eingerichteten Klasse zu, weil
+    die Imagespace-Shader keine der dreizehn getrackten sind.
+-   Je Frame rund 4.000–4.400 `DrawIndexed`, 730–860 `Draw`, 120–130 `DrawIndexedInstanced`, kein
+    `DrawInstanced`, kein `ExecuteCommandList`: alles auf dem unmittelbaren Kontext.
+
 ## frame trace: frame 2490
 
 -   sky mode 3, fog distances [1600.0 250000.0 0.0 0.0 64.0 15000.0 64.0 10000.0], height 0.0, power 0.280, clamp 0.950, high density scale 0.975
