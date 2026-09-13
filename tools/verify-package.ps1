@@ -118,6 +118,7 @@ $addon = @($archives | Where-Object { $_.Name -like "ImagespaceTint-*" })
 $shadows = @($archives | Where-Object { $_.Name -like "ScreenSpaceShadows-*" })
 $fog = @($archives | Where-Object { $_.Name -like "ExponentialHeightFog-*" })
 $clouds = @($archives | Where-Object { $_.Name -like "CloudShadows-*" })
+$sky = @($archives | Where-Object { $_.Name -like "Skylighting-*" })
 
 # A stale archive would let a broken rule pass here: the tree half is rebuilt
 # on every run, the archives are only ever whatever was packed last. Both the
@@ -136,9 +137,10 @@ Check ($addon.Count -eq 1) "exactly one ImagespaceTint archive"
 Check ($shadows.Count -eq 1) "exactly one ScreenSpaceShadows archive"
 Check ($fog.Count -eq 1) "exactly one ExponentialHeightFog archive"
 Check ($clouds.Count -eq 1) "exactly one CloudShadows archive"
+Check ($sky.Count -eq 1) "exactly one Skylighting archive"
 Check ($aio.Count -eq 1) "exactly one all-in-one archive"
 
-if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fog.Count -eq 1 -and $clouds.Count -eq 1 -and $aio.Count -eq 1) {
+if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fog.Count -eq 1 -and $clouds.Count -eq 1 -and $sky.Count -eq 1 -and $aio.Count -eq 1) {
     # Wrapped at the call site as well: PowerShell unrolls a single element
     # array on assignment, and a lone entry would arrive as a bare string
     # whose .Count is empty.
@@ -147,6 +149,7 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
     $shadowsEntries = @(Get-Entries $shadows[0].FullName)
     $fogEntries = @(Get-Entries $fog[0].FullName)
     $cloudsEntries = @(Get-Entries $clouds[0].FullName)
+    $skyEntries = @(Get-Entries $sky[0].FullName | Sort-Object)
     $aioEntries = @(Get-Entries $aio[0].FullName)
 
     Check ($baseEntries -contains "F4SE/Plugins/CommunityShadersFO4.dll") "the base carries the plugin"
@@ -169,6 +172,11 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
     Check (
         $baseEntries -contains "Shaders/FO4/TargetView/TargetView.hlsl"
     ) "and the target view's shader, a core tool"
+    # Shared pieces belong to no feature: a player with only the base has to
+    # have them the moment an addon that includes them arrives.
+    foreach ($file in @("Shaders/FO4/Common/SphericalHarmonics.hlsli", "Shaders/FO4/Common/Reconstruct.hlsli")) {
+        Check ($baseEntries -contains $file) "and the shared shader piece $file"
+    }
     Check (
         -not ($baseEntries -contains "Shaders/FO4/ScreenSpaceShadows/RaymarchCS.hlsl")
     ) "and not the shadow feature's shaders"
@@ -200,7 +208,17 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
         -not ($baseEntries -contains "Shaders/FO4/CloudShadows/CloudShadows.hlsl")
     ) "and the base does not carry that either"
 
-    $union = @($baseEntries + $addonEntries + $shadowsEntries + $fogEntries + $cloudsEntries | Sort-Object -Unique)
+    Check (
+        $skyEntries.Count -eq 3 -and
+        $skyEntries[0] -eq "Shaders/FO4/Skylighting/Skylighting.hlsl" -and
+        $skyEntries[1] -eq "Shaders/FO4/Skylighting/SkylightingCommon.hlsli" -and
+        $skyEntries[2] -eq "Shaders/FO4/Skylighting/UpdateProbes.hlsl"
+    ) "the skylighting addon carries its three shader files and nothing else"
+    Check (
+        -not ($baseEntries -contains "Shaders/FO4/Skylighting/Skylighting.hlsl")
+    ) "and the base does not carry them"
+
+    $union = @($baseEntries + $addonEntries + $shadowsEntries + $fogEntries + $cloudsEntries + $skyEntries | Sort-Object -Unique)
     Check (
         $null -eq (Compare-Object $union (@($aioEntries) | Sort-Object -Unique))
     ) "the all-in-one is the union of base and addons"
@@ -211,6 +229,7 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
             @{ Name = "shadow addon"; Entries = $shadowsEntries },
             @{ Name = "fog addon"; Entries = $fogEntries },
             @{ Name = "cloud addon"; Entries = $cloudsEntries },
+            @{ Name = "skylighting addon"; Entries = $skyEntries },
             @{ Name = "all-in-one"; Entries = $aioEntries })) {
         $e = $pair.Entries
         Check (-not ($e | Where-Object { $_ -match '(^|/)CORE$' })) "no CORE marker in the $($pair.Name)"
