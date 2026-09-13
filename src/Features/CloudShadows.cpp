@@ -296,7 +296,9 @@ namespace Features
 			return false;
 		}
 
-		Render::SetDrawObserver(this);
+		if (!Render::AddDrawObserver(this)) {
+			return false;
+		}
 		REX::INFO("CloudShadows: capturing BSSkyShader technique 0x{:04X} into a {} cube", kCloudsTechnique, kCubeSize);
 		return true;
 	}
@@ -313,7 +315,7 @@ namespace Features
 	void CloudShadows::Shutdown()
 	{
 		// First, before anything it could touch goes away.
-		Render::SetDrawObserver(nullptr);
+		Render::RemoveDrawObserver(this);
 
 		Render::UnsubscribeFramePhase(Render::Phase::kBeforeComposite, _phase);
 		_phase = Render::PhaseDispatcher::kNoToken;

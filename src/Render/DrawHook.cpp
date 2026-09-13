@@ -7,6 +7,7 @@
 
 #include <REX/W32/D3D11.h>
 
+#include <array>
 #include <atomic>
 
 namespace Render
@@ -32,7 +33,7 @@ namespace Render
 		using ExecuteCommandListFn = void (*)(Context*, REX::W32::ID3D11CommandList*, REX::W32::BOOL);
 
 		ContextTable g_table;
-		std::atomic<DrawObserver*> g_observer{ nullptr };
+		std::array<std::atomic<DrawObserver*>, kMaxDrawObservers> g_observers{};
 		std::atomic<std::uint64_t> g_indexed{ 0 };
 		std::atomic<std::uint64_t> g_plain{ 0 };
 		std::atomic<std::uint64_t> g_indexedInstanced{ 0 };
@@ -49,8 +50,20 @@ namespace Render
 
 		void Surround(Context* a_self, const DrawCall& a_call, auto a_issue) noexcept
 		{
-			auto* const observer = g_observer.load(std::memory_order_acquire);
-			if (observer == nullptr || !observer->Wants(CurrentTechniqueOf())) {
+			// The first observer that wants this draw surrounds it. Two
+			// observers never want the same draw today - they filter on
+			// different classes - and if they did, the earlier registration
+			// would win, which is at least a rule.
+			DrawObserver* observer = nullptr;
+			const auto current = CurrentTechniqueOf();
+			for (auto& slot : g_observers) {
+				auto* const candidate = slot.load(std::memory_order_acquire);
+				if (candidate != nullptr && candidate->Wants(current)) {
+					observer = candidate;
+					break;
+				}
+			}
+			if (observer == nullptr) {
 				a_issue();
 				return;
 			}
@@ -158,9 +171,24 @@ namespace Render
 		return true;
 	}
 
-	void SetDrawObserver(DrawObserver* a_observer) noexcept
+	bool AddDrawObserver(DrawObserver* a_observer) noexcept
 	{
-		g_observer.store(a_observer, std::memory_order_release);
+		for (auto& slot : g_observers) {
+			DrawObserver* expected = nullptr;
+			if (slot.compare_exchange_strong(expected, a_observer, std::memory_order_acq_rel)) {
+				return true;
+			}
+		}
+		REX::ERROR("draw hook: no room for another observer ({} slots)", kMaxDrawObservers);
+		return false;
+	}
+
+	void RemoveDrawObserver(DrawObserver* a_observer) noexcept
+	{
+		for (auto& slot : g_observers) {
+			DrawObserver* expected = a_observer;
+			slot.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel);
+		}
 	}
 
 	DrawHookCounts DrawHookCountsSoFar() noexcept

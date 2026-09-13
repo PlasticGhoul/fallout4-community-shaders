@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace Render
@@ -21,11 +22,15 @@ namespace Render
 	/// verified against the swap chain's device. Returns true when in place.
 	[[nodiscard]] bool InstallDrawHook() noexcept;
 
-	/// Exactly one observer. A feature sets itself from Setup and clears
-	/// itself from Shutdown before it releases anything. The thunk may run on
-	/// whichever thread the engine draws on; an observer keeps that in mind.
-	/// A second feature that needs one turns this into a list - not before.
-	void SetDrawObserver(DrawObserver* a_observer) noexcept;
+	/// Up to four observers, each asked in turn whether it wants a draw; the
+	/// first that does surrounds it. A feature adds itself from Setup and
+	/// removes itself from Shutdown before it releases anything. The thunk
+	/// may run on whichever thread the engine draws on; an observer keeps
+	/// that in mind. F5 turned the single slot into this list: cloud shadows
+	/// and skylighting both watch, different classes.
+	inline constexpr std::size_t kMaxDrawObservers = 4;
+	[[nodiscard]] bool AddDrawObserver(DrawObserver* a_observer) noexcept;
+	void RemoveDrawObserver(DrawObserver* a_observer) noexcept;
 
 	/// What the hook has seen since it went in, by call. The probe reads these
 	/// once a second; a count that does not move while the game renders names
