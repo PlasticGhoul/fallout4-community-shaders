@@ -46,27 +46,37 @@ namespace Features
 		/// has a direction off the axis.
 		constexpr double kSequenceSeed = 0.37;
 
-		/// From the probe run of 2026-09-13: the shadow casters' vertex stage
-		/// binds its per-view constants in slot 12, 752 bytes, four 4x4
-		/// matrices in rows - the light camera's rotation, its orthographic
-		/// projection, their product, the transposed rotation. Which of them
-		/// the vertex shader reads is not known, so the product is written
-		/// over both the projection and the product, and an identity over
-		/// both rotations; whichever pair it multiplies, the answer is ours.
+		/// Read off the disassembly of the casters' vertex shaders (Shaders011
+		/// .fxp, techniques 0xC01A, 0xC01E, 0xC09A, 0xA0C01A, 2026-09-13):
+		///
+		///     clip = cb12[8..11] * (World(cb2[0..3]), translation - cb12[35]) * pos
+		///     clip.z = max(clip.z, 0)
+		///
+		/// Slot 12 is the engine's per-view buffer, 752 bytes, the Skyrim
+		/// PerFrame layout: the view projection in rows at byte 128, the
+		/// camera position adjust at byte 560. Nothing else in it positions
+		/// a vertex; the rotation at 0, the projection at 64 and the inverse
+		/// at 192 are not read by these shaders. The clamp is the engine's
+		/// shadow pancaking: what lies before the near plane lands at depth
+		/// zero, not outside the map.
 		constexpr std::uint32_t kViewConstantSlot = 12;
-		constexpr std::size_t kRotationOffset = 0;
-		constexpr std::size_t kProjectionOffset = 64;
-		constexpr std::size_t kViewProjectionOffset = 128;
-		constexpr std::size_t kInverseRotationOffset = 192;
-		constexpr std::size_t kMatricesEnd = 256;
+		constexpr std::uint32_t kGeometryConstantSlot = 2;
+		constexpr std::uint32_t kViewProjectionOffset = 128;
+		constexpr std::uint32_t kPosAdjustOffset = 560;
+		/// The shaders declare cb12 with 36 registers; anything shorter cannot
+		/// be the buffer they read.
+		constexpr std::uint32_t kViewConstantsNeeded = 576;
+		/// Our two patches, staged in one small default buffer: the matrix,
+		/// then the eye.
+		constexpr std::uint32_t kPatchMatrixOffset = 0;
+		constexpr std::uint32_t kPatchEyeOffset = 64;
+		constexpr std::uint32_t kPatchBytes = 80;
 
-		/// The grid's cells are relative to the eye, so its cube is centred on
-		/// the origin. The casters' positions are absolute world coordinates -
-		/// the object matrices the probe dumped carry translations around
-		/// ninety thousand - so their cube is centred on the eye. The probe
-		/// had read the engine's constant projection as camera relative
-		/// geometry; the first acceptance run drew nothing, which is what an
-		/// absolute scene clipped against a cube at the origin looks like.
+		/// The vertex shader subtracts the position adjust from every object
+		/// translation before it applies the view projection. With the eye
+		/// written there, the casters arrive relative to the eye - the frame
+		/// the grid's cells live in - and one projection, its cube centred on
+		/// the origin, serves the capture and the lookup alike.
 		constexpr double kGridCentre[3]{ 0.0, 0.0, 0.0 };
 
 		/// RT_028 read as white in every channel; which of them the composite
@@ -111,10 +121,66 @@ namespace Features
 			return 0.0f;
 		}
 
-		void WriteIdentity(std::uint8_t* a_at) noexcept
+		/// A default usage buffer with no CPU access, the shape both ends of a
+		/// GPU copy want: the engine's per-view constants are mirrored into
+		/// one, the patches staged in another.
+		REX::W32::ID3D11Buffer* CreateDefaultBuffer(std::uint32_t a_bytes, const char* a_debugName) noexcept
 		{
-			const float identity[16]{ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
-			std::memcpy(a_at, identity, sizeof(identity));
+			auto* const device = Render::GetDevice();
+			if (device == nullptr) {
+				return nullptr;
+			}
+			REX::W32::D3D11_BUFFER_DESC desc{};
+			desc.byteWidth = a_bytes;
+			desc.usage = REX::W32::D3D11_USAGE_DEFAULT;
+			desc.bindFlags = REX::W32::D3D11_BIND_CONSTANT_BUFFER;
+			REX::W32::ID3D11Buffer* buffer = nullptr;
+			if (device->CreateBuffer(std::addressof(desc), nullptr, std::addressof(buffer)) < 0) {
+				REX::ERROR("Skylighting: buffer {} ({} bytes) could not be created", a_debugName, a_bytes);
+				return nullptr;
+			}
+			static_cast<void>(Render::SetDebugName(reinterpret_cast<REX::W32::ID3D11DeviceChild*>(buffer), a_debugName));
+			return buffer;
+		}
+
+		/// The bytes of a buffer, through a staging copy and a blocking map.
+		/// Diagnostic only - a stall on the render thread - and used once a
+		/// second at most. Empty when anything fails.
+		std::vector<std::uint8_t> ReadBack(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_buffer)
+		{
+			std::vector<std::uint8_t> bytes;
+			auto* const device = Render::GetDevice();
+			if (device == nullptr || a_buffer == nullptr) {
+				return bytes;
+			}
+			REX::W32::D3D11_BUFFER_DESC desc{};
+			a_buffer->GetDesc(std::addressof(desc));
+			desc.usage = REX::W32::D3D11_USAGE_STAGING;
+			desc.bindFlags = 0;
+			desc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_READ;
+			desc.miscFlags = 0;
+			REX::W32::ID3D11Buffer* staging = nullptr;
+			if (device->CreateBuffer(std::addressof(desc), nullptr, std::addressof(staging)) < 0) {
+				return bytes;
+			}
+			a_context.CopyResource(staging, a_buffer);
+			REX::W32::D3D11_MAPPED_SUBRESOURCE mapped{};
+			if (a_context.Map(staging, 0, REX::W32::D3D11_MAP_READ, 0, std::addressof(mapped)) >= 0) {
+				const auto* const data = static_cast<const std::uint8_t*>(mapped.data);
+				bytes.assign(data, data + desc.byteWidth);
+				a_context.Unmap(staging, 0);
+			}
+			staging->Release();
+			return bytes;
+		}
+
+		float FloatAt(const std::vector<std::uint8_t>& a_bytes, std::size_t a_offset) noexcept
+		{
+			float value = 0.0f;
+			if (a_offset + sizeof(value) <= a_bytes.size()) {
+				std::memcpy(std::addressof(value), a_bytes.data() + a_offset, sizeof(value));
+			}
+			return value;
 		}
 
 		/// Sixteen floats of a 64 byte block, three decimals each.
@@ -211,6 +277,7 @@ namespace Features
 		_reportedIndoors = false;
 		_gridValid = false;
 		_wasOutdoors = false;
+		_dumpDue = false;
 
 		const auto utilityIndex = Render::ClassIndexOf("BSUtilityShader");
 		if (!utilityIndex.has_value()) {
@@ -223,6 +290,10 @@ namespace Features
 			return false;
 		}
 		if (!_constants.Create(sizeof(Constants), "FO4CS_CB_Skylighting")) {
+			return false;
+		}
+		_patch = CreateDefaultBuffer(static_cast<std::uint32_t>(kPatchBytes), "FO4CS_CB_SkyOcclusionPatch");
+		if (_patch == nullptr) {
 			return false;
 		}
 		if (!_occlusion.Create(SkyOcclusion::kOcclusionMapSize, "FO4CS_DS_SkyOcclusion")) {
@@ -290,6 +361,9 @@ namespace Features
 
 		++_frames;
 		if (_frames % kLogInterval == 0) {
+			// The next frame's first caster dumps what the vertex shader is
+			// given, next to what we hand it.
+			_dumpDue = true;
 			if (auto* const context = Render::GetContext(); context != nullptr) {
 				LogProbes(*context, Render::FrameCount());
 			}
@@ -334,13 +408,14 @@ namespace Features
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_multiply)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_plain)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_depthState)),
-				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_viewConstants)) }) {
+				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_viewConstants)),
+				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_patch)) }) {
 			if (*object != nullptr) {
 				(*object)->Release();
 				*object = nullptr;
 			}
 		}
-		_viewImage.clear();
+		_viewConstantsBytes = 0;
 		_occlusion.Release();
 		_probes.Release();
 		_accumFrames.Release();
@@ -357,12 +432,29 @@ namespace Features
 
 		if (_occlusionProbe.Read(a_context, a_frame, bytes)) {
 			std::memcpy(values.data(), bytes.data(), bytes.size());
-			const auto range = RangeOf(values);
-			std::uint32_t drawn = 0;
+			// Three bins: the clear value, the pancaking clamp, and what lies
+			// between - only the last is a depth the grid can use.
+			std::uint32_t cleared = 0;
+			std::uint32_t clamped = 0;
+			std::vector<float> between;
 			for (const float value : values) {
-				drawn += value < 0.999f ? 1u : 0u;
+				if (value >= 1.0f) {
+					++cleared;
+				} else if (value <= 0.0f) {
+					++clamped;
+				} else {
+					between.push_back(value);
+				}
 			}
-			REX::INFO("skylighting probe: occlusion depth min {:.4f} max {:.4f} mean {:.4f}, {} of 16 texels drawn", range.min, range.max, range.mean, drawn);
+			const auto range = RangeOf(between);
+			REX::INFO(
+				"skylighting probe: occlusion depth {} texel(s) at 1 (clear), {} at 0 (clamped), {} between [{:.6f} {:.6f} mean {:.6f}]",
+				cleared,
+				clamped,
+				between.size(),
+				between.empty() ? 0.0f : range.min,
+				between.empty() ? 0.0f : range.max,
+				range.mean);
 		} else {
 			REX::INFO("skylighting probe: occlusion depth not readable this second");
 		}
@@ -418,87 +510,42 @@ namespace Features
 		return !_repeating && _casters.Matches(a_current);
 	}
 
-	bool Skylighting::EnsureViewCopy(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_engine) noexcept
+	bool Skylighting::EnsureViewBuffer(REX::W32::ID3D11Buffer* a_engine) noexcept
 	{
 		REX::W32::D3D11_BUFFER_DESC desc{};
 		a_engine->GetDesc(std::addressof(desc));
-		if (desc.byteWidth < kMatricesEnd) {
+		if (desc.byteWidth < kViewConstantsNeeded) {
 			if (!_reportedSmallBuffer) {
-				REX::ERROR("Skylighting: the view constants are {} bytes, four matrices need {}", desc.byteWidth, kMatricesEnd);
+				REX::ERROR("Skylighting: the view constants are {} bytes, the casters' vertex shaders read {}", desc.byteWidth, kViewConstantsNeeded);
 				_reportedSmallBuffer = true;
 			}
 			return false;
 		}
-		if (_viewConstants != nullptr && _viewImage.size() == desc.byteWidth) {
+		if (_viewConstants != nullptr && _viewConstantsBytes == desc.byteWidth) {
 			return true;
 		}
-
-		// Once: the engine's bytes, read through a staging buffer with a
-		// blocking map. A stall at the first caster of a session; everything
-		// after it is our own copy, and the probe saw the buffer hold still
-		// for minutes.
-		auto* const device = Render::GetDevice();
-		if (device == nullptr) {
-			return false;
-		}
-		REX::W32::D3D11_BUFFER_DESC staging = desc;
-		staging.usage = REX::W32::D3D11_USAGE_STAGING;
-		staging.bindFlags = 0;
-		staging.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_READ;
-		staging.miscFlags = 0;
-		REX::W32::ID3D11Buffer* copy = nullptr;
-		if (device->CreateBuffer(std::addressof(staging), nullptr, std::addressof(copy)) < 0) {
-			return false;
-		}
-		a_context.CopyResource(copy, a_engine);
-		REX::W32::D3D11_MAPPED_SUBRESOURCE mapped{};
-		const bool read = a_context.Map(copy, 0, REX::W32::D3D11_MAP_READ, 0, std::addressof(mapped)) >= 0;
-		if (read) {
-			const auto* const bytes = static_cast<const std::uint8_t*>(mapped.data);
-			_viewImage.assign(bytes, bytes + desc.byteWidth);
-			a_context.Unmap(copy, 0);
-		}
-		copy->Release();
-		if (!read) {
-			return false;
-		}
-
-		REX::W32::D3D11_BUFFER_DESC ours = desc;
-		ours.usage = REX::W32::D3D11_USAGE_DEFAULT;
-		ours.bindFlags = REX::W32::D3D11_BIND_CONSTANT_BUFFER;
-		ours.cpuAccessFlags = 0;
-		ours.miscFlags = 0;
 		if (_viewConstants != nullptr) {
 			_viewConstants->Release();
 			_viewConstants = nullptr;
 		}
-		if (device->CreateBuffer(std::addressof(ours), nullptr, std::addressof(_viewConstants)) < 0) {
-			REX::ERROR("Skylighting: our copy of the view constants could not be created");
+		_viewConstants = CreateDefaultBuffer(desc.byteWidth, "FO4CS_CB_SkyOcclusionView");
+		if (_viewConstants == nullptr) {
 			return false;
 		}
-		static_cast<void>(Render::SetDebugName(reinterpret_cast<REX::W32::ID3D11DeviceChild*>(_viewConstants), "FO4CS_CB_SkyOcclusionView"));
-		REX::INFO("Skylighting: view constants are {} bytes in slot {}", desc.byteWidth, kViewConstantSlot);
-		// The whole buffer once, for the record: the probe of run 1 dumped
-		// its first 256 bytes, and whether the vertex shader positions with
-		// one of those four matrices or with something behind them is the
-		// open question of the second acceptance run.
-		for (std::size_t offset = 0; offset < _viewImage.size(); offset += 64) {
-			const auto left = std::min<std::size_t>(64, _viewImage.size() - offset);
-			float last[4]{};
-			const bool matrix = left == 64;
-			if (matrix) {
-				std::memcpy(last, _viewImage.data() + offset + 48, sizeof(last));
-			}
-			const bool ortho = matrix && std::abs(last[0]) < 1e-4f && std::abs(last[1]) < 1e-4f && std::abs(last[2]) < 1e-4f && std::abs(last[3] - 1.0f) < 1e-4f;
-			REX::INFO("  slot 12 +{:03}: {}{}", offset, Row(_viewImage.data() + offset, left), ortho ? "  <- 4x4, last row 0 0 0 1" : "");
-		}
+		_viewConstantsBytes = desc.byteWidth;
+		REX::INFO(
+			"Skylighting: view constants are {} bytes in slot {}; the view projection at byte {} and the position adjust at byte {} become ours",
+			desc.byteWidth,
+			kViewConstantSlot,
+			kViewProjectionOffset,
+			kPosAdjustOffset);
 		return true;
 	}
 
 	bool Skylighting::BeginFrameCapture(REX::W32::ID3D11DeviceContext& a_context) noexcept
 	{
 		// Once a frame, at the first caster: this frame's direction, the
-		// matrix, our copy of the view constants, a clean depth map.
+		// matrix, the engine's bytes with our two patches, a clean depth map.
 		const auto frame = Render::FrameCount();
 		if (_captureFrame == frame) {
 			return _captureReady;
@@ -521,31 +568,99 @@ namespace Features
 		const auto maxZenith = Settings::GetDouble("Skylighting/maxZenith") * kPi / 180.0;
 		SkyOcclusion::SkyDirection(static_cast<std::uint32_t>(frame), kSequenceSeed, maxZenith, _direction);
 		SkyOcclusion::OcclusionMatrix(kGridCentre, _direction, _matrix);
-		SkyOcclusion::OcclusionMatrix(_eye, _direction, _captureMatrix);
 
 		REX::W32::ID3D11Buffer* engine = nullptr;
 		a_context.VSGetConstantBuffers(kViewConstantSlot, 1, std::addressof(engine));
 		if (engine == nullptr) {
 			return false;
 		}
-		const bool ready = EnsureViewCopy(a_context, engine);
-		engine->Release();
-		if (!ready) {
+		if (!EnsureViewBuffer(engine)) {
+			engine->Release();
 			return false;
 		}
 
+		// The engine's bytes of this very frame, so that nothing in the
+		// buffer is stale - the first copy of a session was the main menu's
+		// spot light, and it stayed for the whole session. Then the two
+		// patches, copied in on the GPU: a constant buffer takes no partial
+		// UpdateSubresource, but it does take a sixteen byte aligned copy.
+		a_context.CopyResource(_viewConstants, engine);
+		alignas(16) std::uint8_t patch[kPatchBytes]{};
 		float rows[16]{};
 		for (int i = 0; i < 16; ++i) {
-			rows[i] = static_cast<float>(_captureMatrix[i]);
+			rows[i] = static_cast<float>(_matrix[i]);
 		}
-		WriteIdentity(_viewImage.data() + kRotationOffset);
-		std::memcpy(_viewImage.data() + kProjectionOffset, rows, sizeof(rows));
-		std::memcpy(_viewImage.data() + kViewProjectionOffset, rows, sizeof(rows));
-		WriteIdentity(_viewImage.data() + kInverseRotationOffset);
-		a_context.UpdateSubresource(_viewConstants, 0, nullptr, _viewImage.data(), 0, 0);
+		std::memcpy(patch + kPatchMatrixOffset, rows, sizeof(rows));
+		const float adjust[4]{ static_cast<float>(_eye[0]), static_cast<float>(_eye[1]), static_cast<float>(_eye[2]), 0.0f };
+		std::memcpy(patch + kPatchEyeOffset, adjust, sizeof(adjust));
+		a_context.UpdateSubresource(_patch, 0, nullptr, patch, 0, 0);
+		const REX::W32::D3D11_BOX matrixBox{ kPatchMatrixOffset, 0, 0, kPatchMatrixOffset + static_cast<std::uint32_t>(sizeof(rows)), 1, 1 };
+		a_context.CopySubresourceRegion(_viewConstants, 0, kViewProjectionOffset, 0, 0, _patch, 0, std::addressof(matrixBox));
+		const REX::W32::D3D11_BOX eyeBox{ kPatchEyeOffset, 0, 0, kPatchEyeOffset + static_cast<std::uint32_t>(sizeof(adjust)), 1, 1 };
+		a_context.CopySubresourceRegion(_viewConstants, 0, kPosAdjustOffset, 0, 0, _patch, 0, std::addressof(eyeBox));
+
+		if (_dumpDue) {
+			_dumpDue = false;
+			DumpCapture(a_context, engine);
+		}
+		engine->Release();
+
 		_occlusion.Clear(a_context, 1.0f);
 		_captureReady = true;
 		return true;
+	}
+
+	void Skylighting::DumpCapture(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_engine) noexcept
+	{
+		// What the vertex shader is given, once a second: the engine's view
+		// constants, ours after the patches, and the first caster's world
+		// matrix - and the clip position both pairs make of that caster's
+		// origin, computed here the way the shader computes it. The engine's
+		// pair has to land inside its own map; if it does not, the model of
+		// the shader is wrong, not the patches.
+		const auto engineBytes = ReadBack(a_context, a_engine);
+		const auto ourBytes = ReadBack(a_context, _viewConstants);
+		REX::W32::ID3D11Buffer* geometry = nullptr;
+		a_context.VSGetConstantBuffers(kGeometryConstantSlot, 1, std::addressof(geometry));
+		const auto geometryBytes = ReadBack(a_context, geometry);
+		if (geometry != nullptr) {
+			geometry->Release();
+		}
+		if (engineBytes.size() < kViewConstantsNeeded || ourBytes.size() < kViewConstantsNeeded || geometryBytes.size() < 64) {
+			REX::INFO("skylighting capture: buffers not readable (engine {} B, ours {} B, caster {} B)", engineBytes.size(), ourBytes.size(), geometryBytes.size());
+			return;
+		}
+
+		const auto project = [](const std::vector<std::uint8_t>& a_view, const std::vector<std::uint8_t>& a_world) {
+			// translation - adjust, then the view projection's rows, as
+			// dp4 cb12[8 + i], (World column 3 - cb12[35]) in the shader.
+			float relative[4]{};
+			for (std::size_t i = 0; i < 3; ++i) {
+				relative[i] = FloatAt(a_world, i * 16 + 12) - FloatAt(a_view, kPosAdjustOffset + i * 4);
+			}
+			relative[3] = FloatAt(a_world, 3 * 16 + 12);
+			float clip[4]{};
+			for (std::size_t i = 0; i < 4; ++i) {
+				for (std::size_t j = 0; j < 4; ++j) {
+					clip[i] += FloatAt(a_view, kViewProjectionOffset + (i * 4 + j) * 4) * relative[j];
+				}
+			}
+			return std::format(
+				"relative [{:.1f} {:.1f} {:.1f} w {:.3f}] -> clip [{:.4f} {:.4f} {:.4f} w {:.4f}]",
+				relative[0], relative[1], relative[2], relative[3], clip[0], clip[1], clip[2], clip[3]);
+		};
+
+		REX::INFO(
+			"skylighting capture: eye [{:.1f} {:.1f} {:.1f}], engine pos adjust [{:.1f} {:.1f} {:.1f}], ours [{:.1f} {:.1f} {:.1f}], direction [{:.3f} {:.3f} {:.3f}]",
+			_eye[0], _eye[1], _eye[2],
+			FloatAt(engineBytes, kPosAdjustOffset), FloatAt(engineBytes, kPosAdjustOffset + 4), FloatAt(engineBytes, kPosAdjustOffset + 8),
+			FloatAt(ourBytes, kPosAdjustOffset), FloatAt(ourBytes, kPosAdjustOffset + 4), FloatAt(ourBytes, kPosAdjustOffset + 8),
+			_direction[0], _direction[1], _direction[2]);
+		REX::INFO("  engine view proj: {}", Row(engineBytes.data() + kViewProjectionOffset, 64));
+		REX::INFO("  our view proj:    {}", Row(ourBytes.data() + kViewProjectionOffset, 64));
+		REX::INFO("  caster world:     {}", Row(geometryBytes.data(), 64));
+		REX::INFO("  caster by engine: {}", project(engineBytes, geometryBytes));
+		REX::INFO("  caster by ours:   {}", project(ourBytes, geometryBytes));
 	}
 
 	void Skylighting::BeforeDraw(REX::W32::ID3D11DeviceContext& a_context, const Render::DrawCall&) noexcept

@@ -27,10 +27,12 @@ namespace Features
 	/// over the frames. Pass: in kComposite the factor is multiplied into
 	/// RT_028, which the composite applies to its ambient term.
 	///
-	/// The probe of 2026-09-13 found the casters' view constants in vertex
-	/// slot 12, the layout the sky uses too: rotation, projection, their
-	/// product, the transposed rotation, 64 bytes each, geometry relative to
-	/// the camera. 166 casters a frame, all into DS_008.
+	/// The casters' vertex shaders, disassembled from the game's shader
+	/// package on 2026-09-13, position with the view projection at byte 128
+	/// of vertex slot 12 and subtract the position adjust at byte 560 from
+	/// every object translation; both are ours during the repeat, the rest
+	/// of the buffer stays the engine's. 166 casters a frame, all into
+	/// DS_008.
 	class Skylighting final : public Feature, public Render::DrawObserver
 	{
 	public:
@@ -54,8 +56,9 @@ namespace Features
 		void DrawPass(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11RenderTargetView* a_target, REX::W32::ID3D11BlendState* a_blend, float a_debugView);
 		[[nodiscard]] bool Compile();
 		[[nodiscard]] bool EnsureStates();
-		[[nodiscard]] bool EnsureViewCopy(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_engine) noexcept;
+		[[nodiscard]] bool EnsureViewBuffer(REX::W32::ID3D11Buffer* a_engine) noexcept;
 		[[nodiscard]] bool BeginFrameCapture(REX::W32::ID3D11DeviceContext& a_context) noexcept;
+		void DumpCapture(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_engine) noexcept;
 		[[nodiscard]] bool FillConstants(float a_debugView) noexcept;
 		[[nodiscard]] bool Outdoors() const noexcept;
 		void ResetGrid() noexcept;
@@ -87,21 +90,23 @@ namespace Features
 		Render::PhaseDispatcher::Token _debugPhase{ Render::PhaseDispatcher::kNoToken };
 		Util::FileWatch _watch;
 
-		// The capture of the current frame.
+		// The capture of the current frame. _viewConstants mirrors the
+		// engine's per-view buffer with our view projection and position
+		// adjust copied in from _patch.
 		REX::W32::ID3D11Buffer* _viewConstants{ nullptr };
-		std::vector<std::uint8_t> _viewImage;
+		REX::W32::ID3D11Buffer* _patch{ nullptr };
+		std::uint32_t _viewConstantsBytes{ 0 };
 		std::uint64_t _captureFrame{ 0 };
+		bool _dumpDue{ false };
 		bool _captureReady{ false };
 		bool _repeating{ false };
 		bool _surrounding{ false };
 		bool _reportedSmallBuffer{ false };
 		bool _reportedStates{ false };
 		double _direction[3]{};
-		/// The projection for the casters, whose positions are absolute world
-		/// coordinates: the cube is centred on the eye.
-		double _captureMatrix[16]{};
-		/// The same projection for the grid, whose cells are relative to the
-		/// eye: the cube is centred on the origin.
+		/// This frame's projection, its cube centred on the origin: the grid's
+		/// cells are relative to the eye, and so are the casters once the
+		/// vertex shader has subtracted the eye we write as position adjust.
 		double _matrix[16]{};
 		double _eye[3]{};
 
