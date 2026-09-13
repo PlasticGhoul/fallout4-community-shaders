@@ -73,6 +73,11 @@ namespace Features
 		constexpr std::uint32_t kPatchEyeOffset = 64;
 		constexpr std::uint32_t kPatchBytes = 80;
 
+		/// The depth slots the tally tells apart; DS_010 is the last one the
+		/// inventory lists.
+		constexpr std::size_t kDepthSlotsScanned = 16;
+		constexpr std::size_t kNoDepthSlot = 255;
+
 		/// The vertex shader subtracts the position adjust from every object
 		/// translation before it applies the view projection. With the eye
 		/// written there, the casters arrive relative to the eye - the frame
@@ -498,6 +503,21 @@ namespace Features
 			_castersRepeated = 0;
 			_dispatches = 0;
 			_passes = 0;
+
+			std::string byDepth;
+			for (const auto& [slot, count] : _utilityByDepth) {
+				byDepth += slot == kNoDepthSlot ? std::format(" other x{}", count) : std::format(" DS_{:03} x{}", slot, count);
+			}
+			REX::INFO(
+				"skylighting tally: casters per frame {}..{}, frames with a second view buffer {}, utility draws by depth target:{}",
+				_castersPerFrameMin == UINT32_MAX ? 0 : _castersPerFrameMin,
+				_castersPerFrameMax,
+				_framesWithSecondView,
+				byDepth);
+			_utilityByDepth.clear();
+			_castersPerFrameMin = UINT32_MAX;
+			_castersPerFrameMax = 0;
+			_framesWithSecondView = 0;
 		}
 	}
 
@@ -765,6 +785,7 @@ namespace Features
 		REX::W32::ID3D11DepthStencilView* dsv = nullptr;
 		a_context.OMGetRenderTargets(kSavedTargets, _savedTargets, std::addressof(dsv));
 		const bool shadowCaster = dsv != nullptr && dsv == Render::Targets::DepthStencilView(Render::Targets::kShadowMap);
+		TallyUtilityDraw(dsv, shadowCaster);
 		if (!shadowCaster || !_occlusion.Valid() || !BeginFrameCapture(a_context)) {
 			if (dsv != nullptr) {
 				dsv->Release();
@@ -777,6 +798,12 @@ namespace Features
 		a_context.VSGetConstantBuffers(kViewConstantSlot, 1, std::addressof(_savedView));
 		if (_censusActive) {
 			RecordCaster(a_context, _savedView);
+		}
+		if (_frameFirstView == nullptr) {
+			_frameFirstView = _savedView;
+		} else if (static_cast<const void*>(_savedView) != _frameFirstView && !_frameHadSecondView) {
+			_frameHadSecondView = true;
+			++_framesWithSecondView;
 		}
 		a_context.OMGetDepthStencilState(std::addressof(_savedDepthState), std::addressof(_savedStencilRef));
 
@@ -848,6 +875,38 @@ namespace Features
 		a_context.RSSetViewports(_savedViewportCount, _savedViewports);
 		a_context.RSSetScissorRects(_savedScissorCount, _savedScissors);
 		ReleaseSaved();
+	}
+
+	void Skylighting::TallyUtilityDraw(REX::W32::ID3D11DepthStencilView* a_dsv, bool a_caster) noexcept
+	{
+		// Every frame, no readback: which depth target each utility draw
+		// goes to, and how many casters a frame holds. The far cascades of
+		// the sun have to be drawn somewhere, some time - into another
+		// target, or into DS_008 in frames the once-a-second census misses.
+		const auto frame = Render::FrameCount();
+		if (frame != _tallyFrame) {
+			if (_tallyFrame != 0) {
+				_castersPerFrameMin = std::min(_castersPerFrameMin, _frameCasters);
+				_castersPerFrameMax = std::max(_castersPerFrameMax, _frameCasters);
+			}
+			_tallyFrame = frame;
+			_frameCasters = 0;
+			_frameFirstView = nullptr;
+			_frameHadSecondView = false;
+		}
+		if (a_caster) {
+			++_frameCasters;
+		}
+		std::size_t slot = kNoDepthSlot;
+		if (a_dsv != nullptr) {
+			for (std::size_t i = 0; i < kDepthSlotsScanned; ++i) {
+				if (Render::Targets::DepthStencilView(i) == a_dsv) {
+					slot = i;
+					break;
+				}
+			}
+		}
+		++_utilityByDepth[slot];
 	}
 
 	void Skylighting::RecordCaster(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_view) noexcept

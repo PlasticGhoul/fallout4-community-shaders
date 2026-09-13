@@ -50,7 +50,10 @@ float4 main(PixelInput input) : SV_TARGET0
 {
 	const int debugView = (int)(CameraUp.w + 0.5);
 	if (debugView == 2)
-		return float4(OcclusionDepth.Sample(LinearClamp, input.uv).rrr * kDebugExposure, 1.0);
+		// Inverted: the clear value is most of the map and would wash the
+		// view out, so nothing drawn is black and a caster the brighter the
+		// nearer the sky it stands.
+		return float4((1.0 - OcclusionDepth.Sample(LinearClamp, input.uv).rrr) * kDebugExposure, 1.0);
 
 	const int2 pixel = int2(input.uv * Params.zw);
 	const float depth = DepthTexture.Load(int3(pixel, 0));

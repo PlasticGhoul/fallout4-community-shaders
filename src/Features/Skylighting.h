@@ -62,6 +62,7 @@ namespace Features
 		void DumpCapture(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_engine) noexcept;
 		void RecordCaster(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_view) noexcept;
 		void LogCensus() noexcept;
+		void TallyUtilityDraw(REX::W32::ID3D11DepthStencilView* a_dsv, bool a_caster) noexcept;
 		[[nodiscard]] bool FillConstants(float a_debugView) noexcept;
 		[[nodiscard]] bool Outdoors() const noexcept;
 		void ResetGrid() noexcept;
@@ -122,6 +123,18 @@ namespace Features
 		std::map<std::uint32_t, std::uint32_t> _censusTechniques;
 		std::vector<ViewBufferSeen> _censusViews;
 		std::vector<float> _censusDistances;
+
+		/// Every frame, no readback: utility draws by depth target, casters
+		/// per frame, frames whose casters came with more than one view
+		/// buffer. Printed with the once-a-second line.
+		std::uint64_t _tallyFrame{ 0 };
+		std::uint32_t _frameCasters{ 0 };
+		std::uint32_t _castersPerFrameMin{ UINT32_MAX };
+		std::uint32_t _castersPerFrameMax{ 0 };
+		const void* _frameFirstView{ nullptr };
+		bool _frameHadSecondView{ false };
+		std::uint32_t _framesWithSecondView{ 0 };
+		std::map<std::size_t, std::uint64_t> _utilityByDepth;
 		bool _captureReady{ false };
 		bool _repeating{ false };
 		bool _surrounding{ false };
