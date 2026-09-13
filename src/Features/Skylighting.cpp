@@ -30,6 +30,7 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <iterator>
 #include <span>
 #include <string>
 #include <vector>
@@ -382,6 +383,8 @@ namespace Features
 		_gridValid = false;
 		_wasOutdoors = false;
 		_dumpDue = false;
+		_censusDue = false;
+		_censusActive = false;
 
 		const auto utilityIndex = Render::ClassIndexOf("BSUtilityShader");
 		if (!utilityIndex.has_value()) {
@@ -467,8 +470,10 @@ namespace Features
 		++_frames;
 		if (_frames % kLogInterval == 0) {
 			// The next frame's first caster dumps what the vertex shader is
-			// given, next to what we hand it.
+			// given, next to what we hand it, and the frame counts its
+			// casters.
 			_dumpDue = true;
+			_censusDue = true;
 			if (auto* const context = Render::GetContext(); context != nullptr) {
 				LogProbes(*context, Render::FrameCount());
 			}
@@ -686,6 +691,14 @@ namespace Features
 			_dumpDue = false;
 			DumpCapture(a_context, engine);
 		}
+		if (_censusDue) {
+			_censusDue = false;
+			_censusActive = true;
+			_censusCasters = 0;
+			_censusTechniques.clear();
+			_censusViews.clear();
+			_censusDistances.clear();
+		}
 		engine->Release();
 
 		_occlusion.Clear(a_context, 1.0f);
@@ -762,6 +775,9 @@ namespace Features
 		++_castersSeen;
 		_savedDepth = dsv;
 		a_context.VSGetConstantBuffers(kViewConstantSlot, 1, std::addressof(_savedView));
+		if (_censusActive) {
+			RecordCaster(a_context, _savedView);
+		}
 		a_context.OMGetDepthStencilState(std::addressof(_savedDepthState), std::addressof(_savedStencilRef));
 
 		// Once: what the engine draws its casters with, for the record. The
@@ -832,6 +848,76 @@ namespace Features
 		a_context.RSSetViewports(_savedViewportCount, _savedViewports);
 		a_context.RSSetScissorRects(_savedScissorCount, _savedScissors);
 		ReleaseSaved();
+	}
+
+	void Skylighting::RecordCaster(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_view) noexcept
+	{
+		// Diagnostic, one frame a second: the technique, the view buffer -
+		// read back once per distinct buffer, for its projection scale and
+		// position adjust - and, for every eighth caster, the distance of
+		// its origin from the eye out of its world matrix.
+		const auto index = _censusCasters++;
+		++_censusTechniques[Render::CurrentTechniqueOf().technique];
+
+		auto seen = std::find_if(_censusViews.begin(), _censusViews.end(), [a_view](const ViewBufferSeen& a_entry) { return a_entry.buffer == a_view; });
+		if (seen == _censusViews.end()) {
+			ViewBufferSeen entry{ a_view, 0.0f, { 0.0f, 0.0f, 0.0f }, 0 };
+			const auto bytes = ReadBack(a_context, a_view);
+			if (bytes.size() >= kViewConstantsNeeded) {
+				entry.scale = FloatAt(bytes, kViewProjectionOffset);
+				for (std::size_t i = 0; i < 3; ++i) {
+					entry.adjust[i] = FloatAt(bytes, kPosAdjustOffset + i * 4);
+				}
+			}
+			_censusViews.push_back(entry);
+			seen = std::prev(_censusViews.end());
+		}
+		++seen->casters;
+
+		if (index % 8 == 0) {
+			REX::W32::ID3D11Buffer* geometry = nullptr;
+			a_context.VSGetConstantBuffers(kGeometryConstantSlot, 1, std::addressof(geometry));
+			const auto bytes = ReadBack(a_context, geometry);
+			if (geometry != nullptr) {
+				geometry->Release();
+			}
+			if (bytes.size() >= 64) {
+				double squared = 0.0;
+				for (std::size_t i = 0; i < 3; ++i) {
+					const double delta = static_cast<double>(FloatAt(bytes, i * 16 + 12)) - _eye[i];
+					squared += delta * delta;
+				}
+				_censusDistances.push_back(static_cast<float>(std::sqrt(squared)));
+			}
+		}
+	}
+
+	void Skylighting::LogCensus() noexcept
+	{
+		_censusActive = false;
+		std::string techniques;
+		for (const auto& [technique, count] : _censusTechniques) {
+			techniques += std::format(" 0x{:X}x{}", technique, count);
+		}
+		std::string views;
+		for (const auto& view : _censusViews) {
+			views += std::format(
+				" [{} casters, scale {:.5f} = {:.0f} units wide, adjust {:.0f} {:.0f} {:.0f}]",
+				view.casters,
+				view.scale,
+				view.scale > 0.0f ? 2.0f / view.scale : 0.0f,
+				view.adjust[0],
+				view.adjust[1],
+				view.adjust[2]);
+		}
+		std::sort(_censusDistances.begin(), _censusDistances.end());
+		std::string distances;
+		for (const float distance : _censusDistances) {
+			distances += std::format(" {:.0f}", distance);
+		}
+		REX::INFO("skylighting census: {} caster(s) this frame, techniques{}", _censusCasters, techniques);
+		REX::INFO("  view buffers ({}):{}", _censusViews.size(), views);
+		REX::INFO("  distance from the eye of every eighth caster, sorted:{}", distances);
 	}
 
 	void Skylighting::ReleaseSaved() noexcept
@@ -946,6 +1032,10 @@ namespace Features
 		context->CSSetUnorderedAccessViews(0, 2, noUAVs, nullptr);
 		context->CSSetShaderResources(0, 1, std::addressof(noSRV));
 		context->CSSetShader(nullptr, nullptr, 0);
+
+		if (_censusActive) {
+			LogCensus();
+		}
 	}
 
 	void Skylighting::DrawPass(

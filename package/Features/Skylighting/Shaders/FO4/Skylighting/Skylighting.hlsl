@@ -35,7 +35,9 @@ struct PixelInput
 
 // The HDR target is tone mapped after us; a value of one reads as white,
 // so the debug views are drawn at a quarter to stay legible.
-static const float kDebugExposure = 0.25;
+// Measured on 2026-09-13: the HDR scene averages 0.03 to 0.06 in the open,
+// so a quarter was still ten times too bright and every view came out white.
+static const float kDebugExposure = 0.05;
 
 float3 PositionAt(float2 uv)
 {

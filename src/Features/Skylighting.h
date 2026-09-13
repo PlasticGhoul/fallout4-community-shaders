@@ -12,6 +12,7 @@
 #include <REX/W32/D3D11.h>
 
 #include <cstdint>
+#include <map>
 #include <vector>
 
 namespace Features
@@ -59,6 +60,8 @@ namespace Features
 		[[nodiscard]] bool EnsureViewBuffer(REX::W32::ID3D11Buffer* a_engine) noexcept;
 		[[nodiscard]] bool BeginFrameCapture(REX::W32::ID3D11DeviceContext& a_context) noexcept;
 		void DumpCapture(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_engine) noexcept;
+		void RecordCaster(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_view) noexcept;
+		void LogCensus() noexcept;
 		[[nodiscard]] bool FillConstants(float a_debugView) noexcept;
 		[[nodiscard]] bool Outdoors() const noexcept;
 		void ResetGrid() noexcept;
@@ -99,6 +102,26 @@ namespace Features
 		std::uint32_t _viewConstantsBytes{ 0 };
 		std::uint64_t _captureFrame{ 0 };
 		bool _dumpDue{ false };
+
+		/// A census of one frame's casters, once a second: their techniques,
+		/// the distinct view buffers they came with (the engine's cascades,
+		/// if it draws more than one), and how far from the eye every eighth
+		/// of them stands. The first survey of the map showed casters within
+		/// two thousand units only, against a shadow distance of twenty
+		/// thousand.
+		struct ViewBufferSeen
+		{
+			const void* buffer;
+			float scale;
+			float adjust[3];
+			std::uint32_t casters;
+		};
+		bool _censusDue{ false };
+		bool _censusActive{ false };
+		std::uint32_t _censusCasters{ 0 };
+		std::map<std::uint32_t, std::uint32_t> _censusTechniques;
+		std::vector<ViewBufferSeen> _censusViews;
+		std::vector<float> _censusDistances;
 		bool _captureReady{ false };
 		bool _repeating{ false };
 		bool _surrounding{ false };
