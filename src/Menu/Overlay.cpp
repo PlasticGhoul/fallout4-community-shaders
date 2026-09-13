@@ -188,8 +188,7 @@ namespace Menu
 
 		bool drewHud = false;
 		if (a_visible) {
-			closeWanted = DrawSettingsPanel(a_panel);
-			static_cast<void>(DrawPerformancePanel(a_performance, Detail::kFull));
+			closeWanted = DrawSettingsPanel(a_panel, a_performance);
 		} else if (a_performance.hud) {
 			drewHud = DrawPerformancePanel(a_performance, Detail::kCompact);
 		}

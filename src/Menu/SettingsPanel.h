@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Menu/PerformancePanel.h"
+
 #include <cstdint>
 #include <functional>
 #include <string_view>
@@ -24,8 +26,12 @@ namespace Menu
 	};
 
 	/// One ImGui window, drawn from the settings schema and the feature
-	/// registry. Returns whether the player asked to close it - acted on by the
-	/// caller, so that the button and the toggle key take the same path through
-	/// the gate.
-	[[nodiscard]] bool DrawSettingsPanel(const PanelContext& a_context);
+	/// registry: a list of pages on the left, the open page on the right. The
+	/// performance figures come in because one of the pages shows them.
+	/// Returns whether the player asked to close it - acted on by the caller,
+	/// so that the button and the toggle key take the same path through the
+	/// gate.
+	[[nodiscard]] bool DrawSettingsPanel(
+		const PanelContext& a_context,
+		const PerformanceContext& a_performance);
 }

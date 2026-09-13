@@ -4,12 +4,15 @@
 #include "I18n/I18n.h"
 #include "Menu/Fonts.h"
 #include "Menu/KeyNames.h"
+#include "Menu/PageList.h"
 #include "Plugin.h"
 #include "Settings/Settings.h"
 
 #include <imgui.h>
 
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Menu
@@ -163,98 +166,209 @@ namespace Menu
 			}
 		}
 
-		std::vector<std::string> FeatureNames()
+		struct FeatureRow
 		{
-			std::vector<std::string> names;
+			std::string name;
+			Features::State state{ Features::State::kOff };
+		};
+
+		std::vector<FeatureRow> FeatureRows()
+		{
+			std::vector<FeatureRow> rows;
 			Features::TheRegistry().ForEach(
-				[&names](std::string_view a_name, Features::State) { names.emplace_back(a_name); });
-			return names;
-		}
-
-		/// Blocks with no feature of the same name. Today that is Menu alone;
-		/// the point is that no feature has to register itself as having a
-		/// surface - the two lists are matched by name.
-		void DrawGeneral(const PanelContext& a_context, const std::vector<std::string>& a_features)
-		{
-			if (!ImGui::CollapsingHeader(
-					T("menu.general", "General"),
-					ImGuiTreeNodeFlags_DefaultOpen)) {
-				return;
-			}
-
-			ImGui::Indent();
-			Settings::ForEachBlock([&](std::string_view a_block) {
-				const bool isFeature = std::find(a_features.begin(), a_features.end(), a_block) !=
-				                       a_features.end();
-				if (isFeature) {
-					return;
-				}
-
-				Settings::ForEachEntry(a_block, [&](const Settings::Entry& a_entry) {
-					DrawEntry(a_entry, a_context);
+				[&rows](std::string_view a_name, Features::State a_state) {
+					rows.push_back(FeatureRow{ std::string{ a_name }, a_state });
 				});
-			});
-			ImGui::Unindent();
+			return rows;
 		}
 
-		void DrawFeature(
-			std::string_view a_name,
-			Features::State a_state,
-			const PanelContext& a_context)
+		Features::State StateOf(const std::vector<FeatureRow>& a_rows, std::string_view a_name)
 		{
-			const Settings::Entry* switchEntry = nullptr;
-			Settings::Entry stored{};
+			for (const auto& row : a_rows) {
+				if (row.name == a_name) {
+					return row.state;
+				}
+			}
+			return Features::State::kOff;
+		}
 
+		/// A feature's block split the way the panel draws it: the switch goes
+		/// into the list on the left, everything else onto the page.
+		struct FeatureEntries
+		{
+			std::optional<Settings::Entry> switchEntry;
 			std::vector<Settings::Entry> rest;
-			Settings::ForEachEntry(a_name, [&](const Settings::Entry& a_entry) {
+		};
+
+		FeatureEntries CollectEntries(std::string_view a_block)
+		{
+			FeatureEntries entries;
+			Settings::ForEachEntry(a_block, [&entries](const Settings::Entry& a_entry) {
 				if (a_entry.isFeatureSwitch) {
-					stored = a_entry;
-					switchEntry = std::addressof(stored);
+					entries.switchEntry = a_entry;
 				} else {
-					rest.push_back(a_entry);
+					entries.rest.push_back(a_entry);
 				}
 			});
+			return entries;
+		}
 
-			ImGui::PushID(a_name.data(), a_name.data() + a_name.size());
+		const char* PageTitle(const Page& a_page)
+		{
+			switch (a_page.kind) {
+			case PageKind::kGeneral:
+				return T("menu.page.general", "General");
+			case PageKind::kPerformance:
+				return T("performance.title", "Performance");
+			default:
+				return a_page.name.c_str();
+			}
+		}
 
-			if (switchEntry != nullptr) {
-				// The switch is the heading's checkbox, not a line among the
-				// feature's settings, which is why it was pulled out above.
-				DrawEntry(*switchEntry, a_context);
+		void DrawHeading(const char* a_text)
+		{
+			ImGui::PushFont(Fonts::Heading(), 0.0f);
+			ImGui::TextUnformatted(a_text);
+			ImGui::PopFont();
+		}
+
+		void DrawFixedRow(PageList& a_pages, const Page& a_page)
+		{
+			const bool selected = a_pages.Selected().name == a_page.name;
+			if (ImGui::Selectable(PageTitle(a_page), selected)) {
+				a_pages.Select(a_page.name);
+			}
+		}
+
+		void DrawFeatureRow(PageList& a_pages, const Page& a_page, Features::State a_state)
+		{
+			// One ID per feature, so that the label-less checkboxes of two rows
+			// do not collapse into one widget.
+			ImGui::PushID(a_page.name.c_str());
+
+			const auto entries = CollectEntries(a_page.name);
+			if (entries.switchEntry.has_value()) {
+				// The switch itself, with no caption: the caption is the row.
+				// Its help is not a tooltip here; it is the page's description.
+				DrawBool(*entries.switchEntry, "##enabled");
 			} else {
 				// A feature that never declared its switch cannot be turned on
-				// at all. Saying so beats drawing an empty row.
-				ImGui::TextDisabled("%s", std::string{ a_name }.c_str());
+				// at all. An empty place keeps the names aligned.
+				ImGui::Dummy(ImVec2{ ImGui::GetFrameHeight(), ImGui::GetFrameHeight() });
+			}
+			ImGui::SameLine();
+
+			const char* const state = StateText(a_state);
+			const float stateWidth = ImGui::CalcTextSize(state).x;
+			const float rowWidth = ImGui::GetContentRegionAvail().x;
+			const bool selected = a_pages.Selected().name == a_page.name;
+
+			if (!entries.switchEntry.has_value()) {
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+			}
+			if (ImGui::Selectable(
+					a_page.name.c_str(),
+					selected,
+					ImGuiSelectableFlags_None,
+					ImVec2{ rowWidth - stateWidth - ImGui::GetStyle().ItemSpacing.x, 0.0f })) {
+				a_pages.Select(a_page.name);
+			}
+			if (!entries.switchEntry.has_value()) {
+				ImGui::PopStyleColor();
 			}
 
 			ImGui::SameLine();
-			ImGui::TextDisabled("%s", StateText(a_state));
-
-			if (!rest.empty()) {
-				ImGui::Indent();
-				for (const auto& entry : rest) {
-					DrawEntry(entry, a_context);
-				}
-				ImGui::Unindent();
-			}
+			ImGui::TextDisabled("%s", state);
 
 			ImGui::PopID();
 		}
 
-		void DrawFeatures(const PanelContext& a_context)
+		void DrawPageList(PageList& a_pages, const std::vector<FeatureRow>& a_rows)
 		{
-			if (!ImGui::CollapsingHeader(
-					T("menu.features", "Features"),
-					ImGuiTreeNodeFlags_DefaultOpen)) {
-				return;
+			ImGui::SeparatorText(T("menu.section.general", "General"));
+			for (const auto& page : a_pages.Pages()) {
+				if (page.kind != PageKind::kFeature) {
+					DrawFixedRow(a_pages, page);
+				}
 			}
 
-			ImGui::Indent();
-			Features::TheRegistry().ForEach(
-				[&a_context](std::string_view a_name, Features::State a_state) {
-					DrawFeature(a_name, a_state, a_context);
+			ImGui::SeparatorText(T("menu.section.features", "Features"));
+			for (const auto& page : a_pages.Pages()) {
+				if (page.kind == PageKind::kFeature) {
+					DrawFeatureRow(a_pages, page, StateOf(a_rows, page.name));
+				}
+			}
+		}
+
+		/// Every block that is neither a feature nor Performance. Today that is
+		/// Menu alone; the point is that no feature has to register itself as
+		/// having a surface - the lists are matched by name.
+		void DrawGeneralPage(const PanelContext& a_context, const PageList& a_pages)
+		{
+			DrawHeading(T("menu.page.general", "General"));
+			ImGui::Separator();
+			Settings::ForEachBlock([&](std::string_view a_block) {
+				if (a_pages.PageOf(a_block).kind != PageKind::kGeneral) {
+					return;
+				}
+				Settings::ForEachEntry(a_block, [&](const Settings::Entry& a_entry) {
+					DrawEntry(a_entry, a_context);
 				});
-			ImGui::Unindent();
+			});
+		}
+
+		void DrawPerformancePage(const PanelContext& a_context, const PerformanceContext& a_performance)
+		{
+			DrawHeading(T("performance.title", "Performance"));
+			ImGui::Separator();
+			DrawPerformanceTable(a_performance);
+			ImGui::Separator();
+			Settings::ForEachEntry(PageList::kPerformanceName, [&](const Settings::Entry& a_entry) {
+				DrawEntry(a_entry, a_context);
+			});
+		}
+
+		void DrawFeaturePage(const PanelContext& a_context, const Page& a_page, Features::State a_state)
+		{
+			DrawHeading(a_page.name.c_str());
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", StateText(a_state));
+
+			// The description is the help of the switch, which every feature
+			// declares already. Nothing new to declare for a page.
+			const auto entries = CollectEntries(a_page.name);
+			if (!entries.switchEntry.has_value()) {
+				ImGui::TextWrapped("%s",
+					T("menu.no_switch", "This feature declares no switch and cannot be turned on."));
+			} else if (!entries.switchEntry->helpText.empty()) {
+				ImGui::TextWrapped("%s",
+					Translate(entries.switchEntry->helpKey, entries.switchEntry->helpText));
+			}
+			ImGui::Separator();
+
+			for (const auto& entry : entries.rest) {
+				DrawEntry(entry, a_context);
+			}
+		}
+
+		void DrawPage(
+			const PanelContext& a_context,
+			const PerformanceContext& a_performance,
+			const PageList& a_pages,
+			const std::vector<FeatureRow>& a_rows)
+		{
+			const auto& page = a_pages.Selected();
+			switch (page.kind) {
+			case PageKind::kGeneral:
+				DrawGeneralPage(a_context, a_pages);
+				break;
+			case PageKind::kPerformance:
+				DrawPerformancePage(a_context, a_performance);
+				break;
+			case PageKind::kFeature:
+				DrawFeaturePage(a_context, page, StateOf(a_rows, page.name));
+				break;
+			}
 		}
 
 		void DrawFooter(bool& a_closeWanted)
@@ -262,7 +376,6 @@ namespace Menu
 			if (ImGui::Button(T("menu.restore_defaults", "Restore defaults"))) {
 				ImGui::OpenPopup("confirm-restore");
 			}
-
 			if (ImGui::BeginPopupModal(
 					"confirm-restore",
 					nullptr,
@@ -272,7 +385,6 @@ namespace Menu
 				ImGui::TextUnformatted(
 					T("menu.restore_confirm", "Put every setting back to its default?"));
 				ImGui::Separator();
-
 				if (ImGui::Button(T("menu.yes", "Yes"))) {
 					Settings::RestoreDefaults();
 					Settings::Save();
@@ -284,47 +396,89 @@ namespace Menu
 				}
 				ImGui::EndPopup();
 			}
-
 			ImGui::SameLine();
 			if (ImGui::Button(T("menu.close", "Close"))) {
 				a_closeWanted = true;
 			}
 		}
+
+		/// State of the panel for the session, like the Skyrim menu's expansion
+		/// states: which page is open. Not a setting, not written anywhere.
+		PageList& ThePages()
+		{
+			static PageList pages;
+			return pages;
+		}
 	}
 
-	bool DrawSettingsPanel(const PanelContext& a_context)
+	bool DrawSettingsPanel(const PanelContext& a_context, const PerformanceContext& a_performance)
 	{
 		bool closeWanted = false;
 
-		ImGui::SetNextWindowSize(ImVec2{ 560.0f, 520.0f }, ImGuiCond_FirstUseEver);
+		// Sized to the screen on first use of a session, then left alone. ImGui
+		// keeps no ini for us (io.IniFilename is null), so this is what "first
+		// use" means here.
+		const auto display = ImGui::GetIO().DisplaySize;
+		ImGui::SetNextWindowSize(ImVec2{ display.x * 0.6f, display.y * 0.7f }, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(
+			ImVec2{ display.x * 0.5f, display.y * 0.5f }, ImGuiCond_FirstUseEver, ImVec2{ 0.5f, 0.5f });
+
 		if (ImGui::Begin(T("menu.title", "Community Shaders"))) {
 			ImGui::PushFont(Fonts::Heading(), 0.0f);
 			ImGui::TextUnformatted(Plugin::NAME.data());
 			ImGui::PopFont();
-
 			ImGui::SameLine();
 			// BUILD_DESCRIBE rather than the version triple: it is what answers
 			// "which build is this" in a bug report, and cmake/Plugin.h.in
 			// declares NAME, VERSION and this, and nothing else.
 			ImGui::TextDisabled("%s", Plugin::BUILD_DESCRIBE.data());
-
 			ImGui::Text(
 				"%s %llu",
 				T("menu.frame", "Frame"),
 				static_cast<unsigned long long>(a_context.frame));
-
 			ImGui::Separator();
 
-			// Everything above the footer scrolls, and the footer does not:
-			// with forty features from F+ the buttons must not walk off the
-			// bottom of the window.
+			// The registry is constant, but the model is not to know that:
+			// handed the names every frame, it keeps its selection by name.
+			const auto rows = FeatureRows();
+			std::vector<std::string_view> names;
+			names.reserve(rows.size());
+			for (const auto& row : rows) {
+				names.emplace_back(row.name);
+			}
+			auto& pages = ThePages();
+			pages.SetFeatures(names);
+
+			// Everything above the footer is the two columns, and the footer
+			// does not scroll: with forty features from F+ the buttons must not
+			// walk off the bottom of the window.
 			const auto footer =
 				ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
-
 			if (ImGui::BeginChild("body", ImVec2{ 0.0f, -footer })) {
-				const auto features = FeatureNames();
-				DrawGeneral(a_context, features);
-				DrawFeatures(a_context);
+				constexpr auto flags = ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV |
+				                       ImGuiTableFlags_SizingStretchProp;
+				if (ImGui::BeginTable("columns", 2, flags)) {
+					ImGui::TableSetupColumn("##pages", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+					ImGui::TableSetupColumn("##page", ImGuiTableColumnFlags_WidthStretch, 3.0f);
+					ImGui::TableNextRow();
+
+					// Each column is a child that scrolls for itself, the list
+					// as long as the features and the page as long as its
+					// settings.
+					ImGui::TableNextColumn();
+					if (ImGui::BeginChild("pages", ImVec2{ 0.0f, ImGui::GetContentRegionAvail().y })) {
+						DrawPageList(pages, rows);
+					}
+					ImGui::EndChild();
+
+					ImGui::TableNextColumn();
+					if (ImGui::BeginChild("page", ImVec2{ 0.0f, ImGui::GetContentRegionAvail().y })) {
+						DrawPage(a_context, a_performance, pages, rows);
+					}
+					ImGui::EndChild();
+
+					ImGui::EndTable();
+				}
 			}
 			ImGui::EndChild();
 
