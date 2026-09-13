@@ -55,10 +55,14 @@ namespace Features
 		constexpr std::size_t kInverseRotationOffset = 192;
 		constexpr std::size_t kMatricesEnd = 256;
 
-		/// The probe saw the projection's translation stay put while the
-		/// player walked: the casters are positioned relative to the camera,
-		/// so the occlusion cube is centred on the origin.
-		constexpr double kCubeCentre[3]{ 0.0, 0.0, 0.0 };
+		/// The grid's cells are relative to the eye, so its cube is centred on
+		/// the origin. The casters' positions are absolute world coordinates -
+		/// the object matrices the probe dumped carry translations around
+		/// ninety thousand - so their cube is centred on the eye. The probe
+		/// had read the engine's constant projection as camera relative
+		/// geometry; the first acceptance run drew nothing, which is what an
+		/// absolute scene clipped against a cube at the origin looks like.
+		constexpr double kGridCentre[3]{ 0.0, 0.0, 0.0 };
 
 		/// RT_028 read as white in every channel; which of them the composite
 		/// takes is not settled, so all three get the factor.
@@ -267,6 +271,7 @@ namespace Features
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_linearClamp)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_multiply)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_plain)),
+				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_depthState)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_viewConstants)) }) {
 			if (*object != nullptr) {
 				(*object)->Release();
@@ -391,7 +396,8 @@ namespace Features
 
 		const auto maxZenith = Settings::GetDouble("Skylighting/maxZenith") * kPi / 180.0;
 		SkyOcclusion::SkyDirection(static_cast<std::uint32_t>(frame), kSequenceSeed, maxZenith, _direction);
-		SkyOcclusion::OcclusionMatrix(kCubeCentre, _direction, _matrix);
+		SkyOcclusion::OcclusionMatrix(kGridCentre, _direction, _matrix);
+		SkyOcclusion::OcclusionMatrix(_eye, _direction, _captureMatrix);
 
 		REX::W32::ID3D11Buffer* engine = nullptr;
 		a_context.VSGetConstantBuffers(kViewConstantSlot, 1, std::addressof(engine));
@@ -406,7 +412,7 @@ namespace Features
 
 		float rows[16]{};
 		for (int i = 0; i < 16; ++i) {
-			rows[i] = static_cast<float>(_matrix[i]);
+			rows[i] = static_cast<float>(_captureMatrix[i]);
 		}
 		WriteIdentity(_viewImage.data() + kRotationOffset);
 		std::memcpy(_viewImage.data() + kProjectionOffset, rows, sizeof(rows));
@@ -434,6 +440,36 @@ namespace Features
 		++_castersSeen;
 		_savedDepth = dsv;
 		a_context.VSGetConstantBuffers(kViewConstantSlot, 1, std::addressof(_savedView));
+		a_context.OMGetDepthStencilState(std::addressof(_savedDepthState), std::addressof(_savedStencilRef));
+
+		// Once: what the engine draws its casters with, for the record. The
+		// depth function decides whether a map cleared to one could take
+		// anything at all.
+		if (!_reportedStates) {
+			_reportedStates = true;
+			REX::W32::D3D11_DEPTH_STENCIL_DESC depthDesc{};
+			if (_savedDepthState != nullptr) {
+				_savedDepthState->GetDesc(std::addressof(depthDesc));
+			}
+			REX::W32::ID3D11RasterizerState* rasterizer = nullptr;
+			a_context.RSGetState(std::addressof(rasterizer));
+			REX::W32::D3D11_RASTERIZER_DESC rasterDesc{};
+			if (rasterizer != nullptr) {
+				rasterizer->GetDesc(std::addressof(rasterDesc));
+				rasterizer->Release();
+			}
+			REX::INFO(
+				"Skylighting: casters draw with depth enable {} func {} write {} stencil {}, cull {} bias {} slope {:.3f} clamp {:.3f} depth clip {}",
+				depthDesc.depthEnable,
+				static_cast<int>(depthDesc.depthFunc),
+				static_cast<int>(depthDesc.depthWriteMask),
+				depthDesc.stencilEnable,
+				static_cast<int>(rasterDesc.cullMode),
+				rasterDesc.depthBias,
+				rasterDesc.slopeScaledDepthBias,
+				rasterDesc.depthBiasClamp,
+				rasterDesc.depthClipEnable);
+		}
 		_savedViewportCount = kSavedRects;
 		a_context.RSGetViewports(std::addressof(_savedViewportCount), _savedViewports);
 		_savedScissorCount = kSavedRects;
@@ -456,6 +492,9 @@ namespace Features
 		const REX::W32::D3D11_RECT scissor{ 0, 0, static_cast<std::int32_t>(_occlusion.Size()), static_cast<std::int32_t>(_occlusion.Size()) };
 		auto* const dsv = _occlusion.DSV();
 		a_context.OMSetRenderTargets(0, nullptr, dsv);
+		// Our own depth test: less or equal against a map cleared to one,
+		// whatever direction the engine's shadow depth runs in.
+		a_context.OMSetDepthStencilState(_depthState, 0);
 		a_context.RSSetViewports(1, std::addressof(viewport));
 		a_context.RSSetScissorRects(1, std::addressof(scissor));
 		a_context.VSSetConstantBuffers(kViewConstantSlot, 1, std::addressof(_viewConstants));
@@ -466,6 +505,7 @@ namespace Features
 		++_castersRepeated;
 
 		a_context.VSSetConstantBuffers(kViewConstantSlot, 1, std::addressof(_savedView));
+		a_context.OMSetDepthStencilState(_savedDepthState, _savedStencilRef);
 		a_context.OMSetRenderTargets(kSavedTargets, _savedTargets, _savedDepth);
 		a_context.RSSetViewports(_savedViewportCount, _savedViewports);
 		a_context.RSSetScissorRects(_savedScissorCount, _savedScissors);
@@ -487,6 +527,10 @@ namespace Features
 		if (_savedView != nullptr) {
 			_savedView->Release();
 			_savedView = nullptr;
+		}
+		if (_savedDepthState != nullptr) {
+			_savedDepthState->Release();
+			_savedDepthState = nullptr;
 		}
 	}
 
@@ -764,6 +808,19 @@ namespace Features
 			target.renderTargetWriteMask = static_cast<std::uint8_t>(REX::W32::D3D11_COLOR_WRITE_ENABLE_ALL);
 			if (device->CreateBlendState(std::addressof(desc), std::addressof(_plain)) < 0) {
 				REX::ERROR("Skylighting: the plain blend state could not be created");
+				return false;
+			}
+		}
+		if (_depthState == nullptr) {
+			// Depth only, nearer wins, no stencil: the map is cleared to one
+			// and the comparison sampler reads it as less or equal.
+			REX::W32::D3D11_DEPTH_STENCIL_DESC desc{};
+			desc.depthEnable = true;
+			desc.depthWriteMask = REX::W32::D3D11_DEPTH_WRITE_MASK_ALL;
+			desc.depthFunc = REX::W32::D3D11_COMPARISON_LESS_EQUAL;
+			desc.stencilEnable = false;
+			if (device->CreateDepthStencilState(std::addressof(desc), std::addressof(_depthState)) < 0) {
+				REX::ERROR("Skylighting: the depth state could not be created");
 				return false;
 			}
 		}

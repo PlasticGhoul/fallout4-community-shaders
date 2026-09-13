@@ -33,6 +33,10 @@ struct PixelInput
 	float2 uv: TEXCOORD0;
 };
 
+// The HDR target is tone mapped after us; a value of one reads as white,
+// so the debug views are drawn at a quarter to stay legible.
+static const float kDebugExposure = 0.25;
+
 float3 PositionAt(float2 uv)
 {
 	const int2 pixel = int2(uv * Params.zw);
@@ -44,12 +48,12 @@ float4 main(PixelInput input) : SV_TARGET0
 {
 	const int debugView = (int)(CameraUp.w + 0.5);
 	if (debugView == 2)
-		return float4(OcclusionDepth.Sample(LinearClamp, input.uv).rrr, 1.0);
+		return float4(OcclusionDepth.Sample(LinearClamp, input.uv).rrr * kDebugExposure, 1.0);
 
 	const int2 pixel = int2(input.uv * Params.zw);
 	const float depth = DepthTexture.Load(int3(pixel, 0));
 	if (depth >= 0.9999)
-		return float4(1.0, 1.0, 1.0, 1.0);
+		return float4((debugView == 0 ? 1.0 : kDebugExposure).xxx, 1.0);
 
 	const float2 texel = 1.0 / Params.zw;
 	const float3 position = Reconstruct::Position(input.uv, depth, CameraRight.w, CameraForward.xyz, CameraRight.xyz, CameraUp.xyz);
@@ -61,10 +65,12 @@ float4 main(PixelInput input) : SV_TARGET0
 
 	if (debugView == 3) {
 		const float zenith = Skylighting::CosineLobeVisibility(sh, float3(0.0, 0.0, 1.0), fade);
-		return float4(zenith.xxx, 1.0);
+		return float4(zenith.xxx * kDebugExposure, 1.0);
 	}
 
 	const float visibility = Skylighting::CosineLobeVisibility(sh, normal, fade);
 	const float factor = lerp(minVisibility, 1.0, visibility);
+	if (debugView == 1)
+		return float4(factor.xxx * kDebugExposure, 1.0);
 	return float4(factor.xxx, 1.0);
 }

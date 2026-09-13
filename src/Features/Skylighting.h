@@ -71,6 +71,7 @@ namespace Features
 		REX::W32::ID3D11SamplerState* _linearClamp{ nullptr };
 		REX::W32::ID3D11BlendState* _multiply{ nullptr };
 		REX::W32::ID3D11BlendState* _plain{ nullptr };
+		REX::W32::ID3D11DepthStencilState* _depthState{ nullptr };
 		Render::PhaseDispatcher::Token _probePhase{ Render::PhaseDispatcher::kNoToken };
 		Render::PhaseDispatcher::Token _compositePhase{ Render::PhaseDispatcher::kNoToken };
 		Render::PhaseDispatcher::Token _debugPhase{ Render::PhaseDispatcher::kNoToken };
@@ -84,7 +85,13 @@ namespace Features
 		bool _repeating{ false };
 		bool _surrounding{ false };
 		bool _reportedSmallBuffer{ false };
+		bool _reportedStates{ false };
 		double _direction[3]{};
+		/// The projection for the casters, whose positions are absolute world
+		/// coordinates: the cube is centred on the eye.
+		double _captureMatrix[16]{};
+		/// The same projection for the grid, whose cells are relative to the
+		/// eye: the cube is centred on the origin.
 		double _matrix[16]{};
 		double _eye[3]{};
 
@@ -92,6 +99,8 @@ namespace Features
 		REX::W32::ID3D11RenderTargetView* _savedTargets[kSavedTargets]{};
 		REX::W32::ID3D11DepthStencilView* _savedDepth{ nullptr };
 		REX::W32::ID3D11Buffer* _savedView{ nullptr };
+		REX::W32::ID3D11DepthStencilState* _savedDepthState{ nullptr };
+		std::uint32_t _savedStencilRef{ 0 };
 		REX::W32::D3D11_VIEWPORT _savedViewports[kSavedRects]{};
 		std::uint32_t _savedViewportCount{ 0 };
 		REX::W32::D3D11_RECT _savedScissors[kSavedRects]{};
