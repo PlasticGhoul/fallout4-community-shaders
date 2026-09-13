@@ -22,21 +22,14 @@ namespace Menu
 		int corner{ 1 };
 	};
 
-	enum class Detail
-	{
-		/// While the overlay is closed: four numbers, no decoration, no input.
-		kCompact,
-
-		/// While the overlay is open: the whole table with its history.
-		kFull
-	};
-
 	/// The table and the frame history, drawn into whatever window is
 	/// current. The performance page of the overlay embeds it; the compact
 	/// display in the corner does not.
 	void DrawPerformanceTable(const PerformanceContext& a_context);
 
-	/// Returns whether anything was drawn, which is what tells the overlay
-	/// whether it has draw data worth handing to the backend.
-	bool DrawPerformancePanel(const PerformanceContext& a_context, Detail a_detail);
+	/// The small display in the corner while the overlay is closed: four
+	/// numbers, no decoration, no input. Returns whether anything was drawn,
+	/// which is what tells the overlay whether it has draw data worth handing
+	/// to the backend.
+	bool DrawPerformanceHud(const PerformanceContext& a_context);
 }

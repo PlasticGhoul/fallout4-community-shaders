@@ -190,7 +190,7 @@ namespace Menu
 		if (a_visible) {
 			closeWanted = DrawSettingsPanel(a_panel, a_performance);
 		} else if (a_performance.hud) {
-			drewHud = DrawPerformancePanel(a_performance, Detail::kCompact);
+			drewHud = DrawPerformanceHud(a_performance);
 		}
 
 		ImGui::PopFont();

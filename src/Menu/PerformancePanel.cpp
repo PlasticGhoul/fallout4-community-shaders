@@ -228,19 +228,9 @@ namespace Menu
 		DrawHistory(a_context);
 	}
 
-	bool DrawPerformancePanel(const PerformanceContext& a_context, Detail a_detail)
+	bool DrawPerformanceHud(const PerformanceContext& a_context)
 	{
-		if (a_detail == Detail::kCompact) {
-			RefreshIfDue(a_context);
-			return DrawCompact(a_context);
-		}
-
-		if (!ImGui::Begin(T("performance.title", "Performance"))) {
-			ImGui::End();
-			return false;
-		}
-		DrawPerformanceTable(a_context);
-		ImGui::End();
-		return true;
+		RefreshIfDue(a_context);
+		return DrawCompact(a_context);
 	}
 }
