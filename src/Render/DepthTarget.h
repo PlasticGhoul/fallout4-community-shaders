@@ -26,6 +26,7 @@ namespace Render
 
 		[[nodiscard]] REX::W32::ID3D11DepthStencilView* DSV() const noexcept { return _dsv; }
 		[[nodiscard]] REX::W32::ID3D11ShaderResourceView* SRV() const noexcept { return _srv; }
+		[[nodiscard]] REX::W32::ID3D11Texture2D* Texture() const noexcept { return _texture; }
 		[[nodiscard]] std::uint32_t Size() const noexcept { return _size; }
 		[[nodiscard]] bool Valid() const noexcept { return _texture != nullptr; }
 

@@ -24,8 +24,13 @@
 
 #include <REX/W32/DXGI.h>
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <format>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -111,6 +116,54 @@ namespace Features
 			const float identity[16]{ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
 			std::memcpy(a_at, identity, sizeof(identity));
 		}
+
+		/// Sixteen floats of a 64 byte block, three decimals each.
+		std::string Row(const std::uint8_t* a_data, std::size_t a_bytes)
+		{
+			std::string row;
+			for (std::size_t offset = 0; offset + sizeof(float) <= a_bytes; offset += sizeof(float)) {
+				float value = 0.0f;
+				std::memcpy(std::addressof(value), a_data + offset, sizeof(value));
+				row += std::format("{:10.3f}", value);
+			}
+			return row;
+		}
+
+		/// One channel of an R11G11B10_FLOAT texel: five exponent bits, six
+		/// (or five for blue) mantissa bits, no sign.
+		float SmallFloat(std::uint32_t a_bits, std::uint32_t a_mantissaBits) noexcept
+		{
+			const auto mantissa = a_bits & ((1u << a_mantissaBits) - 1u);
+			const auto exponent = (a_bits >> a_mantissaBits) & 0x1Fu;
+			const float scale = static_cast<float>(1u << a_mantissaBits);
+			if (exponent == 0) {
+				return std::ldexp(static_cast<float>(mantissa) / scale, -14);
+			}
+			if (exponent == 31) {
+				return mantissa == 0 ? 65504.0f : 0.0f;
+			}
+			return std::ldexp(1.0f + static_cast<float>(mantissa) / scale, static_cast<int>(exponent) - 15);
+		}
+
+		struct Range
+		{
+			float min{ 1e30f };
+			float max{ -1e30f };
+			float mean{ 0.0f };
+		};
+
+		Range RangeOf(std::span<const float> a_values) noexcept
+		{
+			Range range{};
+			double sum = 0.0;
+			for (const float value : a_values) {
+				range.min = std::min(range.min, value);
+				range.max = std::max(range.max, value);
+				sum += value;
+			}
+			range.mean = a_values.empty() ? 0.0f : static_cast<float>(sum / static_cast<double>(a_values.size()));
+			return range;
+		}
 	}
 
 	void Skylighting::Declare()
@@ -185,6 +238,12 @@ namespace Features
 		}
 		ResetGrid();
 
+		if (!_occlusionProbe.Create(REX::W32::DXGI_FORMAT_R32_TYPELESS, 4, "FO4CS_PROBE_SkyOcclusion") ||
+			!_ambientProbe.Create(REX::W32::DXGI_FORMAT_R8G8B8A8_UNORM, 4, "FO4CS_PROBE_Ambient") ||
+			!_sceneProbe.Create(REX::W32::DXGI_FORMAT_R11G11B10_FLOAT, 4, "FO4CS_PROBE_Scene")) {
+			return false;
+		}
+
 		_probePhase = Render::SubscribeFramePhase(
 			Render::Phase::kBeforeComposite, "Skylighting/Probes", [this] { UpdateProbes(); });
 		_compositePhase = Render::SubscribeFramePhase(
@@ -231,6 +290,9 @@ namespace Features
 
 		++_frames;
 		if (_frames % kLogInterval == 0) {
+			if (auto* const context = Render::GetContext(); context != nullptr) {
+				LogProbes(*context, Render::FrameCount());
+			}
 			REX::INFO(
 				"skylighting: {} caster(s) seen, {} repeated, {} dispatch(es), {} pass(es) in {} frames, direction [{:.3f} {:.3f} {:.3f}], cell [{} {} {}], margin [{} {} {}], composite technique 0x{:04X}",
 				_castersSeen,
@@ -283,6 +345,54 @@ namespace Features
 		_probes.Release();
 		_accumFrames.Release();
 		_constants.Release();
+		_occlusionProbe.Release();
+		_ambientProbe.Release();
+		_sceneProbe.Release();
+	}
+
+	void Skylighting::LogProbes(REX::W32::ID3D11DeviceContext& a_context, std::uint64_t a_frame) noexcept
+	{
+		std::array<std::uint8_t, Render::TexelProbe::kTexels * 4> bytes{};
+		std::array<float, Render::TexelProbe::kTexels> values{};
+
+		if (_occlusionProbe.Read(a_context, a_frame, bytes)) {
+			std::memcpy(values.data(), bytes.data(), bytes.size());
+			const auto range = RangeOf(values);
+			std::uint32_t drawn = 0;
+			for (const float value : values) {
+				drawn += value < 0.999f ? 1u : 0u;
+			}
+			REX::INFO("skylighting probe: occlusion depth min {:.4f} max {:.4f} mean {:.4f}, {} of 16 texels drawn", range.min, range.max, range.mean, drawn);
+		} else {
+			REX::INFO("skylighting probe: occlusion depth not readable this second");
+		}
+
+		if (_ambientProbe.Read(a_context, a_frame, bytes)) {
+			std::array<float, Render::TexelProbe::kTexels> red{};
+			std::array<float, Render::TexelProbe::kTexels> alpha{};
+			for (std::size_t i = 0; i < values.size(); ++i) {
+				red[i] = bytes[i * 4 + 0] / 255.0f;
+				values[i] = bytes[i * 4 + 1] / 255.0f;
+				alpha[i] = bytes[i * 4 + 3] / 255.0f;
+			}
+			const auto r = RangeOf(red);
+			const auto g = RangeOf(values);
+			const auto a = RangeOf(alpha);
+			REX::INFO("skylighting probe: RT_028 before the multiply r [{:.3f} {:.3f} mean {:.3f}] g [{:.3f} {:.3f}] a [{:.3f} {:.3f}]", r.min, r.max, r.mean, g.min, g.max, a.min, a.max);
+		}
+
+		if (_sceneProbe.Read(a_context, a_frame, bytes)) {
+			std::array<float, Render::TexelProbe::kTexels> green{};
+			for (std::size_t i = 0; i < values.size(); ++i) {
+				std::uint32_t packed = 0;
+				std::memcpy(std::addressof(packed), bytes.data() + i * 4, sizeof(packed));
+				values[i] = SmallFloat(packed & 0x7FFu, 6);
+				green[i] = SmallFloat((packed >> 11) & 0x7FFu, 6);
+			}
+			const auto r = RangeOf(values);
+			const auto g = RangeOf(green);
+			REX::INFO("skylighting probe: scene HDR r [{:.4f} {:.4f} mean {:.4f}] g [{:.4f} {:.4f} mean {:.4f}]", r.min, r.max, r.mean, g.min, g.max, g.mean);
+		}
 	}
 
 	bool Skylighting::Outdoors() const noexcept
@@ -368,6 +478,20 @@ namespace Features
 		}
 		static_cast<void>(Render::SetDebugName(reinterpret_cast<REX::W32::ID3D11DeviceChild*>(_viewConstants), "FO4CS_CB_SkyOcclusionView"));
 		REX::INFO("Skylighting: view constants are {} bytes in slot {}", desc.byteWidth, kViewConstantSlot);
+		// The whole buffer once, for the record: the probe of run 1 dumped
+		// its first 256 bytes, and whether the vertex shader positions with
+		// one of those four matrices or with something behind them is the
+		// open question of the second acceptance run.
+		for (std::size_t offset = 0; offset < _viewImage.size(); offset += 64) {
+			const auto left = std::min<std::size_t>(64, _viewImage.size() - offset);
+			float last[4]{};
+			const bool matrix = left == 64;
+			if (matrix) {
+				std::memcpy(last, _viewImage.data() + offset + 48, sizeof(last));
+			}
+			const bool ortho = matrix && std::abs(last[0]) < 1e-4f && std::abs(last[1]) < 1e-4f && std::abs(last[2]) < 1e-4f && std::abs(last[3] - 1.0f) < 1e-4f;
+			REX::INFO("  slot 12 +{:03}: {}{}", offset, Row(_viewImage.data() + offset, left), ortho ? "  <- 4x4, last row 0 0 0 1" : "");
+		}
 		return true;
 	}
 
@@ -624,6 +748,8 @@ namespace Features
 		context->CSSetUnorderedAccessViews(0, 2, noUAVs, nullptr);
 		context->CSSetShaderResources(0, 1, std::addressof(noSRV));
 		context->CSSetShader(nullptr, nullptr, 0);
+
+		_occlusionProbe.Capture(*context, reinterpret_cast<REX::W32::ID3D11Resource*>(_occlusion.Texture()), _occlusion.Size(), _occlusion.Size(), Render::FrameCount());
 	}
 
 	void Skylighting::DrawPass(
@@ -685,6 +811,11 @@ namespace Features
 		if (target == nullptr) {
 			return;
 		}
+		if (auto* const texture = Render::Targets::RenderTargetTexture(kAmbientOcclusionSlot); texture != nullptr) {
+			REX::W32::D3D11_TEXTURE2D_DESC desc{};
+			texture->GetDesc(std::addressof(desc));
+			_ambientProbe.Capture(*context, reinterpret_cast<REX::W32::ID3D11Resource*>(texture), desc.width, desc.height, Render::FrameCount());
+		}
 		const Render::PassScope scope{ "Skylighting/Shadow" };
 		DrawPass(*context, target, _multiply, 0.0f);
 	}
@@ -694,6 +825,11 @@ namespace Features
 		auto* const context = Render::GetContext();
 		if (context == nullptr || _shader == nullptr || !_gridValid || !Outdoors()) {
 			return;
+		}
+		if (auto* const texture = Render::Targets::RenderTargetTexture(Render::Targets::kSceneHDR); texture != nullptr) {
+			REX::W32::D3D11_TEXTURE2D_DESC desc{};
+			texture->GetDesc(std::addressof(desc));
+			_sceneProbe.Capture(*context, reinterpret_cast<REX::W32::ID3D11Resource*>(texture), desc.width, desc.height, Render::FrameCount());
 		}
 		const auto debugView = DebugViewIndex(Settings::GetString("Skylighting/debugView"));
 		if (debugView == 0.0f) {

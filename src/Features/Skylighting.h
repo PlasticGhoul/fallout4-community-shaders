@@ -6,6 +6,7 @@
 #include "Render/DrawObserver.h"
 #include "Render/PhaseDispatcher.h"
 #include "Render/Resources.h"
+#include "Render/TexelProbe.h"
 #include "Util/FileWatch.h"
 
 #include <REX/W32/D3D11.h>
@@ -59,6 +60,15 @@ namespace Features
 		[[nodiscard]] bool Outdoors() const noexcept;
 		void ResetGrid() noexcept;
 		void ReleaseSaved() noexcept;
+		void LogProbes(REX::W32::ID3D11DeviceContext& a_context, std::uint64_t a_frame) noexcept;
+
+		/// The numbers behind the pictures, once a second: sixteen texels of
+		/// the occlusion map, of RT_028 before the multiply, and of the HDR
+		/// scene. Tone mapping made every debug view white in the first
+		/// acceptance run; these say what the maps hold.
+		Render::TexelProbe _occlusionProbe;
+		Render::TexelProbe _ambientProbe;
+		Render::TexelProbe _sceneProbe;
 
 		Render::TechniqueFilter _casters{};
 		Render::DepthTarget _occlusion;
