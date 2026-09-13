@@ -6,7 +6,7 @@ SamplerState PointClamp : register(s0);
 
 cbuffer PerFrame : register(b1)
 {
-	float4 Params;  // x channel (0 rgb, 1 r, 2 g, 3 b, 4 a), yzw unused
+	float4 Params;  // x channel (0 rgb, 1 r, 2 g, 3 b, 4 a), y exposure, zw unused
 };
 
 struct PixelInput
@@ -17,7 +17,7 @@ struct PixelInput
 
 float4 main(PixelInput input) : SV_TARGET0
 {
-	const float4 value = Source.Sample(PointClamp, input.uv);
+	const float4 value = Source.Sample(PointClamp, input.uv) * Params.y;
 	const int channel = (int)(Params.x + 0.5);
 	if (channel == 1)
 		return float4(value.rrr, 1.0);

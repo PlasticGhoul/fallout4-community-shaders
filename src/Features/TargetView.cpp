@@ -84,6 +84,15 @@ namespace Features
 			std::vector<std::string>{ "rgb", "r", "g", "b", "a" })
 			.Label("feature.target_view.channel", "Channel")
 			.Help("feature.target_view.channel_help", "All three colour channels, or one of the four as grey.");
+		// The HDR target is tone mapped after us: a value of 1 reads as
+		// white, and a target that is mostly 1 - an occlusion map - washes
+		// out. The probe of F5 saw RT_028 as nothing but glare.
+		Settings::DeclareChoice(
+			"TargetView/exposure",
+			"1",
+			std::vector<std::string>{ "1", "0.25", "0.05" })
+			.Label("feature.target_view.exposure", "Exposure")
+			.Help("feature.target_view.exposure_help", "Scales the target before it is shown, for targets that sit near white.");
 	}
 
 	bool TargetView::Setup()
@@ -150,7 +159,10 @@ namespace Features
 			}
 			return;
 		}
-		const float params[4]{ ChannelOf(Settings::GetString("TargetView/channel")), 0.0f, 0.0f, 0.0f };
+		const auto exposureChoice = Settings::GetString("TargetView/exposure");
+		const float exposure = exposureChoice == "0.25" ? 0.25f : exposureChoice == "0.05" ? 0.05f :
+		                                                                                     1.0f;
+		const float params[4]{ ChannelOf(Settings::GetString("TargetView/channel")), exposure, 0.0f, 0.0f };
 
 		const Render::StateGuard guard;
 		const Render::PassScope scope{ "TargetView/Draw" };
