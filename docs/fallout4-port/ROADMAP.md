@@ -2,9 +2,8 @@
 
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
 Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay), F2 (Screen-Space Shadows),
-F3 (Exponential Height Fog) und F4 (Cloud Shadows) sind abgeschlossen**. Dazwischen geschoben ist
-**F4.5**, das Menü in zwei Spalten, weil das Overlay mit sieben Blöcken voll ist; danach **F5**,
-Skylighting. Stand 2026-09-13.
+F3 (Exponential Height Fog), F4 (Cloud Shadows) und das dazwischengeschobene F4.5 (Menü in zwei
+Spalten) sind abgeschlossen**. Als Nächstes steht **F5** an, Skylighting. Stand 2026-09-13.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -58,7 +57,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | F2   | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
 | F3   | **Exponential Height Fog** — erster Pass hinter der opaken Szene, dazu `FrameTrace` als Werkzeug für alle Anker        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
 | F4   | **Cloud Shadows** — die Wolken der Engine ein zweites Mal gezeichnet, in eine eigene Cubemap; dazu der Draw-Hook       | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
-| F4.5 | **Menü in zwei Spalten** — Seitenliste links mit den Schaltern, eine Seite je Eintrag rechts, Performance als Seite    | Jede Seite erreichbar, Schalten aus der Liste, Zahlen der Tafel unverändert | in Arbeit         |
+| F4.5 | **Menü in zwei Spalten** — Seitenliste links mit den Schaltern, eine Seite je Eintrag rechts, Performance als Seite    | Jede Seite erreichbar, Schalten aus der Liste, Zahlen der Tafel unverändert | **abgeschlossen** |
 | F5   | **Skylighting**                                                                                                        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
 | F6   | **Volumetric Lighting**                                                                                                | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
 | F7   | **Volumetric Shadows**                                                                                                 | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
@@ -1043,6 +1042,73 @@ Wiederholungen stehen in keiner Passzeile, nur in der Differenz zweier Schnappsc
 nach unten (Fläche `−Z`) wird nicht erfaßt. Die Wasserreflexion behält ihre Wolken, weil ihr Zug
 nicht wiederholt wird. Das Feature steht ab, sobald `Sky::mode` nicht `kFull` ist oder die Sonne
 unter dem Horizont steht — in Innenräumen also von selbst.
+
+## Aus Teilprojekt F4.5 bestätigt
+
+Ein Tag, 2026-09-13, zwischen F4 und F5 geschoben, weil das Overlay aus E2 mit sieben Blöcken
+untereinander voll war. Nach dem Vorbild der Skyrim-Vorlage (`FeatureListRenderer`), aber im
+kleinen Zuschnitt: zwei Spalten, links die Liste der Seiten, rechts die gewählte. Übernommen
+wurden die festen Einträge General und Performance, die Featureliste mit Schaltern und die Seite
+mit Titel und Beschreibung; **nicht** übernommen Kategorien, Suche, Home, Logo, Themes, Icons und
+die GPU-Fußzeile — Themes und Icons bleiben „nicht vor F", der Rest lohnt erst mit mehr Features.
+
+### Was entstanden ist
+
+-   **`Menu::PageList`** (`src/Menu/PageList.h`), ein reines Modell: feste Seiten vorn, eine je
+    Feature in Registrierungsreihenfolge, Auswahl per Name mit Rückfall auf General, und die eine
+    Regel des Panels — der Block `Performance` gehört zur Performance-Seite, der Block eines
+    Features zu dessen Seite, alles andere zu General. `MenuPagesTests` mit 24 Prüfungen; zwei
+    Mutationen fielen wie benannt, die dritte (Suche ab Index 0 statt 1 in `PageOf`) war
+    wirkungsgleich und ist so dokumentiert.
+-   **Das Panel** zeichnet Kopf und Fuß wie zuvor, dazwischen eine ImGui-Tabelle mit zwei
+    Spalten (`Resizable`, 1 : 3), jede ein für sich scrollender Kindbereich. Links `SeparatorText`
+    „General" mit zwei `Selectable`, „Features" mit einer Zeile je Feature: Checkbox des
+    Schalters ohne Label in einer `PushID` des Namens, der Name als `Selectable`, rechts gedimmt
+    der Zustand. Rechts die Seite: General (alle Blöcke, die `PageOf` dorthin legt), Performance
+    (Tabelle, Verlauf, die vier Einstellungen), Feature (Name in der Überschriftenschrift, Zustand,
+    der Hilfetext des Schalters als Beschreibung, dann die übrigen Einträge).
+-   **`DrawPerformanceTable`** als Baustein und **`DrawPerformanceHud`** für die Ecke; das eigene
+    Performance-Fenster bei offenem Overlay ist weg. `Overlay::Draw` reicht den
+    `PerformanceContext` an `DrawSettingsPanel` weiter.
+-   Vier neue i18n-Schlüssel, zwei entfallen (`menu.general`, `menu.features`); 86 Schlüssel.
+-   **Kein Feature hat eine Zeile geändert.** Die Beschreibung oben auf der Seite ist die `Help`
+    von `DeclareFeature`, die jedes Feature schon hatte.
+
+### Die Zahlen
+
+Zwei Schnappschüsse im Abnahmelauf, Overlay offen:
+
+```
+  pass                     gpu avg   cpu avg   gpu p95   gpu p99
+  Frame                      5.685     4.592     6.662     7.463
+    Overlay                  0.003     0.096     0.009     0.009
+```
+
+Das Overlay kostet 0,003 ms GPU und rund 0,1 ms CPU je Frame, solange es offen ist. Vor F4.5
+standen dort 0,050 ms CPU (Schnappschuß aus F4): die Liste wird je Frame aus Registry und Schema
+neu aufgebaut, `CollectEntries` läuft je Featurezeile einmal. Verdoppelt, und ein Zehntel einer
+Millisekunde, während das Menü offen ist — bei geschlossenem Overlay entfällt es ganz.
+
+### Die Abnahme
+
+Alle neun Schritte der Prüfliste vom Nutzer als bestanden gemeldet („Hat alles geklappt, sehr
+gut"): großes Fenster mittig, zwei Spalten, Trennlinie und Fenstergröße frei; jede Featureseite
+mit Titel, Zustand, Beschreibung und Reglern; Cloud Shadows aus der Liste aus- und angeschaltet
+(im Log `off` / `running`); Sprache gewechselt und zurück (im Log `switched to locale de`, die
+Datei steht wieder auf `en`), Schriftgröße, Taste neu belegt; Performance-Seite mit Tabelle und
+Einstellungen; HUD in der Ecke; Restore defaults; F11. Keine `[W]`- und keine `[E]`-Zeile.
+
+**Ungeprüft** blieb, was kein Schritt verlangte: das Verhalten der Kindbereiche in der Tabelle
+bei einer Fensterhöhe unter der Fußzeile (das Fenster läßt sich so klein ziehen), und die
+Seitenliste mit mehr Featurezeilen, als in die linke Spalte passen — beides erst mit F5 aufwärts
+relevant, und der Kindbereich scrollt dann.
+
+### Was F5 aufwärts davon hat
+
+Ein Feature bekommt seine Seite weiterhin allein durch `Declare`; die `Help` des Schalters ist
+jetzt die sichtbare Beschreibung und sollte den Effekt in ein, zwei Sätzen erklären. Kategorien
+wären eine Gruppierung der Featureseiten in `PageList`, eine Suche ein Filter darauf, eine
+Home-Seite eine weitere feste Seite — nichts davon braucht das Panel neu zu schneiden.
 
 ## Bekannte Lücken in CommonLibF4
 
