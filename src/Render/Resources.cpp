@@ -102,6 +102,98 @@ namespace Render
 		_height = 0;
 	}
 
+	Texture3D::~Texture3D()
+	{
+		Release();
+	}
+
+	bool Texture3D::Create(
+		std::uint32_t a_width,
+		std::uint32_t a_height,
+		std::uint32_t a_depth,
+		REX::W32::DXGI_FORMAT a_format,
+		std::string_view a_debugName) noexcept
+	{
+		Release();
+
+		auto* const device = GetDevice();
+		if (device == nullptr) {
+			REX::ERROR("volume {}: no device", a_debugName);
+			return false;
+		}
+		if (a_width == 0 || a_height == 0 || a_depth == 0) {
+			REX::ERROR("volume {}: {}x{}x{} has a zero dimension", a_debugName, a_width, a_height, a_depth);
+			return false;
+		}
+
+		REX::W32::D3D11_TEXTURE3D_DESC desc{};
+		desc.width = a_width;
+		desc.height = a_height;
+		desc.depth = a_depth;
+		desc.mipLevels = 1;
+		desc.format = a_format;
+		desc.usage = REX::W32::D3D11_USAGE_DEFAULT;
+		desc.bindFlags =
+			REX::W32::D3D11_BIND_SHADER_RESOURCE | REX::W32::D3D11_BIND_UNORDERED_ACCESS;
+		if (device->CreateTexture3D(std::addressof(desc), nullptr, std::addressof(_texture)) < 0) {
+			REX::ERROR("volume {}: CreateTexture3D failed", a_debugName);
+			return false;
+		}
+
+		REX::W32::D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+		srvDesc.format = a_format;
+		srvDesc.viewDimension = REX::W32::D3D_SRV_DIMENSION_TEXTURE3D;
+		srvDesc.texture3D.mostDetailedMip = 0;
+		srvDesc.texture3D.mipLevels = 1;
+		if (device->CreateShaderResourceView(
+				_texture, std::addressof(srvDesc), std::addressof(_srv)) < 0) {
+			REX::ERROR("volume {}: the shader resource view failed", a_debugName);
+			Release();
+			return false;
+		}
+
+		REX::W32::D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
+		uavDesc.format = a_format;
+		uavDesc.viewDimension = REX::W32::D3D11_UAV_DIMENSION_TEXTURE3D;
+		uavDesc.texture3D.mipSlice = 0;
+		uavDesc.texture3D.firstWSlice = 0;
+		uavDesc.texture3D.wSize = a_depth;
+		if (device->CreateUnorderedAccessView(
+				_texture, std::addressof(uavDesc), std::addressof(_uav)) < 0) {
+			REX::ERROR("volume {}: the unordered access view failed", a_debugName);
+			Release();
+			return false;
+		}
+
+		static_cast<void>(SetDebugName(
+			reinterpret_cast<REX::W32::ID3D11DeviceChild*>(_texture), a_debugName));
+		return true;
+	}
+
+	void Texture3D::Release() noexcept
+	{
+		if (_uav != nullptr) {
+			_uav->Release();
+			_uav = nullptr;
+		}
+		if (_srv != nullptr) {
+			_srv->Release();
+			_srv = nullptr;
+		}
+		if (_texture != nullptr) {
+			_texture->Release();
+			_texture = nullptr;
+		}
+	}
+
+	void Texture3D::ClearUint(REX::W32::ID3D11DeviceContext& a_context, std::uint32_t a_value) noexcept
+	{
+		if (_uav != nullptr) {
+			const std::uint32_t values[4]{ a_value, a_value, a_value, a_value };
+			a_context.ClearUnorderedAccessViewUint(_uav, values);
+		}
+	}
+
 	ConstantBuffer::~ConstantBuffer()
 	{
 		Release();

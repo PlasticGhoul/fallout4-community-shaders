@@ -51,6 +51,39 @@ namespace Render
 		std::uint32_t _height{ 0 };
 	};
 
+	/// A volume with a shader view and an unordered view over all of it. What
+	/// F5 keeps its probe grid in; one mip, default usage.
+	class Texture3D
+	{
+	public:
+		Texture3D() = default;
+		~Texture3D();
+
+		Texture3D(const Texture3D&) = delete;
+		Texture3D& operator=(const Texture3D&) = delete;
+
+		/// Replaces whatever was there.
+		[[nodiscard]] bool Create(
+			std::uint32_t a_width,
+			std::uint32_t a_height,
+			std::uint32_t a_depth,
+			REX::W32::DXGI_FORMAT a_format,
+			std::string_view a_debugName) noexcept;
+		/// Idempotent.
+		void Release() noexcept;
+		/// Every cell to the same four integers, through the UAV.
+		void ClearUint(REX::W32::ID3D11DeviceContext& a_context, std::uint32_t a_value) noexcept;
+
+		[[nodiscard]] REX::W32::ID3D11ShaderResourceView* SRV() const noexcept { return _srv; }
+		[[nodiscard]] REX::W32::ID3D11UnorderedAccessView* UAV() const noexcept { return _uav; }
+		[[nodiscard]] bool Valid() const noexcept { return _texture != nullptr; }
+
+	private:
+		REX::W32::ID3D11Texture3D* _texture{ nullptr };
+		REX::W32::ID3D11ShaderResourceView* _srv{ nullptr };
+		REX::W32::ID3D11UnorderedAccessView* _uav{ nullptr };
+	};
+
 	/// A dynamic constant buffer, written with MAP_WRITE_DISCARD.
 	///
 	/// Discard rather than a default buffer with UpdateSubresource, because the
