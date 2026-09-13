@@ -65,11 +65,12 @@ namespace Features
 		void ReleaseSaved() noexcept;
 		void LogProbes(REX::W32::ID3D11DeviceContext& a_context, std::uint64_t a_frame) noexcept;
 
-		/// The numbers behind the pictures, once a second: sixteen texels of
-		/// the occlusion map, of RT_028 before the multiply, and of the HDR
+		/// The numbers behind the pictures, once a second: the whole occlusion
+		/// map through a staging twin (a depth texture cannot be copied in
+		/// part), sixteen texels of RT_028 before the multiply and of the HDR
 		/// scene. Tone mapping made every debug view white in the first
 		/// acceptance run; these say what the maps hold.
-		Render::TexelProbe _occlusionProbe;
+		REX::W32::ID3D11Texture2D* _depthSurvey{ nullptr };
 		Render::TexelProbe _ambientProbe;
 		Render::TexelProbe _sceneProbe;
 

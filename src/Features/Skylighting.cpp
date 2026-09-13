@@ -174,6 +174,110 @@ namespace Features
 			return bytes;
 		}
 
+		/// A staging twin of the occlusion map. A depth texture can only be
+		/// copied whole - D3D11 drops a boxed CopySubresourceRegion from a
+		/// depth-stencil resource without a word, which is how two runs of
+		/// the sixteen texel probe read the staging texture's uninitialised
+		/// memory and called the map empty.
+		REX::W32::ID3D11Texture2D* CreateDepthSurvey(std::uint32_t a_size) noexcept
+		{
+			auto* const device = Render::GetDevice();
+			if (device == nullptr) {
+				return nullptr;
+			}
+			REX::W32::D3D11_TEXTURE2D_DESC desc{};
+			desc.width = a_size;
+			desc.height = a_size;
+			desc.mipLevels = 1;
+			desc.arraySize = 1;
+			desc.format = REX::W32::DXGI_FORMAT_R32_TYPELESS;
+			desc.sampleDesc.count = 1;
+			desc.usage = REX::W32::D3D11_USAGE_STAGING;
+			desc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_READ;
+			REX::W32::ID3D11Texture2D* staging = nullptr;
+			if (device->CreateTexture2D(std::addressof(desc), nullptr, std::addressof(staging)) < 0) {
+				REX::ERROR("Skylighting: the depth survey staging texture could not be created");
+				return nullptr;
+			}
+			static_cast<void>(Render::SetDebugName(reinterpret_cast<REX::W32::ID3D11DeviceChild*>(staging), "FO4CS_SURVEY_SkyOcclusion"));
+			return staging;
+		}
+
+		/// The whole occlusion map through the staging twin and a blocking
+		/// map, once a second: how much of it is still the clear value, how
+		/// much the pancaking clamp, the range in between, and an eight by
+		/// eight picture of the drawn share and the mean depth per cell.
+		/// Diagnostic; a stall of a few milliseconds on the render thread.
+		void SurveyDepth(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Texture2D* a_staging, REX::W32::ID3D11Texture2D* a_map, std::uint32_t a_size)
+		{
+			constexpr std::uint32_t kCells = 8;
+			a_context.CopyResource(a_staging, a_map);
+			REX::W32::D3D11_MAPPED_SUBRESOURCE mapped{};
+			if (a_context.Map(a_staging, 0, REX::W32::D3D11_MAP_READ, 0, std::addressof(mapped)) < 0) {
+				REX::INFO("skylighting depth map: not readable this second");
+				return;
+			}
+			std::uint64_t cleared = 0;
+			std::uint64_t clamped = 0;
+			std::uint64_t between = 0;
+			float min = 1.0f;
+			float max = 0.0f;
+			double sum = 0.0;
+			std::uint64_t drawn[kCells][kCells]{};
+			double depth[kCells][kCells]{};
+			const auto* const base = static_cast<const std::uint8_t*>(mapped.data);
+			for (std::uint32_t y = 0; y < a_size; ++y) {
+				const auto* const row = reinterpret_cast<const float*>(base + static_cast<std::size_t>(y) * mapped.rowPitch);
+				const auto cellY = y * kCells / a_size;
+				for (std::uint32_t x = 0; x < a_size; ++x) {
+					const float value = row[x];
+					if (value >= 1.0f) {
+						++cleared;
+						continue;
+					}
+					const auto cellX = x * kCells / a_size;
+					++drawn[cellY][cellX];
+					depth[cellY][cellX] += value;
+					if (value <= 0.0f) {
+						++clamped;
+					} else {
+						++between;
+						min = std::min(min, value);
+						max = std::max(max, value);
+						sum += value;
+					}
+				}
+			}
+			a_context.Unmap(a_staging, 0);
+
+			const double total = static_cast<double>(a_size) * a_size;
+			REX::INFO(
+				"skylighting depth map: {:.1f}% clear, {:.1f}% clamped to 0, {:.1f}% between [{:.4f} {:.4f} mean {:.4f}]",
+				100.0 * static_cast<double>(cleared) / total,
+				100.0 * static_cast<double>(clamped) / total,
+				100.0 * static_cast<double>(between) / total,
+				between == 0 ? 0.0f : min,
+				between == 0 ? 0.0f : max,
+				between == 0 ? 0.0 : sum / static_cast<double>(between));
+			// Per cell: drawn share in percent, then the mean depth of what
+			// was drawn; "--" where nothing was.
+			const double perCell = total / (kCells * kCells);
+			for (std::uint32_t cy = 0; cy < kCells; ++cy) {
+				std::string line;
+				for (std::uint32_t cx = 0; cx < kCells; ++cx) {
+					if (drawn[cy][cx] == 0) {
+						line += "    --      ";
+					} else {
+						line += std::format(
+							" {:3.0f}%/{:.2f} ",
+							100.0 * static_cast<double>(drawn[cy][cx]) / perCell,
+							depth[cy][cx] / static_cast<double>(drawn[cy][cx]));
+					}
+				}
+				REX::INFO("  depth map row {}: {}", cy, line);
+			}
+		}
+
 		float FloatAt(const std::vector<std::uint8_t>& a_bytes, std::size_t a_offset) noexcept
 		{
 			float value = 0.0f;
@@ -309,7 +413,8 @@ namespace Features
 		}
 		ResetGrid();
 
-		if (!_occlusionProbe.Create(REX::W32::DXGI_FORMAT_R32_TYPELESS, 4, "FO4CS_PROBE_SkyOcclusion") ||
+		_depthSurvey = CreateDepthSurvey(SkyOcclusion::kOcclusionMapSize);
+		if (_depthSurvey == nullptr ||
 			!_ambientProbe.Create(REX::W32::DXGI_FORMAT_R8G8B8A8_UNORM, 4, "FO4CS_PROBE_Ambient") ||
 			!_sceneProbe.Create(REX::W32::DXGI_FORMAT_R11G11B10_FLOAT, 4, "FO4CS_PROBE_Scene")) {
 			return false;
@@ -420,7 +525,10 @@ namespace Features
 		_probes.Release();
 		_accumFrames.Release();
 		_constants.Release();
-		_occlusionProbe.Release();
+		if (_depthSurvey != nullptr) {
+			_depthSurvey->Release();
+			_depthSurvey = nullptr;
+		}
 		_ambientProbe.Release();
 		_sceneProbe.Release();
 	}
@@ -430,33 +538,8 @@ namespace Features
 		std::array<std::uint8_t, Render::TexelProbe::kTexels * 4> bytes{};
 		std::array<float, Render::TexelProbe::kTexels> values{};
 
-		if (_occlusionProbe.Read(a_context, a_frame, bytes)) {
-			std::memcpy(values.data(), bytes.data(), bytes.size());
-			// Three bins: the clear value, the pancaking clamp, and what lies
-			// between - only the last is a depth the grid can use.
-			std::uint32_t cleared = 0;
-			std::uint32_t clamped = 0;
-			std::vector<float> between;
-			for (const float value : values) {
-				if (value >= 1.0f) {
-					++cleared;
-				} else if (value <= 0.0f) {
-					++clamped;
-				} else {
-					between.push_back(value);
-				}
-			}
-			const auto range = RangeOf(between);
-			REX::INFO(
-				"skylighting probe: occlusion depth {} texel(s) at 1 (clear), {} at 0 (clamped), {} between [{:.6f} {:.6f} mean {:.6f}]",
-				cleared,
-				clamped,
-				between.size(),
-				between.empty() ? 0.0f : range.min,
-				between.empty() ? 0.0f : range.max,
-				range.mean);
-		} else {
-			REX::INFO("skylighting probe: occlusion depth not readable this second");
+		if (_occlusion.Valid() && _depthSurvey != nullptr) {
+			SurveyDepth(a_context, _depthSurvey, _occlusion.Texture(), _occlusion.Size());
 		}
 
 		if (_ambientProbe.Read(a_context, a_frame, bytes)) {
@@ -863,8 +946,6 @@ namespace Features
 		context->CSSetUnorderedAccessViews(0, 2, noUAVs, nullptr);
 		context->CSSetShaderResources(0, 1, std::addressof(noSRV));
 		context->CSSetShader(nullptr, nullptr, 0);
-
-		_occlusionProbe.Capture(*context, reinterpret_cast<REX::W32::ID3D11Resource*>(_occlusion.Texture()), _occlusion.Size(), _occlusion.Size(), Render::FrameCount());
 	}
 
 	void Skylighting::DrawPass(

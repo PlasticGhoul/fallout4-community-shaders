@@ -16,8 +16,13 @@ namespace Render
 	///
 	/// Capture copies the texels along the texture's diagonal into a staging
 	/// texture of a ring; Read maps the copy made kRing - 1 frames earlier
-	/// with DO_NOT_WAIT, the lesson of F4. Formats have to match the source
-	/// (a typeless depth is copied as typeless).
+	/// with DO_NOT_WAIT, the lesson of F4. Formats have to match the source.
+	///
+	/// Colour textures only. D3D11 copies a depth-stencil resource whole or
+	/// not at all: a boxed CopySubresourceRegion from one is dropped without
+	/// an error, and Read then hands back the staging texture's uninitialised
+	/// memory - which F5 took for an empty map, twice. A depth map is
+	/// surveyed through a full-size staging copy instead.
 	class TexelProbe
 	{
 	public:
