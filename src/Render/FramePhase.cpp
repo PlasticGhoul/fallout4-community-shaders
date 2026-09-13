@@ -30,6 +30,7 @@ namespace Render
 		constexpr std::size_t kSkyMarker = kPhaseCount;
 		constexpr std::size_t kAnchorCount = kPhaseCount + 1;
 		constexpr std::size_t kNoGate = static_cast<std::size_t>(-1);
+		constexpr std::uint32_t kAnyTechnique = 0xFFFFFFFFu;
 
 		struct Anchor
 		{
@@ -39,6 +40,9 @@ namespace Render
 			/// Another anchor whose dispatcher has to have seen the frame
 			/// before this one fires; kNoGate for none.
 			std::size_t after{ kNoGate };
+			/// kAnyTechnique fires on the first call of the frame; a technique
+			/// id fires on the first call of the frame with that technique.
+			std::uint32_t technique{ kAnyTechnique };
 
 			VTablePatch patch;
 			void* original{ nullptr };
@@ -53,9 +57,17 @@ namespace Render
 		// water surfaces follow, then the effects. The gate on the sky came
 		// from a count over every frame the same day; see Phase::kAfterOpaque.
 		// A different measurement changes these entries and nothing else.
+		//
+		// Two anchors sit on BSDFCompositeShader: the class's first call of
+		// the frame (kBeforeComposite) and its call with technique 0x0040
+		// (kComposite). The second patch of the same slot finds the first
+		// thunk as its original and chains to it, so a call runs through
+		// both; the table check in InstallOne looks at the table, not the
+		// entry, and stays valid.
 		std::array<Anchor, kAnchorCount> g_anchors{ {
 			{ "BSDFCompositeShader" },
 			{ "BSEffectShader", kSkyMarker },
+			{ "BSDFCompositeShader", kNoGate, 0x0040u },
 			{ "BSSkyShader" },
 		} };
 
@@ -64,6 +76,10 @@ namespace Render
 		{
 			auto& anchor = g_anchors[N];
 			const auto frame = FrameCount();
+
+			if (anchor.technique != kAnyTechnique && a_pass != anchor.technique) {
+				return reinterpret_cast<SetupTechniqueFn>(anchor.original)(a_self, a_pass);
+			}
 
 			if (anchor.after == kNoGate || g_anchors[anchor.after].dispatcher.DispatchedOn(frame)) {
 				// Written before the dispatch, because a subscriber reads it

@@ -36,6 +36,17 @@ namespace Render
 		/// and because it runs in every outdoor frame.
 		kAfterOpaque,
 
+		/// BSDFCompositeShader setting up technique 0x0040, BSDFComposite -
+		/// the draw that reads the whole g-buffer, both light targets, RT_028
+		/// and RT_009 and writes the finished HDR scene. Fires right before
+		/// that call goes to the engine, once a frame, whatever came before
+		/// it in the same class. Where a feature changes an input of the
+		/// composite - F5 multiplies into RT_028 here. kBeforeComposite is
+		/// the first call of the class, BSDFCompositeBase, and whether the
+		/// engine's SSAO passes run between the two is not measured; this
+		/// phase does not have to know.
+		kComposite,
+
 		kCount
 	};
 
