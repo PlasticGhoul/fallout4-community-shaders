@@ -192,6 +192,15 @@ It names no feature: a schema block with no feature of that name is a general se
 feature is that feature. A feature therefore gets a surface by declaring settings, and nothing
 else — no ImGui in `src/Features/`, ever.
 
+The overlay is two columns since F4.5: a list of pages on the left — General, Performance, then
+one row per feature with its switch and state — and the open page on the right. Which pages exist
+and which is open is `Menu::PageList` (`src/Menu/PageList.h`), a pure model with a host test; the
+panel only draws it. A block belongs to the page of the same name, `Performance` to the
+performance page, everything else to General. The description at the top of a feature's page is
+the `Help` of its `DeclareFeature`, so write that help as a sentence about the effect.
+`DrawPerformanceTable` is the table as a building block; the compact display in the corner is
+`DrawPerformanceHud`.
+
 Six things to know before touching it:
 
 -   **The overlay owns the mouse position, and the ImGui backend must not contribute one.**
