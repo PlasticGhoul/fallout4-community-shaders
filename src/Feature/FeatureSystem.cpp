@@ -8,7 +8,6 @@
 #include "Features/ImagespaceTint.h"
 #include "Features/ScreenSpaceShadows.h"
 #include "Features/ShaderCensus.h"
-#include "Features/ShadowProbe.h"
 #include "Features/TargetView.h"
 #include "Render/Profiler.h"
 #include "Settings/Settings.h"
@@ -34,10 +33,6 @@ namespace Features
 			// A tool like the trace: draws one engine target over the picture
 			// from kAfterOpaque and owns nothing of the engine's.
 			TheRegistry().Register(std::make_unique<TargetView>());
-
-			// The probe for F5. Watches the utility shader's draws; removed
-			// after run 1 with a revert of this commit.
-			TheRegistry().Register(std::make_unique<ShadowProbe>());
 
 			// Patches thirteen engine vtables, so it belongs ahead of the one
 			// that writes into engine memory: teardown runs in reverse, and the

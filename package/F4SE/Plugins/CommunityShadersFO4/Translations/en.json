@@ -54,8 +54,6 @@
     "feature.shader_census.name": "Shader Census",
     "feature.shader_census.names": "Ask the engine for technique names",
     "feature.shader_census.names_help": "Calls the engine's own GetTechniqueName for every technique found, which is a call into the game rather than a read of it. Turn it off if the census does not survive a run.",
-    "feature.shadow_probe.help": "Logs what the sun's shadow casters bind, once a second. A probe for F5; removed after its run.",
-    "feature.shadow_probe.name": "Shadow Probe",
     "feature.target_view.channel": "Channel",
     "feature.target_view.channel_help": "All three colour channels, or one of the four as grey.",
     "feature.target_view.help": "Lays one of the engine's render targets over the picture. A tool for finding out what a pass leaves behind; off unless you are looking.",
