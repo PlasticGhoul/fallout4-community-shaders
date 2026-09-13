@@ -208,23 +208,13 @@ namespace Menu
 		}
 	}
 
-	bool DrawPerformancePanel(const PerformanceContext& a_context, Detail a_detail)
+	void DrawPerformanceTable(const PerformanceContext& a_context)
 	{
 		RefreshIfDue(a_context);
 
-		if (a_detail == Detail::kCompact) {
-			return DrawCompact(a_context);
-		}
-
-		if (!ImGui::Begin(T("performance.title", "Performance"))) {
-			ImGui::End();
-			return false;
-		}
-
 		if (!a_context.measuring) {
 			ImGui::TextUnformatted(T("performance.paused", "Measurement is off"));
-			ImGui::End();
-			return true;
+			return;
 		}
 
 		// Said here rather than in a help text nobody opens: the frame figure is
@@ -236,7 +226,20 @@ namespace Menu
 
 		DrawTable();
 		DrawHistory(a_context);
+	}
 
+	bool DrawPerformancePanel(const PerformanceContext& a_context, Detail a_detail)
+	{
+		if (a_detail == Detail::kCompact) {
+			RefreshIfDue(a_context);
+			return DrawCompact(a_context);
+		}
+
+		if (!ImGui::Begin(T("performance.title", "Performance"))) {
+			ImGui::End();
+			return false;
+		}
+		DrawPerformanceTable(a_context);
 		ImGui::End();
 		return true;
 	}
