@@ -52,6 +52,22 @@ namespace Render::Targets
 		return target != nullptr ? target->texture : nullptr;
 	}
 
+	REX::W32::ID3D11UnorderedAccessView* RenderTargetUAV(std::size_t a_slot) noexcept
+	{
+		const auto* const target = ColourSlot(a_slot);
+		return target != nullptr ? target->uaView : nullptr;
+	}
+
+	REX::W32::ID3D11Texture2D* DepthTexture(std::size_t a_slot) noexcept
+	{
+		const auto* const data = RE::BSGraphics::GetRendererData();
+		if (data == nullptr || a_slot >= std::size(data->depthStencilTargets)) {
+			return nullptr;
+		}
+
+		return data->depthStencilTargets[a_slot].texture;
+	}
+
 	REX::W32::ID3D11ShaderResourceView* DepthSRV(std::size_t a_slot) noexcept
 	{
 		const auto* const data = RE::BSGraphics::GetRendererData();

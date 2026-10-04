@@ -51,6 +51,11 @@ namespace Render::Targets
 	[[nodiscard]] REX::W32::ID3D11RenderTargetView* RenderTargetView(std::size_t a_slot) noexcept;
 	[[nodiscard]] REX::W32::ID3D11ShaderResourceView* RenderTargetSRV(std::size_t a_slot) noexcept;
 	[[nodiscard]] REX::W32::ID3D11Texture2D* RenderTargetTexture(std::size_t a_slot) noexcept;
+	/// Null for targets the engine made without unordered access.
+	[[nodiscard]] REX::W32::ID3D11UnorderedAccessView* RenderTargetUAV(std::size_t a_slot) noexcept;
+
+	/// The depth texture itself, for APIs that take a resource (NGX).
+	[[nodiscard]] REX::W32::ID3D11Texture2D* DepthTexture(std::size_t a_slot) noexcept;
 
 	/// The depth as a shader resource: DepthStencilTarget::srViewDepth, which
 	/// hands R24G8_TYPELESS over as R24_UNORM_X8_TYPELESS.

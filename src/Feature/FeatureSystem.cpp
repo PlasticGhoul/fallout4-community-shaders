@@ -2,6 +2,7 @@
 
 #include "Feature/FeatureRegistry.h"
 #include "Features/CloudShadows.h"
+#include "Features/DLSS.h"
 #include "Features/ExponentialHeightFog.h"
 #include "Features/FrameCounter.h"
 #include "Features/FrameTrace.h"
@@ -39,6 +40,12 @@ namespace Features
 			// that writes into engine memory: teardown runs in reverse, and the
 			// entries should go back after the shader pointer does.
 			TheRegistry().Register(std::make_unique<ShaderCensus>());
+
+			// Sets the resolution the effects after it render at, and writes
+			// into engine memory (the TAA switch, FXAA, the jitter). First of
+			// the effects so that it starts first and stops last: they read
+			// Render::Resolution, which it publishes.
+			TheRegistry().Register(std::make_unique<DLSS>());
 
 			// Watches the shadow casters through the draw hook and multiplies
 			// into RT_028 right before the composite. Ahead of the cloud
