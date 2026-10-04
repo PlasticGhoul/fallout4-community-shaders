@@ -7,6 +7,7 @@
 #include "Upscale/EngineHooks.h"
 #include "Upscale/Ngx.h"
 #include "Upscale/Passes.h"
+#include "Upscale/ProxyTargets.h"
 #include "Upscale/UpscaleMath.h"
 
 #include <cstdint>
@@ -34,15 +35,34 @@ namespace Features
 		void AfterTemporalData() noexcept override;
 		[[nodiscard]] bool AllowTemporalAA() noexcept override;
 		void AfterEffectRange() noexcept override;
+		void BeforeDynamicViewportDefault() noexcept override;
+		void AroundWorldPass(bool a_before) noexcept override;
+		void AroundComposite(bool a_before) noexcept override;
+		void AroundLensFlare(bool a_before) noexcept override;
+		void AfterReflectionsSetup() noexcept override;
 
 	private:
 		[[nodiscard]] bool MenuForcesNative() const noexcept;
 		[[nodiscard]] bool TakeCameraCut() noexcept;
 		void LogMotionProbe() noexcept;
+		void SetRatios(float a_x, float a_y) noexcept;
+		/// The depth at display size in place of DS_002's view, for the
+		/// passes that read the whole picture's depth after the composite
+		/// stand-ins or after DLSS (doodlum's OverrideDepth / ResetDepth).
+		void OverrideDepth() noexcept;
+		void ResetDepth() noexcept;
 
 		Upscale::Ngx _ngx;
 		Upscale::Passes _passes;
+		Upscale::ProxyTargets _proxies;
 		Render::TexelProbe _motionProbe;
+
+		bool _upscaling{ false };
+		float _ratioX{ 1.0f };
+		float _ratioY{ 1.0f };
+		REX::W32::ID3D11ShaderResourceView* _savedDepthView{ nullptr };
+		bool _depthOverridden{ false };
+		std::uint64_t _fullDepthFrame{ UINT64_MAX };
 
 		Upscale::Mode _mode{ Upscale::Mode::kDLAA };
 		Upscale::Preset _preset{ Upscale::Preset::kDefault };

@@ -35,6 +35,11 @@ namespace Features
 		/// vectors, written by the g-buffer prepass and the sky.
 		constexpr std::size_t kMotionVectors = 29;
 
+		/// FO4_RT_039, R32_FLOAT with twelve mips: the linear depth chain the
+		/// engine's later effects read; FullDepth rewrites mip 0 at display
+		/// size (doodlum's kMainDepthMips).
+		constexpr std::size_t kLinearDepth = 39;
+
 		/// RT_029 holds uv units (doodlum hands Streamline a scale of 1, and
 		/// Streamline wants [-1, 1] uv); NGX wants render pixels, so the scale
 		/// is the render size times these. Settled by the first run on
@@ -222,9 +227,30 @@ namespace Features
 		}
 		_wasNative = native;
 
-		_mode = Upscale::Mode::kDLAA;
-		_render = display;
+		const auto chosen = Upscale::ModeFromName(Settings::GetString("DLSS/mode")).value_or(Upscale::Mode::kQuality);
+		// ENB does not survive the dynamic resolution; with it, DLAA only.
+		_mode = _enb ? Upscale::Mode::kDLAA : chosen;
+		// Stand-ins and samplers follow the chosen mode, not the menu: the
+		// Pip-Boy renders natively for a moment, and rebuilding twelve
+		// targets on each opening would be a hitch each time (doodlum keeps
+		// them the same way).
+		const bool modeUpscales = _mode != Upscale::Mode::kDLAA;
 		_display = display;
+		auto render = modeUpscales ? _ngx.OptimalRenderSize(display, _mode).value_or(Upscale::RenderSize(display, _mode)) : display;
+		const auto ratioX = static_cast<float>(render.width) / static_cast<float>(display.width);
+		const auto ratioY = static_cast<float>(render.height) / static_cast<float>(display.height);
+		if (!_proxies.Update(ratioX, ratioY) ||
+			!_proxies.UpdateSamplers(modeUpscales ? Upscale::MipBias(render, display) : 0.0f)) {
+			render = display;
+		}
+		const bool wasUpscaling = _upscaling;
+		_upscaling = _active && modeUpscales && render != display;
+		_render = _upscaling ? render : display;
+		if (_upscaling != wasUpscaling) {
+			_reset = true;
+		}
+		Upscale::Hooks::SkipDynamicResolutionUpdate(_upscaling);
+		SetRatios(_upscaling ? ratioX : 1.0f, _upscaling ? ratioY : 1.0f);
 		Render::Resolution::Publish(_display, _render);
 		if (!_active) {
 			state->offsetX = 0.0f;
@@ -247,6 +273,120 @@ namespace Features
 		return !_active;
 	}
 
+	void DLSS::SetRatios(float a_x, float a_y) noexcept
+	{
+		auto* const manager = RE::BSGraphics::RenderTargetManager::GetSingleton();
+		if (manager == nullptr) {
+			return;
+		}
+		// Only the ratios, as doodlum sets them; whether the engine counts
+		// its dynamic resolution as active stays its own business.
+		manager->SetDynamicResolutionState(a_x, a_y, manager->IsDynamicResolutionCurrentlyActivated());
+		_ratioX = a_x;
+		_ratioY = a_y;
+	}
+
+	void DLSS::OverrideDepth() noexcept
+	{
+		auto* const data = RE::BSGraphics::GetRendererData();
+		auto* const context = Render::GetContext();
+		if (_depthOverridden || data == nullptr || context == nullptr) {
+			return;
+		}
+		auto& depth = data->depthStencilTargets[Render::Targets::kSceneDepth];
+		// Once a frame, at the first override: the composite comes before
+		// the effects, and both see the same depth.
+		const auto frame = Render::FrameCount();
+		if (_fullDepthFrame != frame) {
+			_fullDepthFrame = frame;
+			static_cast<void>(_passes.EnsureTextures(_render, _display));
+			_passes.FullDepth(*context, depth.srViewDepth, Render::Targets::RenderTargetUAV(kLinearDepth), _render, _display);
+		}
+		if (_passes.FullDepthSRV() == nullptr) {
+			return;
+		}
+		_savedDepthView = depth.srViewDepth;
+		depth.srViewDepth = _passes.FullDepthSRV();
+		_depthOverridden = true;
+		Render::Resolution::SetDepthFull(true);
+	}
+
+	void DLSS::ResetDepth() noexcept
+	{
+		auto* const data = RE::BSGraphics::GetRendererData();
+		if (!_depthOverridden || data == nullptr) {
+			return;
+		}
+		data->depthStencilTargets[Render::Targets::kSceneDepth].srViewDepth = _savedDepthView;
+		_savedDepthView = nullptr;
+		_depthOverridden = false;
+		Render::Resolution::SetDepthFull(false);
+	}
+
+	void DLSS::BeforeDynamicViewportDefault() noexcept
+	{
+		if (_upscaling) {
+			ResetDepth();
+		}
+	}
+
+	void DLSS::AroundWorldPass(bool a_before) noexcept
+	{
+		if (!_upscaling) {
+			return;
+		}
+		if (a_before) {
+			_proxies.BiasSamplers();
+		} else {
+			_proxies.RestoreSamplers();
+		}
+	}
+
+	void DLSS::AroundComposite(bool a_before) noexcept
+	{
+		auto* const context = Render::GetContext();
+		if (!_upscaling || context == nullptr) {
+			return;
+		}
+		// doodlum's DrawWorld_DeferredComposite_RenderPassImmediately: the
+		// composite reads stand-ins of the render size at a ratio of one.
+		if (a_before) {
+			_proxies.Swap(*context);
+			OverrideDepth();
+			const auto x = _ratioX;
+			const auto y = _ratioY;
+			SetRatios(1.0f, 1.0f);
+			_ratioX = x;
+			_ratioY = y;
+			Upscale::Hooks::SetDynamicResolutionViewport(false);
+		} else {
+			ResetDepth();
+			_proxies.Restore(*context);
+			Upscale::Hooks::SetDynamicResolutionViewport(true);
+			SetRatios(_ratioX, _ratioY);
+		}
+	}
+
+	void DLSS::AroundLensFlare(bool a_before) noexcept
+	{
+		if (!_upscaling) {
+			return;
+		}
+		if (a_before) {
+			OverrideDepth();
+		} else {
+			ResetDepth();
+		}
+	}
+
+	void DLSS::AfterReflectionsSetup() noexcept
+	{
+		auto* const context = Render::GetContext();
+		if (_upscaling && context != nullptr && _passes.Reflections() != nullptr) {
+			context->PSSetShader(_passes.Reflections(), nullptr, 0);
+		}
+	}
+
 	void DLSS::AfterEffectRange() noexcept
 	{
 		if (!_active) {
@@ -264,6 +404,11 @@ namespace Features
 		}
 
 		const Render::PassScope scope{ "DLSS/Evaluate" };
+		if (_upscaling) {
+			// From here on the picture is at display size (doodlum's
+			// DrawWorld_Imagespace_RenderEffectRange).
+			Upscale::Hooks::SetDynamicResolutionViewport(false);
+		}
 		context->OMSetRenderTargets(0, nullptr, nullptr);
 		if (!_passes.EnsureTextures(_render, _display) || !_ngx.Ensure(*context, _render, _display, _mode, _preset)) {
 			++_failedEvaluations;
@@ -301,6 +446,9 @@ namespace Features
 		const auto sharpness = static_cast<float>(Settings::GetDouble("DLSS/sharpness"));
 		if (sharpness > 0.0f) {
 			_passes.Sharpen(*context, reinterpret_cast<REX::W32::ID3D11Resource*>(scene), sceneUAV, sharpness, _display);
+		}
+		if (_upscaling) {
+			OverrideDepth();
 		}
 	}
 
@@ -373,6 +521,11 @@ namespace Features
 			_engineSwitched = false;
 		}
 		_active = false;
+		ResetDepth();
+		Upscale::Hooks::SkipDynamicResolutionUpdate(false);
+		SetRatios(1.0f, 1.0f);
+		_upscaling = false;
+		_proxies.Release(Render::GetContext());
 		Render::Resolution::Withdraw();
 		_passes.Release();
 		_motionProbe.Release();

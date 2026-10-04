@@ -3,6 +3,7 @@
 #include "Render/VTablePatch.h"
 #include "Upscale/CallSite.h"
 
+#include <RE/B/BSGraphics.h>
 #include <REL/THook.h>
 
 #include <array>
@@ -248,8 +249,14 @@ namespace Upscale::Hooks
 
 	void SetDynamicResolutionViewport(bool a_enabled) noexcept
 	{
-		if (g_viewportDefault && g_viewportObject != nullptr) {
-			(*g_viewportDefault)(g_viewportObject, a_enabled);
+		// The function's object is the render target manager (doodlum calls
+		// it on that singleton); the composite needs it before the first
+		// hooked call of a session has shown it to us.
+		auto* const manager = g_viewportObject != nullptr ?
+		                          g_viewportObject :
+		                          static_cast<void*>(RE::BSGraphics::RenderTargetManager::GetSingleton());
+		if (g_viewportDefault && manager != nullptr) {
+			(*g_viewportDefault)(manager, a_enabled);
 		}
 	}
 
