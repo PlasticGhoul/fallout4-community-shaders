@@ -5,6 +5,7 @@
 #include "Render/SwapChainHook.h"
 #include "Render/TechniqueTracker.h"
 #include "Runtime.h"
+#include "Upscale/EngineHooks.h"
 
 namespace
 {
@@ -78,8 +79,13 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Query(
 extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f4se)
 {
 	F4SE::InitInfo initInfo{};
-	initInfo.trampoline = false;  // subproject A installs no hooks
-	initInfo.hook = false;        // no REL::FHook objects are registered either
+	// Eight call hooks of F5.5a, fourteen bytes of branch each; the rest is
+	// headroom. hook stays false: our hooks are made after the runtime check,
+	// not registered statically, because a REL::THook reads its site the
+	// moment it is constructed.
+	initInfo.trampoline = true;
+	initInfo.trampolineSize = 256;
+	initInfo.hook = false;
 
 	// Keeps the last five runs instead of truncating on every start. Each game
 	// start costs real time to produce, and diagnosing one run while a second
@@ -107,6 +113,14 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadIn
 	if (messaging == nullptr || !messaging->RegisterListener(MessageHandler)) {
 		REX::ERROR("failed to register the F4SE message listener");
 		return false;
+	}
+
+	// Installed at load, not when the DLSS feature starts: a call hook written
+	// while the render thread runs the code under it is a race. Without a
+	// handler every hook passes straight through. A failure costs the DLSS
+	// feature, not the plugin.
+	if (!Upscale::Hooks::Install()) {
+		REX::ERROR("upscale hooks not installed ({}); DLSS will refuse", Upscale::Hooks::FailedSite());
 	}
 
 	REX::INFO("loaded");

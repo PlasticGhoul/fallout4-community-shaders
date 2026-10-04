@@ -919,6 +919,32 @@ if(FO4CS_BUILD_TESTS)
 
     add_test(NAME Resolution COMMAND ResolutionTests)
 
+    add_executable(
+        CallSiteTests
+        "${CMAKE_SOURCE_DIR}/tests/CallSiteTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Upscale/CallSite.cpp"
+    )
+
+    target_include_directories(
+        CallSiteTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(CallSiteTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        CallSiteTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(CallSiteTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            CallSiteTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME CallSite COMMAND CallSiteTests)
+
     # The plausibility check and the world-to-clip arithmetic are what run
     # here. The two functions beside them reach for the world camera, which is
     # exactly what cannot be tested on the host; they link because their
