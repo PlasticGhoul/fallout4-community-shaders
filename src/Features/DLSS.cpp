@@ -1,7 +1,6 @@
 #include "Features/DLSS.h"
 
 #include "Render/Camera.h"
-#include "Render/FramePhase.h"
 #include "Render/Profiler.h"
 #include "Render/Renderer.h"
 #include "Render/Resolution.h"
@@ -179,10 +178,6 @@ namespace Features
 			fxaa->isActive = false;
 		}
 		_engineSwitched = true;
-
-		_phaseTokens[0] = Render::SubscribeFramePhase(Render::Phase::kBeforeComposite, "DLSS/ProbeBeforeComposite", [this] { LogPhase("kBeforeComposite"); });
-		_phaseTokens[1] = Render::SubscribeFramePhase(Render::Phase::kComposite, "DLSS/ProbeComposite", [this] { LogPhase("kComposite"); });
-		_phaseTokens[2] = Render::SubscribeFramePhase(Render::Phase::kAfterOpaque, "DLSS/ProbeAfterOpaque", [this] { LogPhase("kAfterOpaque"); });
 
 		Upscale::Hooks::SetHandler(this);
 		_handlerSet = true;
@@ -489,50 +484,6 @@ namespace Features
 			minimum[0], maximum[0], sum[0] / count, minimum[1], maximum[1], sum[1] / count);
 	}
 
-	void DLSS::LogPhase(const char* a_name) noexcept
-	{
-		const auto index = a_name[1] == 'B' ? 0 : (a_name[1] == 'C' ? 1 : 2);
-		if (!_phaseDue[index]) {
-			return;
-		}
-		_phaseDue[index] = false;
-		auto* const context = Render::GetContext();
-		if (context == nullptr) {
-			return;
-		}
-		const auto sizeOf = [](REX::W32::ID3D11Texture2D* a_texture) {
-			if (a_texture == nullptr) {
-				return std::string{ "none" };
-			}
-			REX::W32::D3D11_TEXTURE2D_DESC desc{};
-			a_texture->GetDesc(std::addressof(desc));
-			return std::format("{}x{}", desc.width, desc.height);
-		};
-		std::uint32_t count = 1;
-		REX::W32::D3D11_VIEWPORT viewport{};
-		context->RSGetViewports(std::addressof(count), std::addressof(viewport));
-		std::string depth{ "none" };
-		if (auto* const view = Render::Targets::DepthSRV(Render::Targets::kSceneDepth); view != nullptr) {
-			REX::W32::ID3D11Resource* resource = nullptr;
-			view->GetResource(std::addressof(resource));
-			if (resource != nullptr) {
-				depth = sizeOf(reinterpret_cast<REX::W32::ID3D11Texture2D*>(resource));
-				resource->Release();
-			}
-		}
-		REX::INFO(
-			"dlss phase {}: viewport {:.0f}x{:.0f}, RT_004 {}, RT_028 {} (rtv {}), RT_058 {}, depth {} full {}",
-			a_name,
-			count > 0 ? viewport.width : 0.0f,
-			count > 0 ? viewport.height : 0.0f,
-			sizeOf(Render::Targets::RenderTargetTexture(Render::Targets::kSceneHDR)),
-			sizeOf(Render::Targets::RenderTargetTexture(28)),
-			Render::Targets::RenderTargetView(28) != nullptr,
-			sizeOf(Render::Targets::RenderTargetTexture(Render::Targets::kLightDiffuse)),
-			depth,
-			Render::Resolution::Current().depthFull);
-	}
-
 	void DLSS::Frame()
 	{
 		if (_passes.PollReload()) {
@@ -553,9 +504,6 @@ namespace Features
 			_lensFlares = 0;
 			_reflections = 0;
 			LogMotionProbe();
-			for (auto& due : _phaseDue) {
-				due = true;
-			}
 			_evaluations = 0;
 			_failedEvaluations = 0;
 			_resets = 0;
@@ -568,12 +516,6 @@ namespace Features
 		if (_handlerSet) {
 			Upscale::Hooks::SetHandler(nullptr);
 			_handlerSet = false;
-		}
-		Render::UnsubscribeFramePhase(Render::Phase::kBeforeComposite, _phaseTokens[0]);
-		Render::UnsubscribeFramePhase(Render::Phase::kComposite, _phaseTokens[1]);
-		Render::UnsubscribeFramePhase(Render::Phase::kAfterOpaque, _phaseTokens[2]);
-		for (auto& token : _phaseTokens) {
-			token = Render::PhaseDispatcher::kNoToken;
 		}
 		if (auto* const state = RE::BSGraphics::State::GetSingleton(); state != nullptr) {
 			state->offsetX = 0.0f;
