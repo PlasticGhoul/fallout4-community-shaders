@@ -32,8 +32,9 @@ namespace Features
 	/// package on 2026-09-13, position with the view projection at byte 128
 	/// of vertex slot 12 and subtract the position adjust at byte 560 from
 	/// every object translation; both are ours during the repeat, the rest
-	/// of the buffer stays the engine's. 166 casters a frame, all into
-	/// DS_008.
+	/// of the buffer stays the engine's. The casters go to DS_008 through
+	/// any of its four depth views; view 0 alone holds only the near
+	/// cascade.
 	class Skylighting final : public Feature, public Render::DrawObserver
 	{
 	public:
@@ -50,6 +51,10 @@ namespace Features
 	private:
 		static constexpr std::uint32_t kSavedTargets = 8;
 		static constexpr std::uint32_t kSavedRects = 16;
+		/// Distinct rasterizer states the casters come with; more than a
+		/// handful would be a surprise, and past this the engine's own is
+		/// used, bias and all.
+		static constexpr std::size_t kUnbiasedStates = 16;
 
 		void UpdateProbes();
 		void Draw();
@@ -57,24 +62,21 @@ namespace Features
 		void DrawPass(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11RenderTargetView* a_target, REX::W32::ID3D11BlendState* a_blend, float a_debugView);
 		[[nodiscard]] bool Compile();
 		[[nodiscard]] bool EnsureStates();
+		[[nodiscard]] REX::W32::ID3D11RasterizerState* UnbiasedState(REX::W32::ID3D11RasterizerState* a_engine) noexcept;
+		void ReleaseUnbiased() noexcept;
 		[[nodiscard]] bool EnsureViewBuffer(REX::W32::ID3D11Buffer* a_engine) noexcept;
 		[[nodiscard]] bool BeginFrameCapture(REX::W32::ID3D11DeviceContext& a_context) noexcept;
-		void DumpCapture(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_engine) noexcept;
-		void RecordCaster(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_view) noexcept;
-		void LogCensus() noexcept;
 		void TallyUtilityDraw(REX::W32::ID3D11DepthStencilView* a_dsv, bool a_caster) noexcept;
-		[[nodiscard]] bool FillConstants(float a_debugView) noexcept;
+		[[nodiscard]] bool FillConstants(float a_debugView, bool a_forProbes) noexcept;
 		[[nodiscard]] bool Outdoors() const noexcept;
 		void ResetGrid() noexcept;
 		void ReleaseSaved() noexcept;
 		void LogProbes(REX::W32::ID3D11DeviceContext& a_context, std::uint64_t a_frame) noexcept;
 
-		/// The numbers behind the pictures, once a second: the whole occlusion
-		/// map through a staging twin (a depth texture cannot be copied in
-		/// part), sixteen texels of RT_028 before the multiply and of the HDR
-		/// scene. Tone mapping made every debug view white in the first
-		/// acceptance run; these say what the maps hold.
-		REX::W32::ID3D11Texture2D* _depthSurvey{ nullptr };
+		/// The numbers behind the pictures, once a second: sixteen texels of
+		/// RT_028 before the multiply and of the HDR scene, read without a
+		/// wait. Tone mapping made every debug view white in the first
+		/// acceptance run; these say what the targets hold.
 		Render::TexelProbe _ambientProbe;
 		Render::TexelProbe _sceneProbe;
 
@@ -102,27 +104,12 @@ namespace Features
 		REX::W32::ID3D11Buffer* _patch{ nullptr };
 		std::uint32_t _viewConstantsBytes{ 0 };
 		std::uint64_t _captureFrame{ 0 };
-		bool _dumpDue{ false };
-
-		/// A census of one frame's casters, once a second: their techniques,
-		/// the distinct view buffers they came with (the engine's cascades,
-		/// if it draws more than one), and how far from the eye every eighth
-		/// of them stands. The first survey of the map showed casters within
-		/// two thousand units only, against a shadow distance of twenty
-		/// thousand.
-		struct ViewBufferSeen
-		{
-			const void* buffer;
-			float scale;
-			float adjust[3];
-			std::uint32_t casters;
-		};
-		bool _censusDue{ false };
-		bool _censusActive{ false };
-		std::uint32_t _censusCasters{ 0 };
-		std::map<std::uint32_t, std::uint32_t> _censusTechniques;
-		std::vector<ViewBufferSeen> _censusViews;
-		std::vector<float> _censusDistances;
+		/// Where the capture cycle stands: the phase of _captureFrame, the
+		/// last frame that captured, and how many cycles have begun - the
+		/// index of the sky direction.
+		std::uint32_t _capturePhase{ SkyOcclusion::kNoCapturePhase };
+		std::uint64_t _lastCapturedFrame{ 0 };
+		std::uint32_t _cycles{ 0 };
 
 		/// Every frame, no readback: utility draws by depth target, casters
 		/// per frame, frames whose casters came with more than one view
@@ -141,9 +128,11 @@ namespace Features
 		bool _reportedSmallBuffer{ false };
 		bool _reportedStates{ false };
 		double _direction[3]{};
-		/// This frame's projection, its cube centred on the origin: the grid's
+		/// This cycle's projection, its cube centred on the origin: the grid's
 		/// cells are relative to the eye, and so are the casters once the
 		/// vertex shader has subtracted the eye we write as position adjust.
+		/// The eye is the one of the cycle's first frame, so that casters
+		/// repeated frames apart still meet in the same map.
 		double _matrix[16]{};
 		double _eye[3]{};
 
@@ -152,7 +141,22 @@ namespace Features
 		REX::W32::ID3D11DepthStencilView* _savedDepth{ nullptr };
 		REX::W32::ID3D11Buffer* _savedView{ nullptr };
 		REX::W32::ID3D11DepthStencilState* _savedDepthState{ nullptr };
+		REX::W32::ID3D11RasterizerState* _savedRasterizer{ nullptr };
 		std::uint32_t _savedStencilRef{ 0 };
+
+		/// The engine's caster rasterizer states and ours made from them, the
+		/// same but without depth bias. The engine's slope bias of 6 is sized
+		/// for its own cascade; through our ortho over ten thousand units it
+		/// pushes a 45 degree roof some thirty units away from the sky and a
+		/// steep wall over a hundred - most of a probe cell, so cells right
+		/// under a surface read as open. Each engine state is held by a
+		/// reference so that its address cannot be reused for another.
+		struct UnbiasedPair
+		{
+			REX::W32::ID3D11RasterizerState* engine;
+			REX::W32::ID3D11RasterizerState* ours;
+		};
+		std::vector<UnbiasedPair> _unbiased;
 		REX::W32::D3D11_VIEWPORT _savedViewports[kSavedRects]{};
 		std::uint32_t _savedViewportCount{ 0 };
 		REX::W32::D3D11_RECT _savedScissors[kSavedRects]{};
@@ -161,6 +165,10 @@ namespace Features
 		// The grid window, computed once a frame by the probe update; the
 		// pass reads the same one.
 		SkyOcclusion::GridWindow _window{};
+		/// The eye _window was computed for. Its cell origin is relative to
+		/// that eye; the pass, which runs every frame, moves it to the
+		/// current one.
+		double _windowEye[3]{};
 		std::int32_t _previousCell[3]{};
 		bool _gridValid{ false };
 		bool _wasOutdoors{ false };

@@ -61,7 +61,6 @@ namespace Features
 		/// shadow pancaking: what lies before the near plane lands at depth
 		/// zero, not outside the map.
 		constexpr std::uint32_t kViewConstantSlot = 12;
-		constexpr std::uint32_t kGeometryConstantSlot = 2;
 		constexpr std::uint32_t kViewProjectionOffset = 128;
 		constexpr std::uint32_t kPosAdjustOffset = 560;
 		/// The shaders declare cb12 with 36 registers; anything shorter cannot
@@ -77,6 +76,84 @@ namespace Features
 		/// inventory lists.
 		constexpr std::size_t kDepthSlotsScanned = 16;
 		constexpr std::size_t kNoDepthSlot = 255;
+		constexpr std::size_t kNoView = Render::Targets::kDepthStencilViews;
+
+		/// Which of the shadow map's four views a depth view is, kNoView for
+		/// none. Every one of them takes casters: view 0 held only the near
+		/// cascade, some 1700 units across, against a shadow distance of
+		/// twenty thousand.
+		std::size_t ShadowMapView(const REX::W32::ID3D11DepthStencilView* a_dsv) noexcept
+		{
+			if (a_dsv == nullptr) {
+				return kNoView;
+			}
+			for (std::size_t view = 0; view < Render::Targets::kDepthStencilViews; ++view) {
+				if (Render::Targets::DepthStencilView(Render::Targets::kShadowMap, view) == a_dsv) {
+					return view;
+				}
+			}
+			return kNoView;
+		}
+
+		/// What a caster draws, as one number for CaptureBucket: its vertex
+		/// and index buffers and its draw arguments. The same object comes
+		/// with the same key frame after frame, whatever the order; the
+		/// casters that read their vertices from structured buffers have
+		/// no vertex buffer and differ by their arguments.
+		std::uint64_t DrawKey(REX::W32::ID3D11DeviceContext& a_context, const Render::DrawCall& a_call) noexcept
+		{
+			REX::W32::ID3D11Buffer* vertices = nullptr;
+			std::uint32_t stride = 0;
+			std::uint32_t offset = 0;
+			a_context.IAGetVertexBuffers(0, 1, std::addressof(vertices), std::addressof(stride), std::addressof(offset));
+			REX::W32::ID3D11Buffer* indices = nullptr;
+			REX::W32::DXGI_FORMAT format{};
+			std::uint32_t indexOffset = 0;
+			a_context.IAGetIndexBuffer(std::addressof(indices), std::addressof(format), std::addressof(indexOffset));
+
+			std::uint64_t key = 0;
+			const auto fold = [&key](std::uint64_t a_value) { key = key * 0x100000001B3ull ^ a_value; };
+			fold(reinterpret_cast<std::uintptr_t>(vertices));
+			fold(offset);
+			fold(reinterpret_cast<std::uintptr_t>(indices));
+			fold(indexOffset);
+			fold(a_call.count);
+			fold(a_call.start);
+			fold(static_cast<std::uint32_t>(a_call.baseVertex));
+			fold(a_call.startInstance);
+			fold(a_call.instanceCount);
+			if (vertices != nullptr) {
+				vertices->Release();
+			}
+			if (indices != nullptr) {
+				indices->Release();
+			}
+			return key;
+		}
+
+		/// Once: the shadow map's texture and what each of its four views
+		/// covers - an array slice per cascade is the expectation.
+		void LogShadowMapViews() noexcept
+		{
+			std::string views;
+			for (std::size_t view = 0; view < Render::Targets::kDepthStencilViews; ++view) {
+				auto* const dsv = Render::Targets::DepthStencilView(Render::Targets::kShadowMap, view);
+				if (dsv == nullptr) {
+					views += std::format(" [{} empty]", view);
+					continue;
+				}
+				REX::W32::D3D11_DEPTH_STENCIL_VIEW_DESC desc{};
+				dsv->GetDesc(std::addressof(desc));
+				views += std::format(
+					" [{} dimension {} format {} slices {}+{}]",
+					view,
+					static_cast<int>(desc.viewDimension),
+					static_cast<int>(desc.format),
+					desc.texture2DArray.firstArraySlice,
+					desc.texture2DArray.arraySize);
+			}
+			REX::INFO("Skylighting: shadow map views:{}", views);
+		}
 
 		/// The vertex shader subtracts the position adjust from every object
 		/// translation before it applies the view projection. With the eye
@@ -147,162 +224,6 @@ namespace Features
 			}
 			static_cast<void>(Render::SetDebugName(reinterpret_cast<REX::W32::ID3D11DeviceChild*>(buffer), a_debugName));
 			return buffer;
-		}
-
-		/// The bytes of a buffer, through a staging copy and a blocking map.
-		/// Diagnostic only - a stall on the render thread - and used once a
-		/// second at most. Empty when anything fails.
-		std::vector<std::uint8_t> ReadBack(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_buffer)
-		{
-			std::vector<std::uint8_t> bytes;
-			auto* const device = Render::GetDevice();
-			if (device == nullptr || a_buffer == nullptr) {
-				return bytes;
-			}
-			REX::W32::D3D11_BUFFER_DESC desc{};
-			a_buffer->GetDesc(std::addressof(desc));
-			desc.usage = REX::W32::D3D11_USAGE_STAGING;
-			desc.bindFlags = 0;
-			desc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_READ;
-			desc.miscFlags = 0;
-			REX::W32::ID3D11Buffer* staging = nullptr;
-			if (device->CreateBuffer(std::addressof(desc), nullptr, std::addressof(staging)) < 0) {
-				return bytes;
-			}
-			a_context.CopyResource(staging, a_buffer);
-			REX::W32::D3D11_MAPPED_SUBRESOURCE mapped{};
-			if (a_context.Map(staging, 0, REX::W32::D3D11_MAP_READ, 0, std::addressof(mapped)) >= 0) {
-				const auto* const data = static_cast<const std::uint8_t*>(mapped.data);
-				bytes.assign(data, data + desc.byteWidth);
-				a_context.Unmap(staging, 0);
-			}
-			staging->Release();
-			return bytes;
-		}
-
-		/// A staging twin of the occlusion map. A depth texture can only be
-		/// copied whole - D3D11 drops a boxed CopySubresourceRegion from a
-		/// depth-stencil resource without a word, which is how two runs of
-		/// the sixteen texel probe read the staging texture's uninitialised
-		/// memory and called the map empty.
-		REX::W32::ID3D11Texture2D* CreateDepthSurvey(std::uint32_t a_size) noexcept
-		{
-			auto* const device = Render::GetDevice();
-			if (device == nullptr) {
-				return nullptr;
-			}
-			REX::W32::D3D11_TEXTURE2D_DESC desc{};
-			desc.width = a_size;
-			desc.height = a_size;
-			desc.mipLevels = 1;
-			desc.arraySize = 1;
-			desc.format = REX::W32::DXGI_FORMAT_R32_TYPELESS;
-			desc.sampleDesc.count = 1;
-			desc.usage = REX::W32::D3D11_USAGE_STAGING;
-			desc.cpuAccessFlags = REX::W32::D3D11_CPU_ACCESS_READ;
-			REX::W32::ID3D11Texture2D* staging = nullptr;
-			if (device->CreateTexture2D(std::addressof(desc), nullptr, std::addressof(staging)) < 0) {
-				REX::ERROR("Skylighting: the depth survey staging texture could not be created");
-				return nullptr;
-			}
-			static_cast<void>(Render::SetDebugName(reinterpret_cast<REX::W32::ID3D11DeviceChild*>(staging), "FO4CS_SURVEY_SkyOcclusion"));
-			return staging;
-		}
-
-		/// The whole occlusion map through the staging twin and a blocking
-		/// map, once a second: how much of it is still the clear value, how
-		/// much the pancaking clamp, the range in between, and an eight by
-		/// eight picture of the drawn share and the mean depth per cell.
-		/// Diagnostic; a stall of a few milliseconds on the render thread.
-		void SurveyDepth(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Texture2D* a_staging, REX::W32::ID3D11Texture2D* a_map, std::uint32_t a_size)
-		{
-			constexpr std::uint32_t kCells = 8;
-			a_context.CopyResource(a_staging, a_map);
-			REX::W32::D3D11_MAPPED_SUBRESOURCE mapped{};
-			if (a_context.Map(a_staging, 0, REX::W32::D3D11_MAP_READ, 0, std::addressof(mapped)) < 0) {
-				REX::INFO("skylighting depth map: not readable this second");
-				return;
-			}
-			std::uint64_t cleared = 0;
-			std::uint64_t clamped = 0;
-			std::uint64_t between = 0;
-			float min = 1.0f;
-			float max = 0.0f;
-			double sum = 0.0;
-			std::uint64_t drawn[kCells][kCells]{};
-			double depth[kCells][kCells]{};
-			const auto* const base = static_cast<const std::uint8_t*>(mapped.data);
-			for (std::uint32_t y = 0; y < a_size; ++y) {
-				const auto* const row = reinterpret_cast<const float*>(base + static_cast<std::size_t>(y) * mapped.rowPitch);
-				const auto cellY = y * kCells / a_size;
-				for (std::uint32_t x = 0; x < a_size; ++x) {
-					const float value = row[x];
-					if (value >= 1.0f) {
-						++cleared;
-						continue;
-					}
-					const auto cellX = x * kCells / a_size;
-					++drawn[cellY][cellX];
-					depth[cellY][cellX] += value;
-					if (value <= 0.0f) {
-						++clamped;
-					} else {
-						++between;
-						min = std::min(min, value);
-						max = std::max(max, value);
-						sum += value;
-					}
-				}
-			}
-			a_context.Unmap(a_staging, 0);
-
-			const double total = static_cast<double>(a_size) * a_size;
-			REX::INFO(
-				"skylighting depth map: {:.1f}% clear, {:.1f}% clamped to 0, {:.1f}% between [{:.4f} {:.4f} mean {:.4f}]",
-				100.0 * static_cast<double>(cleared) / total,
-				100.0 * static_cast<double>(clamped) / total,
-				100.0 * static_cast<double>(between) / total,
-				between == 0 ? 0.0f : min,
-				between == 0 ? 0.0f : max,
-				between == 0 ? 0.0 : sum / static_cast<double>(between));
-			// Per cell: drawn share in percent, then the mean depth of what
-			// was drawn; "--" where nothing was.
-			const double perCell = total / (kCells * kCells);
-			for (std::uint32_t cy = 0; cy < kCells; ++cy) {
-				std::string line;
-				for (std::uint32_t cx = 0; cx < kCells; ++cx) {
-					if (drawn[cy][cx] == 0) {
-						line += "    --      ";
-					} else {
-						line += std::format(
-							" {:3.0f}%/{:.2f} ",
-							100.0 * static_cast<double>(drawn[cy][cx]) / perCell,
-							depth[cy][cx] / static_cast<double>(drawn[cy][cx]));
-					}
-				}
-				REX::INFO("  depth map row {}: {}", cy, line);
-			}
-		}
-
-		float FloatAt(const std::vector<std::uint8_t>& a_bytes, std::size_t a_offset) noexcept
-		{
-			float value = 0.0f;
-			if (a_offset + sizeof(value) <= a_bytes.size()) {
-				std::memcpy(std::addressof(value), a_bytes.data() + a_offset, sizeof(value));
-			}
-			return value;
-		}
-
-		/// Sixteen floats of a 64 byte block, three decimals each.
-		std::string Row(const std::uint8_t* a_data, std::size_t a_bytes)
-		{
-			std::string row;
-			for (std::size_t offset = 0; offset + sizeof(float) <= a_bytes; offset += sizeof(float)) {
-				float value = 0.0f;
-				std::memcpy(std::addressof(value), a_data + offset, sizeof(value));
-				row += std::format("{:10.3f}", value);
-			}
-			return row;
 		}
 
 		/// One channel of an R11G11B10_FLOAT texel: five exponent bits, six
@@ -380,6 +301,9 @@ namespace Features
 		_dispatches = 0;
 		_passes = 0;
 		_captureFrame = 0;
+		_capturePhase = SkyOcclusion::kNoCapturePhase;
+		_lastCapturedFrame = 0;
+		_cycles = 0;
 		_captureReady = false;
 		_repeating = false;
 		_surrounding = false;
@@ -387,9 +311,6 @@ namespace Features
 		_reportedIndoors = false;
 		_gridValid = false;
 		_wasOutdoors = false;
-		_dumpDue = false;
-		_censusDue = false;
-		_censusActive = false;
 
 		const auto utilityIndex = Render::ClassIndexOf("BSUtilityShader");
 		if (!utilityIndex.has_value()) {
@@ -421,9 +342,7 @@ namespace Features
 		}
 		ResetGrid();
 
-		_depthSurvey = CreateDepthSurvey(SkyOcclusion::kOcclusionMapSize);
-		if (_depthSurvey == nullptr ||
-			!_ambientProbe.Create(REX::W32::DXGI_FORMAT_R8G8B8A8_UNORM, 4, "FO4CS_PROBE_Ambient") ||
+		if (!_ambientProbe.Create(REX::W32::DXGI_FORMAT_R8G8B8A8_UNORM, 4, "FO4CS_PROBE_Ambient") ||
 			!_sceneProbe.Create(REX::W32::DXGI_FORMAT_R11G11B10_FLOAT, 4, "FO4CS_PROBE_Scene")) {
 			return false;
 		}
@@ -461,10 +380,7 @@ namespace Features
 
 		const bool outdoors = Outdoors();
 		if (outdoors && !_wasOutdoors) {
-			auto* const context = Render::GetContext();
-			if (context != nullptr) {
-				ResetGrid();
-			}
+			ResetGrid();
 			_reportedIndoors = false;
 		} else if (!outdoors && !_reportedIndoors) {
 			REX::INFO("Skylighting: indoors, standing down");
@@ -474,11 +390,6 @@ namespace Features
 
 		++_frames;
 		if (_frames % kLogInterval == 0) {
-			// The next frame's first caster dumps what the vertex shader is
-			// given, next to what we hand it, and the frame counts its
-			// casters.
-			_dumpDue = true;
-			_censusDue = true;
 			if (auto* const context = Render::GetContext(); context != nullptr) {
 				LogProbes(*context, Render::FrameCount());
 			}
@@ -505,8 +416,10 @@ namespace Features
 			_passes = 0;
 
 			std::string byDepth;
-			for (const auto& [slot, count] : _utilityByDepth) {
-				byDepth += slot == kNoDepthSlot ? std::format(" other x{}", count) : std::format(" DS_{:03} x{}", slot, count);
+			for (const auto& [key, count] : _utilityByDepth) {
+				const auto slot = key / Render::Targets::kDepthStencilViews;
+				const auto view = key % Render::Targets::kDepthStencilViews;
+				byDepth += slot == kNoDepthSlot ? std::format(" other x{}", count) : std::format(" DS_{:03}/{} x{}", slot, view, count);
 			}
 			REX::INFO(
 				"skylighting tally: casters per frame {}..{}, frames with a second view buffer {}, utility draws by depth target:{}",
@@ -530,6 +443,7 @@ namespace Features
 		Render::UnsubscribeFramePhase(Render::Phase::kAfterOpaque, _debugPhase);
 		_probePhase = _compositePhase = _debugPhase = Render::PhaseDispatcher::kNoToken;
 		ReleaseSaved();
+		ReleaseUnbiased();
 
 		for (auto** object : { reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_update)),
 				 reinterpret_cast<REX::W32::IUnknown**>(std::addressof(_shader)),
@@ -550,10 +464,6 @@ namespace Features
 		_probes.Release();
 		_accumFrames.Release();
 		_constants.Release();
-		if (_depthSurvey != nullptr) {
-			_depthSurvey->Release();
-			_depthSurvey = nullptr;
-		}
 		_ambientProbe.Release();
 		_sceneProbe.Release();
 	}
@@ -562,10 +472,6 @@ namespace Features
 	{
 		std::array<std::uint8_t, Render::TexelProbe::kTexels * 4> bytes{};
 		std::array<float, Render::TexelProbe::kTexels> values{};
-
-		if (_occlusion.Valid() && _depthSurvey != nullptr) {
-			SurveyDepth(a_context, _depthSurvey, _occlusion.Texture(), _occlusion.Size());
-		}
 
 		if (_ambientProbe.Read(a_context, a_frame, bytes)) {
 			std::array<float, Render::TexelProbe::kTexels> red{};
@@ -652,8 +558,9 @@ namespace Features
 
 	bool Skylighting::BeginFrameCapture(REX::W32::ID3D11DeviceContext& a_context) noexcept
 	{
-		// Once a frame, at the first caster: this frame's direction, the
-		// matrix, the engine's bytes with our two patches, a clean depth map.
+		// Once a frame, at the first caster: the engine's bytes with our two
+		// patches. Once a cycle, at its first frame: the direction, the
+		// matrix, the eye, a clean depth map.
 		const auto frame = Render::FrameCount();
 		if (_captureFrame == frame) {
 			return _captureReady;
@@ -668,14 +575,6 @@ namespace Features
 		if (world == nullptr) {
 			return false;
 		}
-		const auto& eye = world->GetWorldTransform().translate;
-		_eye[0] = eye.x;
-		_eye[1] = eye.y;
-		_eye[2] = eye.z;
-
-		const auto maxZenith = Settings::GetDouble("Skylighting/maxZenith") * kPi / 180.0;
-		SkyOcclusion::SkyDirection(static_cast<std::uint32_t>(frame), kSequenceSeed, maxZenith, _direction);
-		SkyOcclusion::OcclusionMatrix(kGridCentre, _direction, _matrix);
 
 		REX::W32::ID3D11Buffer* engine = nullptr;
 		a_context.VSGetConstantBuffers(kViewConstantSlot, 1, std::addressof(engine));
@@ -685,6 +584,21 @@ namespace Features
 		if (!EnsureViewBuffer(engine)) {
 			engine->Release();
 			return false;
+		}
+
+		// A frame that did not get here broke the cycle; the next one that
+		// does starts a new map.
+		_capturePhase = SkyOcclusion::NextCapturePhase(_capturePhase, _lastCapturedFrame, frame);
+		_lastCapturedFrame = frame;
+		const bool cycleStart = _capturePhase == 0;
+		if (cycleStart) {
+			const auto& eye = world->GetWorldTransform().translate;
+			_eye[0] = eye.x;
+			_eye[1] = eye.y;
+			_eye[2] = eye.z;
+			const auto maxZenith = Settings::GetDouble("Skylighting/maxZenith") * kPi / 180.0;
+			SkyOcclusion::SkyDirection(_cycles++, kSequenceSeed, maxZenith, _direction);
+			SkyOcclusion::OcclusionMatrix(kGridCentre, _direction, _matrix);
 		}
 
 		// The engine's bytes of this very frame, so that nothing in the
@@ -707,121 +621,62 @@ namespace Features
 		const REX::W32::D3D11_BOX eyeBox{ kPatchEyeOffset, 0, 0, kPatchEyeOffset + static_cast<std::uint32_t>(sizeof(adjust)), 1, 1 };
 		a_context.CopySubresourceRegion(_viewConstants, 0, kPosAdjustOffset, 0, 0, _patch, 0, std::addressof(eyeBox));
 
-		if (_dumpDue) {
-			_dumpDue = false;
-			DumpCapture(a_context, engine);
-		}
-		if (_censusDue) {
-			_censusDue = false;
-			_censusActive = true;
-			_censusCasters = 0;
-			_censusTechniques.clear();
-			_censusViews.clear();
-			_censusDistances.clear();
-		}
 		engine->Release();
 
-		_occlusion.Clear(a_context, 1.0f);
+		if (cycleStart) {
+			_occlusion.Clear(a_context, 1.0f);
+		}
 		_captureReady = true;
 		return true;
 	}
 
-	void Skylighting::DumpCapture(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_engine) noexcept
-	{
-		// What the vertex shader is given, once a second: the engine's view
-		// constants, ours after the patches, and the first caster's world
-		// matrix - and the clip position both pairs make of that caster's
-		// origin, computed here the way the shader computes it. The engine's
-		// pair has to land inside its own map; if it does not, the model of
-		// the shader is wrong, not the patches.
-		const auto engineBytes = ReadBack(a_context, a_engine);
-		const auto ourBytes = ReadBack(a_context, _viewConstants);
-		REX::W32::ID3D11Buffer* geometry = nullptr;
-		a_context.VSGetConstantBuffers(kGeometryConstantSlot, 1, std::addressof(geometry));
-		const auto geometryBytes = ReadBack(a_context, geometry);
-		if (geometry != nullptr) {
-			geometry->Release();
-		}
-		if (engineBytes.size() < kViewConstantsNeeded || ourBytes.size() < kViewConstantsNeeded || geometryBytes.size() < 64) {
-			REX::INFO("skylighting capture: buffers not readable (engine {} B, ours {} B, caster {} B)", engineBytes.size(), ourBytes.size(), geometryBytes.size());
-			return;
-		}
-
-		const auto project = [](const std::vector<std::uint8_t>& a_view, const std::vector<std::uint8_t>& a_world) {
-			// translation - adjust, then the view projection's rows, as
-			// dp4 cb12[8 + i], (World column 3 - cb12[35]) in the shader.
-			float relative[4]{};
-			for (std::size_t i = 0; i < 3; ++i) {
-				relative[i] = FloatAt(a_world, i * 16 + 12) - FloatAt(a_view, kPosAdjustOffset + i * 4);
-			}
-			relative[3] = FloatAt(a_world, 3 * 16 + 12);
-			float clip[4]{};
-			for (std::size_t i = 0; i < 4; ++i) {
-				for (std::size_t j = 0; j < 4; ++j) {
-					clip[i] += FloatAt(a_view, kViewProjectionOffset + (i * 4 + j) * 4) * relative[j];
-				}
-			}
-			return std::format(
-				"relative [{:.1f} {:.1f} {:.1f} w {:.3f}] -> clip [{:.4f} {:.4f} {:.4f} w {:.4f}]",
-				relative[0], relative[1], relative[2], relative[3], clip[0], clip[1], clip[2], clip[3]);
-		};
-
-		REX::INFO(
-			"skylighting capture: eye [{:.1f} {:.1f} {:.1f}], engine pos adjust [{:.1f} {:.1f} {:.1f}], ours [{:.1f} {:.1f} {:.1f}], direction [{:.3f} {:.3f} {:.3f}]",
-			_eye[0], _eye[1], _eye[2],
-			FloatAt(engineBytes, kPosAdjustOffset), FloatAt(engineBytes, kPosAdjustOffset + 4), FloatAt(engineBytes, kPosAdjustOffset + 8),
-			FloatAt(ourBytes, kPosAdjustOffset), FloatAt(ourBytes, kPosAdjustOffset + 4), FloatAt(ourBytes, kPosAdjustOffset + 8),
-			_direction[0], _direction[1], _direction[2]);
-		REX::INFO("  engine view proj: {}", Row(engineBytes.data() + kViewProjectionOffset, 64));
-		REX::INFO("  our view proj:    {}", Row(ourBytes.data() + kViewProjectionOffset, 64));
-		REX::INFO("  caster world:     {}", Row(geometryBytes.data(), 64));
-		REX::INFO("  caster by engine: {}", project(engineBytes, geometryBytes));
-		REX::INFO("  caster by ours:   {}", project(ourBytes, geometryBytes));
-	}
-
-	void Skylighting::BeforeDraw(REX::W32::ID3D11DeviceContext& a_context, const Render::DrawCall&) noexcept
+	void Skylighting::BeforeDraw(REX::W32::ID3D11DeviceContext& a_context, const Render::DrawCall& a_call) noexcept
 	{
 		_surrounding = false;
+		// The depth view alone first: of some 2600 utility draws a frame
+		// only the casters, under two hundred, need the colour targets
+		// saved, and every view handed out is a reference to give back.
 		REX::W32::ID3D11DepthStencilView* dsv = nullptr;
-		a_context.OMGetRenderTargets(kSavedTargets, _savedTargets, std::addressof(dsv));
-		const bool shadowCaster = dsv != nullptr && dsv == Render::Targets::DepthStencilView(Render::Targets::kShadowMap);
+		a_context.OMGetRenderTargets(0, nullptr, std::addressof(dsv));
+		const auto shadowView = ShadowMapView(dsv);
+		const bool shadowCaster = shadowView != kNoView;
 		TallyUtilityDraw(dsv, shadowCaster);
 		if (!shadowCaster || !_occlusion.Valid() || !BeginFrameCapture(a_context)) {
 			if (dsv != nullptr) {
 				dsv->Release();
 			}
-			ReleaseSaved();
 			return;
 		}
 		++_castersSeen;
 		_savedDepth = dsv;
 		a_context.VSGetConstantBuffers(kViewConstantSlot, 1, std::addressof(_savedView));
-		if (_censusActive) {
-			RecordCaster(a_context, _savedView);
-		}
 		if (_frameFirstView == nullptr) {
 			_frameFirstView = _savedView;
 		} else if (static_cast<const void*>(_savedView) != _frameFirstView && !_frameHadSecondView) {
 			_frameHadSecondView = true;
 			++_framesWithSecondView;
 		}
+		if (SkyOcclusion::CaptureBucket(DrawKey(a_context, a_call)) != _capturePhase) {
+			ReleaseSaved();
+			return;
+		}
+		a_context.OMGetRenderTargets(kSavedTargets, _savedTargets, nullptr);
 		a_context.OMGetDepthStencilState(std::addressof(_savedDepthState), std::addressof(_savedStencilRef));
+		a_context.RSGetState(std::addressof(_savedRasterizer));
 
 		// Once: what the engine draws its casters with, for the record. The
 		// depth function decides whether a map cleared to one could take
 		// anything at all.
 		if (!_reportedStates) {
 			_reportedStates = true;
+			LogShadowMapViews();
 			REX::W32::D3D11_DEPTH_STENCIL_DESC depthDesc{};
 			if (_savedDepthState != nullptr) {
 				_savedDepthState->GetDesc(std::addressof(depthDesc));
 			}
-			REX::W32::ID3D11RasterizerState* rasterizer = nullptr;
-			a_context.RSGetState(std::addressof(rasterizer));
 			REX::W32::D3D11_RASTERIZER_DESC rasterDesc{};
-			if (rasterizer != nullptr) {
-				rasterizer->GetDesc(std::addressof(rasterDesc));
-				rasterizer->Release();
+			if (_savedRasterizer != nullptr) {
+				_savedRasterizer->GetDesc(std::addressof(rasterDesc));
 			}
 			REX::INFO(
 				"Skylighting: casters draw with depth enable {} func {} write {} stencil {}, cull {} bias {} slope {:.3f} clamp {:.3f} depth clip {}",
@@ -850,8 +705,9 @@ namespace Features
 		_surrounding = false;
 
 		// Our depth map, no colour target, our view constants, the whole map
-		// as viewport and scissor; the engine's rasterizer and depth state
-		// stay - the casters carry their own bias, and that is wanted.
+		// as viewport and scissor, the engine's rasterizer without its bias.
+		// Its culling stays: the ground arrives in the map, so the winding
+		// survives our projection.
 		const auto size = static_cast<float>(_occlusion.Size());
 		const REX::W32::D3D11_VIEWPORT viewport{ 0.0f, 0.0f, size, size, 0.0f, 1.0f };
 		const REX::W32::D3D11_RECT scissor{ 0, 0, static_cast<std::int32_t>(_occlusion.Size()), static_cast<std::int32_t>(_occlusion.Size()) };
@@ -862,6 +718,9 @@ namespace Features
 		a_context.OMSetDepthStencilState(_depthState, 0);
 		a_context.RSSetViewports(1, std::addressof(viewport));
 		a_context.RSSetScissorRects(1, std::addressof(scissor));
+		if (auto* const unbiased = UnbiasedState(_savedRasterizer); unbiased != nullptr) {
+			a_context.RSSetState(unbiased);
+		}
 		a_context.VSSetConstantBuffers(kViewConstantSlot, 1, std::addressof(_viewConstants));
 
 		_repeating = true;
@@ -871,6 +730,7 @@ namespace Features
 
 		a_context.VSSetConstantBuffers(kViewConstantSlot, 1, std::addressof(_savedView));
 		a_context.OMSetDepthStencilState(_savedDepthState, _savedStencilRef);
+		a_context.RSSetState(_savedRasterizer);
 		a_context.OMSetRenderTargets(kSavedTargets, _savedTargets, _savedDepth);
 		a_context.RSSetViewports(_savedViewportCount, _savedViewports);
 		a_context.RSSetScissorRects(_savedScissorCount, _savedScissors);
@@ -880,9 +740,9 @@ namespace Features
 	void Skylighting::TallyUtilityDraw(REX::W32::ID3D11DepthStencilView* a_dsv, bool a_caster) noexcept
 	{
 		// Every frame, no readback: which depth target each utility draw
-		// goes to, and how many casters a frame holds. The far cascades of
-		// the sun have to be drawn somewhere, some time - into another
-		// target, or into DS_008 in frames the once-a-second census misses.
+		// goes to, by slot and view, and how many casters a frame holds.
+		// This is what found the sun's far cascades in views 1 and 2 of
+		// DS_008; a change of the engine's cascades shows here first.
 		const auto frame = Render::FrameCount();
 		if (frame != _tallyFrame) {
 			if (_tallyFrame != 0) {
@@ -897,86 +757,17 @@ namespace Features
 		if (a_caster) {
 			++_frameCasters;
 		}
-		std::size_t slot = kNoDepthSlot;
+		// Keyed slot * views + view; one key past every slot for the rest.
+		constexpr auto kViews = Render::Targets::kDepthStencilViews;
+		std::size_t key = kNoDepthSlot * kViews;
 		if (a_dsv != nullptr) {
-			for (std::size_t i = 0; i < kDepthSlotsScanned; ++i) {
-				if (Render::Targets::DepthStencilView(i) == a_dsv) {
-					slot = i;
-					break;
+			for (std::size_t i = 0; i < kDepthSlotsScanned * kViews && key == kNoDepthSlot * kViews; ++i) {
+				if (Render::Targets::DepthStencilView(i / kViews, i % kViews) == a_dsv) {
+					key = i;
 				}
 			}
 		}
-		++_utilityByDepth[slot];
-	}
-
-	void Skylighting::RecordCaster(REX::W32::ID3D11DeviceContext& a_context, REX::W32::ID3D11Buffer* a_view) noexcept
-	{
-		// Diagnostic, one frame a second: the technique, the view buffer -
-		// read back once per distinct buffer, for its projection scale and
-		// position adjust - and, for every eighth caster, the distance of
-		// its origin from the eye out of its world matrix.
-		const auto index = _censusCasters++;
-		++_censusTechniques[Render::CurrentTechniqueOf().technique];
-
-		auto seen = std::find_if(_censusViews.begin(), _censusViews.end(), [a_view](const ViewBufferSeen& a_entry) { return a_entry.buffer == a_view; });
-		if (seen == _censusViews.end()) {
-			ViewBufferSeen entry{ a_view, 0.0f, { 0.0f, 0.0f, 0.0f }, 0 };
-			const auto bytes = ReadBack(a_context, a_view);
-			if (bytes.size() >= kViewConstantsNeeded) {
-				entry.scale = FloatAt(bytes, kViewProjectionOffset);
-				for (std::size_t i = 0; i < 3; ++i) {
-					entry.adjust[i] = FloatAt(bytes, kPosAdjustOffset + i * 4);
-				}
-			}
-			_censusViews.push_back(entry);
-			seen = std::prev(_censusViews.end());
-		}
-		++seen->casters;
-
-		if (index % 8 == 0) {
-			REX::W32::ID3D11Buffer* geometry = nullptr;
-			a_context.VSGetConstantBuffers(kGeometryConstantSlot, 1, std::addressof(geometry));
-			const auto bytes = ReadBack(a_context, geometry);
-			if (geometry != nullptr) {
-				geometry->Release();
-			}
-			if (bytes.size() >= 64) {
-				double squared = 0.0;
-				for (std::size_t i = 0; i < 3; ++i) {
-					const double delta = static_cast<double>(FloatAt(bytes, i * 16 + 12)) - _eye[i];
-					squared += delta * delta;
-				}
-				_censusDistances.push_back(static_cast<float>(std::sqrt(squared)));
-			}
-		}
-	}
-
-	void Skylighting::LogCensus() noexcept
-	{
-		_censusActive = false;
-		std::string techniques;
-		for (const auto& [technique, count] : _censusTechniques) {
-			techniques += std::format(" 0x{:X}x{}", technique, count);
-		}
-		std::string views;
-		for (const auto& view : _censusViews) {
-			views += std::format(
-				" [{} casters, scale {:.5f} = {:.0f} units wide, adjust {:.0f} {:.0f} {:.0f}]",
-				view.casters,
-				view.scale,
-				view.scale > 0.0f ? 2.0f / view.scale : 0.0f,
-				view.adjust[0],
-				view.adjust[1],
-				view.adjust[2]);
-		}
-		std::sort(_censusDistances.begin(), _censusDistances.end());
-		std::string distances;
-		for (const float distance : _censusDistances) {
-			distances += std::format(" {:.0f}", distance);
-		}
-		REX::INFO("skylighting census: {} caster(s) this frame, techniques{}", _censusCasters, techniques);
-		REX::INFO("  view buffers ({}):{}", _censusViews.size(), views);
-		REX::INFO("  distance from the eye of every eighth caster, sorted:{}", distances);
+		++_utilityByDepth[key];
 	}
 
 	void Skylighting::ReleaseSaved() noexcept
@@ -999,12 +790,68 @@ namespace Features
 			_savedDepthState->Release();
 			_savedDepthState = nullptr;
 		}
+		if (_savedRasterizer != nullptr) {
+			_savedRasterizer->Release();
+			_savedRasterizer = nullptr;
+		}
+	}
+
+	REX::W32::ID3D11RasterizerState* Skylighting::UnbiasedState(REX::W32::ID3D11RasterizerState* a_engine) noexcept
+	{
+		if (a_engine == nullptr) {
+			return nullptr;
+		}
+		for (const auto& pair : _unbiased) {
+			if (pair.engine == a_engine) {
+				return pair.ours;
+			}
+		}
+		if (_unbiased.size() >= kUnbiasedStates) {
+			return nullptr;
+		}
+		auto* const device = Render::GetDevice();
+		if (device == nullptr) {
+			return nullptr;
+		}
+		REX::W32::D3D11_RASTERIZER_DESC desc{};
+		a_engine->GetDesc(std::addressof(desc));
+		REX::INFO(
+			"Skylighting: caster rasterizer state {} (cull {}, bias {} slope {:.3f}) repeated without bias",
+			_unbiased.size() + 1,
+			static_cast<int>(desc.cullMode),
+			desc.depthBias,
+			desc.slopeScaledDepthBias);
+		desc.depthBias = 0;
+		desc.depthBiasClamp = 0.0f;
+		desc.slopeScaledDepthBias = 0.0f;
+		// The whole map is the viewport and the scissor rectangle both.
+		desc.scissorEnable = false;
+		REX::W32::ID3D11RasterizerState* ours = nullptr;
+		if (device->CreateRasterizerState(std::addressof(desc), std::addressof(ours)) < 0) {
+			REX::ERROR("Skylighting: an unbiased rasterizer state could not be created");
+			return nullptr;
+		}
+		a_engine->AddRef();
+		_unbiased.push_back({ a_engine, ours });
+		return ours;
+	}
+
+	void Skylighting::ReleaseUnbiased() noexcept
+	{
+		for (auto& pair : _unbiased) {
+			pair.engine->Release();
+			pair.ours->Release();
+		}
+		_unbiased.clear();
 	}
 
 	// ------------------------------------------------------------- grid, pass
 
-	bool Skylighting::FillConstants(float a_debugView) noexcept
+	bool Skylighting::FillConstants(float a_debugView, bool a_forProbes) noexcept
 	{
+		// The probe update works around the eye of the window; the pass
+		// reconstructs its pixels around the eye of this frame, and the
+		// window's cell origin moves by the difference.
 		auto* const world = RE::Main::WorldRootCamera();
 		if (world == nullptr) {
 			return false;
@@ -1014,7 +861,10 @@ namespace Features
 		if (!Render::IsPlausibleViewProjection(matrix)) {
 			return false;
 		}
-		const auto camera = Render::FogCameraFromMatrix(world->worldToCam, world->GetWorldTransform().translate.z);
+		const auto& translate = world->GetWorldTransform().translate;
+		const auto camera = Render::FogCameraFromMatrix(world->worldToCam, translate.z);
+		const double current[3]{ translate.x, translate.y, translate.z };
+		const auto& eye = a_forProbes ? _windowEye : current;
 
 		Constants data{};
 		for (int i = 0; i < 16; ++i) {
@@ -1022,7 +872,7 @@ namespace Features
 		}
 		for (int i = 0; i < 3; ++i) {
 			data.occlusionDir[i] = static_cast<float>(_direction[i]);
-			data.posOffset[i] = static_cast<float>(_window.cellOrigin[i]);
+			data.posOffset[i] = static_cast<float>(_window.cellOrigin[i] + _windowEye[i] - eye[i]);
 			data.arrayOrigin[i] = static_cast<std::uint32_t>(_window.arrayOrigin[i]);
 			data.validMargin[i] = _window.validMargin[i];
 		}
@@ -1050,22 +900,27 @@ namespace Features
 	void Skylighting::UpdateProbes()
 	{
 		auto* const context = Render::GetContext();
-		if (context == nullptr || _update == nullptr || !_captureReady || _captureFrame != Render::FrameCount()) {
+		// Only once the map is whole: in the cycle's last frame, after its
+		// last share of the casters went in.
+		if (context == nullptr || _update == nullptr || !_captureReady || _captureFrame != Render::FrameCount() ||
+			_capturePhase != SkyOcclusion::kCaptureCycle - 1) {
 			return;
 		}
 
-		// The window once a frame, here, because this is what moves the ring
-		// buffer; the pass later in the frame reads the same one. After a
-		// reset every cell is new: a margin wider than the grid leaves
-		// nothing valid.
+		// The window once a cycle, here, because this is what moves the ring
+		// buffer; the passes until the next one read the same. It belongs to
+		// the cycle's eye, the one the map was drawn around. After a reset
+		// every cell is new: a margin wider than the grid leaves nothing
+		// valid.
 		_window = SkyOcclusion::WindowFor(_eye, _previousCell);
+		std::copy(std::begin(_eye), std::end(_eye), std::begin(_windowEye));
 		if (!_gridValid) {
 			for (auto& margin : _window.validMargin) {
 				margin = 1000;
 			}
 			_gridValid = true;
 		}
-		if (!FillConstants(0.0f)) {
+		if (!FillConstants(0.0f, true)) {
 			return;
 		}
 
@@ -1091,10 +946,6 @@ namespace Features
 		context->CSSetUnorderedAccessViews(0, 2, noUAVs, nullptr);
 		context->CSSetShaderResources(0, 1, std::addressof(noSRV));
 		context->CSSetShader(nullptr, nullptr, 0);
-
-		if (_censusActive) {
-			LogCensus();
-		}
 	}
 
 	void Skylighting::DrawPass(
@@ -1103,7 +954,7 @@ namespace Features
 		REX::W32::ID3D11BlendState* a_blend,
 		float a_debugView)
 	{
-		if (!FillConstants(a_debugView)) {
+		if (!FillConstants(a_debugView, false)) {
 			return;
 		}
 		auto* const depth = Render::Targets::DepthSRV(Render::Targets::kSceneDepth);
