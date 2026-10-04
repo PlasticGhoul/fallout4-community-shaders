@@ -123,6 +123,40 @@ int main()
 		Check(window.validMargin[0] <= -256, "a leap makes the whole grid new");
 	}
 
+	// The capture cycle: consecutive frames step through it, a gap or the
+	// end of a cycle starts the next.
+	{
+		Check(NextCapturePhase(kNoCapturePhase, 0, 10) == 0, "the first capture starts a cycle");
+		Check(NextCapturePhase(0, 10, 11) == 1, "the next frame is the next phase");
+		Check(NextCapturePhase(kCaptureCycle - 2, 20, 21) == kCaptureCycle - 1, "up to the last phase");
+		Check(NextCapturePhase(kCaptureCycle - 1, 21, 22) == 0, "after the last phase a new cycle");
+		Check(NextCapturePhase(3, 30, 32) == 0, "a frame without casters breaks the cycle");
+		Check(NextCapturePhase(3, 30, 30) == 0, "the same frame twice is no step forward");
+	}
+
+	// Buckets: every key lands in one phase, the same one every time, and
+	// a run of draws spreads over all of them.
+	{
+		std::uint32_t counts[kCaptureCycle]{};
+		bool stable = true;
+		bool inRange = true;
+		for (std::uint64_t key = 0; key < 7000; ++key) {
+			const auto bucket = CaptureBucket(key * 0x9E37u + 0x10000u);
+			inRange = inRange && bucket < kCaptureCycle;
+			stable = stable && bucket == CaptureBucket(key * 0x9E37u + 0x10000u);
+			if (bucket < kCaptureCycle) {
+				++counts[bucket];
+			}
+		}
+		Check(inRange, "every bucket is a phase of the cycle");
+		Check(stable, "the same draw gets the same bucket");
+		bool even = true;
+		for (const auto count : counts) {
+			even = even && count > 700 && count < 1300;
+		}
+		Check(even, "the buckets share the draws roughly evenly");
+	}
+
 	if (g_failures != 0) {
 		std::printf("%d check(s) failed\n", g_failures);
 		return 1;

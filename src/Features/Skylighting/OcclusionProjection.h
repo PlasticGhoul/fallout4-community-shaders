@@ -40,4 +40,24 @@ namespace Features::SkyOcclusion
 	/// The template's GetCommonBufferData. a_previousCell is the cell of
 	/// the last frame and is updated to this frame's.
 	GridWindow WindowFor(const double (&a_eye)[3], std::int32_t (&a_previousCell)[3]) noexcept;
+
+	/// Frames one occlusion map is spread over. The engine's three sun
+	/// cascades bring two to three thousand casters a frame; repeating all
+	/// of them took the game from 180 to 30 frames a second. Each caster is
+	/// repeated in one frame of the cycle, the direction and the eye stay
+	/// put for its length, and the grid takes the map once it is whole.
+	/// Odd, so that it does not run in step with a cascade the engine
+	/// draws every other frame.
+	inline constexpr std::uint32_t kCaptureCycle = 7;
+	inline constexpr std::uint32_t kNoCapturePhase = 0xFFFFFFFFu;
+
+	/// The phase of a_frame, given the phase and frame of the last capture:
+	/// one on from the frame before, zero - a new cycle - after the last
+	/// phase, after a frame without a capture, or with none so far.
+	[[nodiscard]] std::uint32_t NextCapturePhase(std::uint32_t a_phase, std::uint64_t a_lastFrame, std::uint64_t a_frame) noexcept;
+
+	/// The phase a caster is repeated in, from a key of what it draws - its
+	/// buffers and its draw arguments. The key, not the order of the draws:
+	/// culling moves the order between frames, the buffers stay.
+	[[nodiscard]] std::uint32_t CaptureBucket(std::uint64_t a_key) noexcept;
 }

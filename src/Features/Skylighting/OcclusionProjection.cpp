@@ -109,4 +109,24 @@ namespace Features::SkyOcclusion
 		}
 		return window;
 	}
+
+	std::uint32_t NextCapturePhase(std::uint32_t a_phase, std::uint64_t a_lastFrame, std::uint64_t a_frame) noexcept
+	{
+		if (a_phase == kNoCapturePhase || a_frame != a_lastFrame + 1 || a_phase + 1 >= kCaptureCycle) {
+			return 0;
+		}
+		return a_phase + 1;
+	}
+
+	std::uint32_t CaptureBucket(std::uint64_t a_key) noexcept
+	{
+		// splitmix64's finaliser: pointers share their low bits, so the key
+		// is mixed before it is divided.
+		a_key ^= a_key >> 30;
+		a_key *= 0xBF58476D1CE4E5B9ull;
+		a_key ^= a_key >> 27;
+		a_key *= 0x94D049BB133111EBull;
+		a_key ^= a_key >> 31;
+		return static_cast<std::uint32_t>(a_key % kCaptureCycle);
+	}
 }
