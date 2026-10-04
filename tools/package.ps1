@@ -52,20 +52,43 @@ function Get-Features {
     }
 }
 
-# The marker is a decision, not content: it says where the feature ships, and
-# it has no business inside an archive.
+# The markers are decisions, not content: CORE says where the feature ships,
+# EXTERNAL says which files come from outside package/ - a 59 MB vendor DLL
+# has no business in this repository's history. Neither travels itself.
 function Copy-FeatureTree([string]$From, [string]$To) {
     $from = (Resolve-Path $From).Path
     New-Item -ItemType Directory -Force -Path $To | Out-Null
 
     foreach ($file in Get-ChildItem $from -Recurse -File) {
         $relative = $file.FullName.Substring($from.Length).TrimStart('\', '/')
-        if ($relative -eq "CORE") {
+        if ($relative -eq "CORE" -or $relative -eq "EXTERNAL") {
             continue
         }
         $target = Join-Path $To $relative
         New-Item -ItemType Directory -Force -Path (Split-Path $target) | Out-Null
         Copy-Item $file.FullName $target -Force
+    }
+
+    # One line per file: "<source, relative to the repo> => <target, relative
+    # to the feature's tree>".
+    $external = Join-Path $from "EXTERNAL"
+    if (Test-Path $external) {
+        foreach ($line in Get-Content $external) {
+            if ($line.Trim() -eq "") {
+                continue
+            }
+            $parts = $line -split "=>"
+            if ($parts.Count -ne 2) {
+                throw "EXTERNAL: cannot read '$line' in $external"
+            }
+            $source = Join-Path $root $parts[0].Trim()
+            if (-not (Test-Path $source)) {
+                throw "EXTERNAL: missing $source - git submodule update --init"
+            }
+            $target = Join-Path $To $parts[1].Trim()
+            New-Item -ItemType Directory -Force -Path (Split-Path $target) | Out-Null
+            Copy-Item $source $target -Force
+        }
     }
 }
 

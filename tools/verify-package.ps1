@@ -80,6 +80,9 @@ Check (
 Check (-not ($staged -contains "COPYING")) "and not the licence"
 Check (-not ($staged -contains "README.md")) "and not the readme"
 Check (-not ($staged | Where-Object { $_ -match '(^|/)CORE$' })) "and no CORE marker"
+Check (-not ($staged | Where-Object { $_ -match '(^|/)EXTERNAL$' })) "and no EXTERNAL marker"
+# Brought in through package/Features/DLSS/EXTERNAL from the SDK submodule.
+Check ($staged -contains "F4SE/Plugins/CommunityShadersFO4/nvngx_dlss.dll") "and the DLSS runtime from the SDK"
 Check (-not ($staged | Where-Object { $_ -like "SKSE/*" })) "no SKSE leftovers"
 Check (-not ($staged | Where-Object { $_ -like "Interface/*" })) "no Interface leftovers"
 Check (-not ($staged | Where-Object { $_ -match '^Shaders/[^/]+\.hlsl$' })) "no Skyrim shaders"
@@ -119,6 +122,7 @@ $shadows = @($archives | Where-Object { $_.Name -like "ScreenSpaceShadows-*" })
 $fog = @($archives | Where-Object { $_.Name -like "ExponentialHeightFog-*" })
 $clouds = @($archives | Where-Object { $_.Name -like "CloudShadows-*" })
 $sky = @($archives | Where-Object { $_.Name -like "Skylighting-*" })
+$dlss = @($archives | Where-Object { $_.Name -like "DLSS-*" })
 
 # A stale archive would let a broken rule pass here: the tree half is rebuilt
 # on every run, the archives are only ever whatever was packed last. Both the
@@ -138,9 +142,10 @@ Check ($shadows.Count -eq 1) "exactly one ScreenSpaceShadows archive"
 Check ($fog.Count -eq 1) "exactly one ExponentialHeightFog archive"
 Check ($clouds.Count -eq 1) "exactly one CloudShadows archive"
 Check ($sky.Count -eq 1) "exactly one Skylighting archive"
+Check ($dlss.Count -eq 1) "exactly one DLSS archive"
 Check ($aio.Count -eq 1) "exactly one all-in-one archive"
 
-if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fog.Count -eq 1 -and $clouds.Count -eq 1 -and $sky.Count -eq 1 -and $aio.Count -eq 1) {
+if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fog.Count -eq 1 -and $clouds.Count -eq 1 -and $sky.Count -eq 1 -and $dlss.Count -eq 1 -and $aio.Count -eq 1) {
     # Wrapped at the call site as well: PowerShell unrolls a single element
     # array on assignment, and a lone entry would arrive as a bare string
     # whose .Count is empty.
@@ -150,6 +155,7 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
     $fogEntries = @(Get-Entries $fog[0].FullName)
     $cloudsEntries = @(Get-Entries $clouds[0].FullName)
     $skyEntries = @(Get-Entries $sky[0].FullName | Sort-Object)
+    $dlssEntries = @(Get-Entries $dlss[0].FullName)
     $aioEntries = @(Get-Entries $aio[0].FullName)
 
     Check ($baseEntries -contains "F4SE/Plugins/CommunityShadersFO4.dll") "the base carries the plugin"
@@ -218,7 +224,25 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
         -not ($baseEntries -contains "Shaders/FO4/Skylighting/Skylighting.hlsl")
     ) "and the base does not carry them"
 
-    $union = @($baseEntries + $addonEntries + $shadowsEntries + $fogEntries + $cloudsEntries + $skyEntries | Sort-Object -Unique)
+    # The vendor DLL travels in the DLSS addon and nowhere else but the
+    # all-in-one: 59 MB a player without an NVIDIA card has no use for.
+    $dll = "F4SE/Plugins/CommunityShadersFO4/nvngx_dlss.dll"
+    Check ($dlssEntries -contains $dll) "the DLSS addon carries the DLSS runtime"
+    Check (
+        -not ($dlssEntries | Where-Object { $_ -ne $dll -and $_ -notlike "Shaders/FO4/DLSS/*" })
+    ) "and otherwise only its own shaders"
+    foreach ($pair in @(
+            @{ Name = "base"; Entries = $baseEntries },
+            @{ Name = "addon"; Entries = $addonEntries },
+            @{ Name = "shadow addon"; Entries = $shadowsEntries },
+            @{ Name = "fog addon"; Entries = $fogEntries },
+            @{ Name = "cloud addon"; Entries = $cloudsEntries },
+            @{ Name = "skylighting addon"; Entries = $skyEntries })) {
+        Check (-not ($pair.Entries -contains $dll)) "the $($pair.Name) does not carry the DLSS runtime"
+    }
+    Check ($aioEntries -contains $dll) "the all-in-one does"
+
+    $union = @($baseEntries + $addonEntries + $shadowsEntries + $fogEntries + $cloudsEntries + $skyEntries + $dlssEntries | Sort-Object -Unique)
     Check (
         $null -eq (Compare-Object $union (@($aioEntries) | Sort-Object -Unique))
     ) "the all-in-one is the union of base and addons"
@@ -230,9 +254,11 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
             @{ Name = "fog addon"; Entries = $fogEntries },
             @{ Name = "cloud addon"; Entries = $cloudsEntries },
             @{ Name = "skylighting addon"; Entries = $skyEntries },
+            @{ Name = "DLSS addon"; Entries = $dlssEntries },
             @{ Name = "all-in-one"; Entries = $aioEntries })) {
         $e = $pair.Entries
         Check (-not ($e | Where-Object { $_ -match '(^|/)CORE$' })) "no CORE marker in the $($pair.Name)"
+        Check (-not ($e | Where-Object { $_ -match '(^|/)EXTERNAL$' })) "no EXTERNAL marker in the $($pair.Name)"
         Check (-not ($e | Where-Object { $_ -like "SKSE/*" })) "no SKSE leftovers in the $($pair.Name)"
         Check (-not ($e | Where-Object { $_ -like "Interface/*" })) "no Interface leftovers in the $($pair.Name)"
         Check (-not ($e | Where-Object { $_ -match '^Shaders/[^/]+\.hlsl$' })) "no Skyrim shaders in the $($pair.Name)"

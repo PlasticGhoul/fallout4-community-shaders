@@ -202,7 +202,7 @@ NGX frei — im laufenden Spiel, wie E2 es für `ImagespaceTint` belegt hat.
 
 ### 6.3 Auslieferung
 
-Eigenes Archiv (kein `CORE`): `F4SE/Plugins/CommunityShadersFO4/nvngx_dlss.dll` (310.9.1) und die
+Eigenes Archiv (kein `CORE`): `F4SE/Plugins/CommunityShadersFO4/nvngx_dlss.dll` (310.9.1, 59 MB) und die
 Shader. `verify-package.ps1` prüft, daß die DLL im DLSS-Archiv und im All-in-One liegt und in
 keinem anderen. Das DLSS-SDK kommt als Submodul `extern/DLSS` auf den Tag `v310.9.1`.
 

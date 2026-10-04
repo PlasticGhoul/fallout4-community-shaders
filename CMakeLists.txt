@@ -52,6 +52,22 @@ add_subdirectory("${COMMONLIBF4_SHIM_DIR}" CommonLibF4 EXCLUDE_FROM_ALL)
 # state machine away from ImGui on purpose.
 find_package(imgui CONFIG REQUIRED)
 
+# NVIDIA DLSS SDK: headers and the static NGX library for the dynamic CRT
+# (/MD, CMAKE_MSVC_RUNTIME_LIBRARY MultiThreadedDLL). The runtime DLL is not
+# linked; it ships in the DLSS archive and NGX loads it at runtime.
+set(DLSS_SDK_DIR "${CMAKE_SOURCE_DIR}/extern/DLSS")
+if(NOT EXISTS "${DLSS_SDK_DIR}/include/nvsdk_ngx.h")
+    message(
+        FATAL_ERROR
+        "extern/DLSS missing - git submodule update --init --recursive"
+    )
+endif()
+
+# One prolog hook (BSImagespaceShaderLensFlare) has no call site to bend:
+# REL::THook handles calls and jumps only.
+find_path(DETOURS_INCLUDE_DIRS "detours/detours.h" REQUIRED)
+find_library(DETOURS_LIBRARY detours REQUIRED)
+
 # --------------------------------------------------------------- plugin target
 add_library(${PROJECT_NAME} SHARED)
 
@@ -63,6 +79,13 @@ file(
     "${CMAKE_SOURCE_DIR}/src/*.h"
 )
 target_sources(${PROJECT_NAME} PRIVATE ${PLUGIN_SOURCES})
+
+# Detours needs <Windows.h>, which the rest of the plugin never sees; this one
+# file is compiled without the precompiled header that brings REX in.
+set_source_files_properties(
+    "${CMAKE_SOURCE_DIR}/src/Upscale/LensFlareDetour.cpp"
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+)
 
 configure_file(
     "${CMAKE_SOURCE_DIR}/cmake/Plugin.h.in"
@@ -109,6 +132,8 @@ target_include_directories(
         "${CMAKE_SOURCE_DIR}/src"
         "${CMAKE_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_BINARY_DIR}/cmake"
+        "${DLSS_SDK_DIR}/include"
+        "${DETOURS_INCLUDE_DIRS}"
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
@@ -118,7 +143,11 @@ target_precompile_headers(
 )
 target_link_libraries(
     ${PROJECT_NAME}
-    PRIVATE CommonLibF4::CommonLibF4 imgui::imgui
+    PRIVATE
+        CommonLibF4::CommonLibF4
+        imgui::imgui
+        "${DLSS_SDK_DIR}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib"
+        "${DETOURS_LIBRARY}"
 )
 
 if(MSVC)
