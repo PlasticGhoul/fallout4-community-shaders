@@ -356,6 +356,7 @@ namespace Features
 		// doodlum's DrawWorld_DeferredComposite_RenderPassImmediately: the
 		// composite reads stand-ins of the render size at a ratio of one.
 		if (a_before) {
+			++_composites;
 			_proxies.Swap(*context);
 			OverrideDepth();
 			const auto x = _ratioX;
@@ -378,6 +379,7 @@ namespace Features
 			return;
 		}
 		if (a_before) {
+			++_lensFlares;
 			OverrideDepth();
 		} else {
 			ResetDepth();
@@ -389,6 +391,7 @@ namespace Features
 		auto* const context = Render::GetContext();
 		if (_upscaling && context != nullptr && _passes.Reflections() != nullptr) {
 			context->PSSetShader(_passes.Reflections(), nullptr, 0);
+			++_reflections;
 		}
 	}
 
@@ -540,10 +543,15 @@ namespace Features
 		++_frames;
 		if (_frames % kLogInterval == 0) {
 			REX::INFO(
-				"dlss: mode {} {}x{} -> {}x{}, jitter [{:.3f} {:.3f}], {} evaluation(s), {} failed, {} reset(s), native {}",
+				"dlss: mode {} {}x{} -> {}x{}, jitter [{:.3f} {:.3f}], {} evaluation(s), {} failed, {} reset(s), native {}, "
+				"composite {}, lens flare {}, reflections {}",
 				Settings::GetString("DLSS/mode"),
 				_render.width, _render.height, _display.width, _display.height,
-				_jitter.x, _jitter.y, _evaluations, _failedEvaluations, _resets, !_active);
+				_jitter.x, _jitter.y, _evaluations, _failedEvaluations, _resets, !_active,
+				_composites, _lensFlares, _reflections);
+			_composites = 0;
+			_lensFlares = 0;
+			_reflections = 0;
 			LogMotionProbe();
 			for (auto& due : _phaseDue) {
 				due = true;

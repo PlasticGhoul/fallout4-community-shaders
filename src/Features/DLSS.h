@@ -96,5 +96,8 @@ namespace Features
 		std::uint64_t _evaluations{ 0 };
 		std::uint64_t _failedEvaluations{ 0 };
 		std::uint64_t _resets{ 0 };
+		std::uint64_t _composites{ 0 };
+		std::uint64_t _lensFlares{ 0 };
+		std::uint64_t _reflections{ 0 };
 	};
 }
