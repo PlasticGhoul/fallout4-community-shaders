@@ -62,7 +62,6 @@ namespace Upscale::Hooks
 		std::unique_ptr<EffectRangeHook> g_reflections;
 		Render::VTablePatch g_temporalAA;
 		void* g_lensFlare{ nullptr };
-		void* g_viewportObject{ nullptr };
 
 		Handler* Current() noexcept
 		{
@@ -94,7 +93,6 @@ namespace Upscale::Hooks
 		void EffectRange(void* a_self, std::uint32_t a_1, std::uint32_t a_2, std::uint32_t a_3, std::uint32_t a_4)
 		{
 			(*g_effectRange)(a_self, a_1, a_2, a_3, a_4);
-			g_viewportObject = a_self;
 			if (auto* const handler = Current()) {
 				handler->AfterEffectRange();
 			}
@@ -102,7 +100,6 @@ namespace Upscale::Hooks
 
 		void ViewportDefault(void* a_self, bool a_enabled)
 		{
-			g_viewportObject = a_self;
 			if (auto* const handler = Current()) {
 				handler->BeforeDynamicViewportDefault();
 			}
@@ -249,12 +246,12 @@ namespace Upscale::Hooks
 
 	void SetDynamicResolutionViewport(bool a_enabled) noexcept
 	{
-		// The function's object is the render target manager (doodlum calls
-		// it on that singleton); the composite needs it before the first
-		// hooked call of a session has shown it to us.
-		auto* const manager = g_viewportObject != nullptr ?
-		                          g_viewportObject :
-		                          static_cast<void*>(RE::BSGraphics::RenderTargetManager::GetSingleton());
+		// Always on the render target manager singleton, as doodlum calls it.
+		// The first version took the object from the RenderEffectRange hook's
+		// first argument instead - another object - and the flag never
+		// changed: the effects after DLSS kept the render-size viewport and
+		// drew the full picture into its corner (second run, 2026-10-04).
+		auto* const manager = RE::BSGraphics::RenderTargetManager::GetSingleton();
 		if (g_viewportDefault && manager != nullptr) {
 			(*g_viewportDefault)(manager, a_enabled);
 		}
