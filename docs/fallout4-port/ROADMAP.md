@@ -3,8 +3,8 @@
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
 Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay), F2 (Screen-Space Shadows),
 F3 (Exponential Height Fog), F4 (Cloud Shadows), das dazwischengeschobene F4.5 (Menü in zwei
-Spalten) und F5 (Skylighting) sind abgeschlossen**. Als Nächstes steht **F6** an, Volumetric
-Lighting. Stand 2026-10-04.
+Spalten), F5 (Skylighting) und das vorgezogene F5.5a (DLSS Super Resolution) sind
+abgeschlossen**. Als Nächstes steht **F5.5b** an, DLSS Frame Generation. Stand 2026-10-04.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -44,32 +44,34 @@ RE-Header und laut eigenem README unfertige NG-Unterstützung) sowie
 Reihenfolge ist bindend, solange nichts anderes vereinbart wird: jedes Teilprojekt setzt auf dem
 vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem beschreibt.
 
-| #    | Teilprojekt                                                                                                                 | Abnahmekriterium                                                            | Status            |
-| ---- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------- |
-| A    | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung      | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab        | **abgeschlossen** |
-| B1   | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker                 | RenderDoc-Capture zeigt einen von uns gesetzten Marker                      | **abgeschlossen** |
-| B2   | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen              | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle  | **abgeschlossen** |
-| C    | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                                   | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt    | **abgeschlossen** |
-| D1   | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz                                  | Zwei Features unabhängig an-/abschaltbar                                    | **abgeschlossen** |
-| D2   | **Paketierung** — `dist/`, Basis-, Addon- und AIO-Archive                                                                   | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel                | **abgeschlossen** |
-| E1   | **Overlay und Eingabe** — ImGui-Overlay, Fensterprozedur, Eingabesperre, eigener Zeiger                                     | Overlay im Spiel bedienbar, Spieleingabe steht, solange es offen ist        | **abgeschlossen** |
-| E2   | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                             | Einstellungen im Overlay ändern, sie überleben einen Neustart               | **abgeschlossen** |
-| F1   | **Performance Overlay** — CPU- und GPU-Zeitmessung je Pass, im Overlay dargestellt                                          | Zahlen im Spiel ablesbar, die sich unter Last bewegen                       | **abgeschlossen** |
-| F2   | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                              | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
-| F3   | **Exponential Height Fog** — erster Pass hinter der opaken Szene, dazu `FrameTrace` als Werkzeug für alle Anker             | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
-| F4   | **Cloud Shadows** — die Wolken der Engine ein zweites Mal gezeichnet, in eine eigene Cubemap; dazu der Draw-Hook            | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
-| F4.5 | **Menü in zwei Spalten** — Seitenliste links mit den Schaltern, eine Seite je Eintrag rechts, Performance als Seite         | Jede Seite erreichbar, Schalten aus der Liste, Zahlen der Tafel unverändert | **abgeschlossen** |
-| F5   | **Skylighting** — Sondengitter wie die Vorlage, Erfassung über die Schattenwerfer, Anbringen im SSAO-Ziel vor dem Composite | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
-| F6   | **Volumetric Lighting**                                                                                                     | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
-| F7   | **Volumetric Shadows**                                                                                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
-| F8   | **Screen Space GI**                                                                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
-| F9   | **Subsurface Scattering**                                                                                                   | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
-| F10  | **Dynamic Cubemaps**                                                                                                        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
-| F11  | **IBL**                                                                                                                     | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
-| F12  | **Forschung: Permutations-Cache** — Shader-Cache über die Technikkarten, belegt am kleinsten Gruppe-2-Feature               | Eine Permutation von `kDFPrepass` nachweislich durch eine eigene ersetzt    | offen             |
-| F13  | **Frame Generation** — DX12-Swapchain-Stellvertreter, FSR3 über die FidelityFX-SDK, optional DLSS über Streamline           | Mehr Bilder je Sekunde, gemessen, bei stehendem Overlay                     | offen             |
-| F14+ | **Objekt-Shader** — die tragenden Gruppe-2-Features, Zuschnitt und Zahl folgen aus F12                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
-| Fx   | **Werkzeuge** — Screenshot, RenderDoc-Anbindung                                                                             | Werkzeug tut, was sein Name sagt                                            | offen             |
+| #     | Teilprojekt                                                                                                                 | Abnahmekriterium                                                            | Status            |
+| ----- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------- |
+| A     | **Fundament** — CMake/vcpkg-Umbau, commonlibf4 als Submodul + CMake-Shim, F4SE-Entrypoints, Logging, Runtime-Erkennung      | DLL lädt in FO4 AE 1.11.240, schreibt eine Logzeile, stürzt nicht ab        | **abgeschlossen** |
+| B1    | **Render-Anbindung** — Zugriff auf D3D11-Device/Context/SwapChain, Present-Hook, Frame-Zähler, Debug-Marker                 | RenderDoc-Capture zeigt einen von uns gesetzten Marker                      | **abgeschlossen** |
+| B2    | **Render-Target-Inventar** — die 101 anonymen Targets aus BSGraphics::RendererData identifizieren und benennen              | Beschriftetes RenderDoc-Capture plus Befunddokument mit der Target-Tabelle  | **abgeschlossen** |
+| C     | **Shader-Pipeline** — Laden, Kompilieren, Cachen, Hot-Reload, Einschleusen eigener Shader                                   | Ein vorhandener FO4-Shader wird nachweislich durch einen eigenen ersetzt    | **abgeschlossen** |
+| D1    | **Feature-Framework** — Feature-Basisklasse, Registrierung, Lifecycle, Settings-Persistenz                                  | Zwei Features unabhängig an-/abschaltbar                                    | **abgeschlossen** |
+| D2    | **Paketierung** — `dist/`, Basis-, Addon- und AIO-Archive                                                                   | Ausgeliefertes Archiv installiert sich in ein sauberes Spiel                | **abgeschlossen** |
+| E1    | **Overlay und Eingabe** — ImGui-Overlay, Fensterprozedur, Eingabesperre, eigener Zeiger                                     | Overlay im Spiel bedienbar, Spieleingabe steht, solange es offen ist        | **abgeschlossen** |
+| E2    | **Einstellungsoberfläche** — Featureliste, Schreiben von Einstellungen, Themes, Schriften, i18n                             | Einstellungen im Overlay ändern, sie überleben einen Neustart               | **abgeschlossen** |
+| F1    | **Performance Overlay** — CPU- und GPU-Zeitmessung je Pass, im Overlay dargestellt                                          | Zahlen im Spiel ablesbar, die sich unter Last bewegen                       | **abgeschlossen** |
+| F2    | **Screen-Space Shadows** — die Naht: eigener Pass, G-Buffer lesen, Ergebnis in die Beleuchtung                              | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
+| F3    | **Exponential Height Fog** — erster Pass hinter der opaken Szene, dazu `FrameTrace` als Werkzeug für alle Anker             | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
+| F4    | **Cloud Shadows** — die Wolken der Engine ein zweites Mal gezeichnet, in eine eigene Cubemap; dazu der Draw-Hook            | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
+| F4.5  | **Menü in zwei Spalten** — Seitenliste links mit den Schaltern, eine Seite je Eintrag rechts, Performance als Seite         | Jede Seite erreichbar, Schalten aus der Liste, Zahlen der Tafel unverändert | **abgeschlossen** |
+| F5    | **Skylighting** — Sondengitter wie die Vorlage, Erfassung über die Schattenwerfer, Anbringen im SSAO-Ziel vor dem Composite | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
+| F5.5a | **DLSS Super Resolution** — NGX auf D3D11, DLAA und vier Hochskalier-Modi über die dynamische Auflösung der Engine          | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
+| F5.5b | **DLSS Frame Generation** — D3D12-Brücke mit Streamline, DLSS-G/MFG und Reflex; Andockpunkt für DLSS 5                      | Mehr Bilder je Sekunde, gemessen, bei stehendem Overlay                     | offen             |
+| F6    | **Volumetric Lighting**                                                                                                     | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F7    | **Volumetric Shadows**                                                                                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F8    | **Screen Space GI**                                                                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F9    | **Subsurface Scattering**                                                                                                   | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F10   | **Dynamic Cubemaps**                                                                                                        | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F11   | **IBL**                                                                                                                     | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| F12   | **Forschung: Permutations-Cache** — Shader-Cache über die Technikkarten, belegt am kleinsten Gruppe-2-Feature               | Eine Permutation von `kDFPrepass` nachweislich durch eine eigene ersetzt    | offen             |
+| F13   | **Frame Generation** — DX12-Swapchain-Stellvertreter, FSR3 über die FidelityFX-SDK, optional DLSS über Streamline           | Mehr Bilder je Sekunde, gemessen, bei stehendem Overlay                     | offen             |
+| F14+  | **Objekt-Shader** — die tragenden Gruppe-2-Features, Zuschnitt und Zahl folgen aus F12                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
+| Fx    | **Werkzeuge** — Screenshot, RenderDoc-Anbindung                                                                             | Werkzeug tut, was sein Name sagt                                            | offen             |
 
 Das ursprüngliche Teilprojekt D wurde am 2026-08-30 in D1 und D2 geteilt: Laufzeitverhalten und
 Auslieferung sind zwei Subsysteme ohne Berührung. Das Abnahmekriterium von D1 heißt „zwei
@@ -160,6 +162,13 @@ unser Overlay seit E1 im `Present`-Hook zeichnet. F13 und das Overlay müssen zu
 werden, und das geht erst, wenn das Overlay steht und F1 die Zahlen liefert, an denen sich der
 Gewinn zeigen lässt. Offen und billig zu klären: ob doodlums Mod und unser Present-Hook sich
 **schon jetzt** in die Quere kommen. Ein Spielstart beantwortet das.
+
+**Stand 2026-10-04: DLSS vorgezogen als F5.5a/b.** Der Nutzer wollte DLSS 5; eine Recherche
+(Abschnitt „Aus Teilprojekt F5.5a bestätigt") ergab, daß DLSS 5 (DLSS-NR) kein öffentliches SDK
+hat — Streamline 2.14.1 kennt nur den Namen. Super Resolution kam deshalb als F5.5a über NGX auf
+D3D11, Frame Generation folgt als F5.5b auf einer D3D12-Brücke, die zugleich der Andockpunkt für
+DLSS 5 ist. F13 behält FSR3 als Weg für Karten ohne DLSS-G. Der folgende Absatz ist der Stand
+vom 2026-09-05.
 
 **DLSS ja, DLSS 5 nein.** DLSS Frame Generation läuft über Streamline und braucht ebenfalls DX12 —
 derselbe Stellvertreter trägt es, und der Skyrim-Stand hat `Streamline.cpp` bereits. DLSS 5 ist am
@@ -1247,6 +1256,98 @@ die Kodierung von `RT_020` klärt; `TexelProbe` für Zahlen statt Bilder. **F7 (
 liest dieselbe Schattenkarte** und erbt den Befund: drei Kaskaden in `DS_008`, Slot-12-Layout,
 `dsView[n]`. Und das Verfahren, einen Engine-Puffer zu spiegeln und darin nur die Bytes zu
 ersetzen, die der Shader nachweislich liest.
+
+## Aus Teilprojekt F5.5a bestätigt
+
+Ein Tag, 2026-10-04, vor F6 gezogen. Drei Läufe (DLAA, Quality zweimal, Abnahme). Neu:
+`Upscale::Hooks` (acht Call-Hooks, ein vtable-Eintrag, ein Detours-Prolog, je Stelle geprüft),
+`Upscale::Ngx` (DLSS-SDK 310.9.1, NGX auf D3D11), `Upscale::Passes` (Dilatation, Farbkopie, RCAS,
+volle Tiefe, doodlums SSR-Shader), `Upscale::ProxyTargets`, `Upscale::Math` und
+`Upscale::CameraCut` (rein, Host-Tests), `Render::Extent`, `Render::Resolution`, das Feature
+`DLSS` und eine Paketregel `EXTERNAL`, mit der die 59 MB `nvngx_dlss.dll` aus dem SDK-Submodul ins
+DLSS-Archiv kommt, ohne die Historie zu belasten. Vorlage: doodlums Fallout-4-Upscaler
+(`doodlum/fo4test`, Zweig `upscaler`, `ce587f5`, GPL-3.0).
+
+### Die Recherche
+
+DLSS 5 heißt im SDK DLSS-NR (`kFeatureDLSS_NR`), erschienen 2026-09-03 mit NBA 2K27, RTX 50,
+Treiber ab 616.64 (aktuell 617.14). Es ist eine generative Nachstufe auf das fertige Bild, kein
+Upscaler; Pflicht sind Farbe und Bewegungsvektoren, Masken sind optional (unsere Notiz vom
+September war zu streng). **Kein öffentliches SDK**: Streamline 2.14.1 hat Enum und Puffertypen,
+keinen Header, kein Plugin, keine DLL; Mods nutzen eine geleakte oder aus dem Treiber gezogene
+DLL. Kein NVIDIA-App-Override. DLSS SR läuft auf D3D11, DLSS-G nur auf D3D12/Vulkan mit
+Pflicht-Reflex; Streamline nimmt je Prozess eine API — daher NGX für SR, Streamline nur in
+F5.5b auf D3D12.
+
+### Was die Läufe ergeben haben
+
+-   **doodlums Einhängestellen gelten auf 1.11.240.** Offline gegen die Address Library und
+    `Fallout4.exe` geprüft, im Spiel bestätigt: alle Hooks feuern 180-mal je Sekunde.
+    `BSImagespaceShaderLensFlare` hat keine Aufrufstelle (nur ein `lea` in einer Registrierung),
+    daher Detours.
+-   **`REL::THook` liest seine Stelle im Konstruktor, und F4SE aktiviert registrierte Hooks in
+    `F4SE::Init`** — vor unserer Versionsprüfung. Die Hooks werden deshalb nach der Prüfung
+    angelegt und selbst aktiviert; das Trampolin (256 Byte) kommt aus `InitInfo`.
+-   **`RT_029` hält UV-Einheiten**: im Stand ~1e-6, beim Gehen 0,001–0,012. Skala für NGX ist
+    die Rendergröße, doodlums Vorzeichen stimmen, der Jitter geht negiert an NGX und mit negiertem
+    x in `State::offsetX/Y`, bezogen auf die Anzeigegröße — auch beim Hochskalieren kein Zittern.
+-   **Die Engine erzeugt Jitter und Bewegungsvektoren nur mit eingeschaltetem TAA.** Das Feature
+    zwingt den Schalter an (`2704658`) und hält TAA über `IsActive` aus der Kette.
+-   **`SetUseDynamicResolutionViewportAsDefaultViewport` gehört auf das RTM-Singleton.** Der erste
+    Quality-Lauf nahm das Objekt aus dem ersten Argument des `RenderEffectRange`-Hooks — ein
+    anderes —, der Viewport blieb klein, und die Effekte nach DLSS zeichneten das fertige Bild in
+    die Ecke („Bild im Bild"). Fix `4daed29a`.
+-   **Was die Phasen sehen** (Sonde, wieder entfernt): in `kBeforeComposite`, `kComposite` und
+    `kAfterOpaque` volle Texturen, Viewport gleich Renderrechteck (1707×960 bei Quality), die
+    Tiefe der Engine. `kComposite` liegt also **vor** doodlums Ersatzziel-Tausch, der erst im
+    `RenderPassImmediately`-Aufruf geschieht. F2–F5 nehmen seither den Bildteil ihres Ziels
+    (`Render::Resolution::RenderPart`) als Viewport. Bends `DynamicRes` bleibt 1: seine Pixel
+    sind die der Tiefentextur.
+-   **doodlums Ersatzziele hatten nie eine RTV** — sein Aufruf übergibt den Wert des Zeigers statt
+    seiner Adresse. Übernommen, weil das der gespielte Zustand ist.
+
+### Die Zahlen
+
+Abnahmelauf 2026-10-04, 2560×1440, RTX 5080, je ein Schnappschuß über 300 Frames an derselben
+Stelle (ms):
+
+| Zustand            | Frame GPU | `DLSS/Evaluate` | SSS/Draw | Nebel | Wolken |
+| ------------------ | --------- | --------------- | -------- | ----- | ------ |
+| DLSS aus (TAA)     | 6,989     | —               | 0,377    | 0,030 | 0,054  |
+| DLAA               | 7,607     | 0,764           | 0,378    | 0,030 | 0,054  |
+| Performance (720p) | 7,608     | 0,831           | 0,070    | 0,010 | 0,015  |
+
+**Die Hochskalierung wirkt, bringt hier aber keine Bilder.** Die pixelabhängigen Pässe werden
+in Performance 3,5- bis 5-mal billiger, der Frame nicht: DLSS selbst und die Kopien der
+Ersatzziele fressen die Ersparnis. Fallout 4 ist an dieser Stelle auf einer RTX 5080 nicht
+pixelgebunden, sondern hängt an auflösungsunabhängiger Arbeit (Schattenkarten, CPU 4,7 ms).
+Der Gewinn von F5.5a ist die Bildqualität (DLAA); der Bildratengewinn ist F5.5b vorbehalten. Der
+Quality-Schnappschuß fiel zwei Sekunden nach dem Umschalten und ist nicht gewertet.
+
+### Die Abnahme
+
+Vom Nutzer als gut gemeldet: DLAA „sieht sehr gut aus", nichts schmiert oder zittert; Quality
+füllt den Schirm, die Debug-Ansichten von F2–F5 sitzen, Spiegelungen passen; Pip-Boy (nativ, im
+Log 14 Sekunden `native true`, Reset danach), Feature aus und an im laufenden Spiel, F11.
+**Hot-Reload belegt** („shaders changed, recompiling" 18:35:15). Keine `[W]`- und keine
+`[E]`-Zeile in allen drei Läufen.
+
+**Nicht belegt:** Balanced und Ultra Performance (keine Ersatzziele bei 0,58 oder 0,333 im
+Log), Ladebildschirm und Alt-Tab (im Log nicht erkennbar, vom Nutzer als erledigt gemeldet), das
+Abnahmekriterium „FPS-Gewinn in Quality" — gemessen und verneint, siehe oben. ENB und fremde
+Upscaler sind nur durch den Code abgedeckt.
+
+### Zugeständnisse
+
+Keine Hochskalierung im Pip-Boy und im Examine-Menü. Kein FSR oder XeSS für andere Karten. Mit
+ENB nur DLAA. Die DLL steht unter NVIDIAs Lizenz; die Linking-Ausnahme trennt sie von der GPL,
+eine Restunsicherheit zu Abschnitt 4.e der SDK-Lizenz bleibt. Das Feature ist standardmäßig aus.
+
+### Was F5.5b davon hat
+
+Jitter, Bewegungsvektoren in UV, Tiefe und die Reset-Erkennung, belegt; `Render::Resolution`;
+die Einhängestelle nach `RenderEffectRange`, vor der das HUD-lose Bild für DLSS-G liegt; der
+Befund, daß ein Bildratengewinn auf dieser Maschine nur aus Frame Generation kommen kann.
 
 ## Bekannte Lücken in CommonLibF4
 

@@ -53,6 +53,15 @@ Ebenfalls F5: `BSDFComposite` (`0x0040`) liest `RT_028` und wendet es auf seinen
 Alle drei Kanäle tragen denselben Wert, im Freien 0,48 bis 1,0 — das Ergebnis der SSAO der
 Engine. Eine Multiplikation unmittelbar vor dem Composite dunkelt das Umgebungslicht.
 
+### `RT_029` sind die Bewegungsvektoren, in UV
+
+Teilprojekt F5.5a (2026-10-04): `R16G16_FLOAT` in voller Auflösung, geschrieben vom G-Buffer-Prepass
+und vom Himmel, **in UV-Einheiten** — im Stand ~1e-6, beim Gehen 0,001 bis 0,012 (3 bis 30 Pixel
+je Frame bei 1440p). Die Kamerabewegung ist enthalten, der Jitter nicht; mit DLSS-Skala gleich
+Rendergröße und doodlums Vorzeichen schmiert nichts. Die Engine schreibt sie nur, solange ihr
+TAA-Schalter an ist. Bei dynamischer Auflösung liegen sie wie alles andere im Renderrechteck oben
+links.
+
 ## Vermutungen zur Bedeutung
 
 **Ausdrücklich Vermutungen.** Sie stützen sich allein auf Format, Auflösung und Bind-Flags; keine
