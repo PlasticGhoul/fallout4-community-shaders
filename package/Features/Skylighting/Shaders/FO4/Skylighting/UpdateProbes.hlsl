@@ -21,12 +21,16 @@ cbuffer PerFrame : register(b1)
 };
 
 static const uint kFadeInFrames = 15;
+static const uint kMaxAccumFrames = 255;
 
 [numthreads(8, 8, 1)] void main(uint3 dtid : SV_DispatchThreadID) {
 	const uint3 cellID = Skylighting::LogicalCell(dtid, Settings.ArrayOrigin.xyz);
-	const uint3 validMin = (uint3)max(int3(0, 0, 0), Settings.ValidMargin.xyz);
-	const uint3 validMax = Skylighting::ARRAY_DIM - 1 + (uint3)min(int3(0, 0, 0), Settings.ValidMargin.xyz);
-	const bool isValid = all(cellID >= validMin) && all(cellID <= validMax);
+	// Signed, unlike the template: a leap of a grid or more along a negative
+	// axis puts validMax below zero, and as uint that wraps round to a value
+	// that declares every stale cell valid - a fast travel south or west.
+	const int3 validMin = max(int3(0, 0, 0), Settings.ValidMargin.xyz);
+	const int3 validMax = (int3)Skylighting::ARRAY_DIM - 1 + min(int3(0, 0, 0), Settings.ValidMargin.xyz);
+	const bool isValid = all((int3)cellID >= validMin) && all((int3)cellID <= validMax);
 
 	float3 cellCentre = cellID + 0.5 - Skylighting::ARRAY_DIM / 2;
 	cellCentre = cellCentre / Skylighting::ARRAY_DIM * Skylighting::ARRAY_SIZE + Settings.PosOffset.xyz;
@@ -37,7 +41,10 @@ static const uint kFadeInFrames = 15;
 	const float2 occlusionUV = float2(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
 
 	if (all(occlusionUV > 0.0) && all(occlusionUV < 1.0)) {
-		const uint accumFrames = isValid ? (AccumFrames[dtid] + 1) : 1;
+		// Held at what R8_UINT can store, rather than leaving 256 to the
+		// format conversion: wrapped to zero it would restart the running
+		// mean from a single direction every 256 frames.
+		const uint accumFrames = isValid ? min(AccumFrames[dtid] + 1, kMaxAccumFrames) : 1;
 		// 1 where the cell centre is nearer the sky than what the casters
 		// drew there: the sky is visible from this direction.
 		const float visibility = OcclusionDepth.SampleCmpLevelZero(Comparison, occlusionUV, clip.z);
