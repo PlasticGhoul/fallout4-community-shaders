@@ -37,8 +37,9 @@ namespace Features
 
 		/// RT_029 holds uv units (doodlum hands Streamline a scale of 1, and
 		/// Streamline wants [-1, 1] uv); NGX wants render pixels, so the scale
-		/// is the render size times these. The sign is the first run's to
-		/// settle (plan, task 9).
+		/// is the render size times these. Settled by the first run on
+		/// 2026-10-04: still ~1e-6, walking 0.001 to 0.012 (3 to 30 pixels a
+		/// frame at 1440p), and with these signs nothing smeared or shook.
 		constexpr float kMotionScaleX = 1.0f;
 		constexpr float kMotionScaleY = 1.0f;
 
