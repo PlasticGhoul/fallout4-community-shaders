@@ -8,6 +8,7 @@
 #include "Render/FullscreenPass.h"
 #include "Render/Profiler.h"
 #include "Render/Renderer.h"
+#include "Render/Resolution.h"
 #include "Render/StateGuard.h"
 #include "Render/SwapChainHook.h"
 #include "Render/Targets.h"
@@ -868,6 +869,15 @@ namespace Features
 		context->PSSetConstantBuffers(1, 1, std::addressof(buffer));
 		context->PSSetShader(_shader, nullptr, 0);
 
+		// The light target's part that holds the picture: all of it, or the
+		// render rectangle while DLSS upscales. Set, not inherited.
+		if (auto* const texture = Render::Targets::RenderTargetTexture(Render::Targets::kLightDiffuse); texture != nullptr) {
+			REX::W32::D3D11_TEXTURE2D_DESC desc{};
+			texture->GetDesc(std::addressof(desc));
+			const auto picture = Render::Resolution::RenderPart(Render::Resolution::Current(), Render::Extent{ desc.width, desc.height });
+			const REX::W32::D3D11_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(picture.width), static_cast<float>(picture.height), 0.0f, 1.0f };
+			context->RSSetViewports(1, std::addressof(viewport));
+		}
 		Render::DrawFullscreen();
 	}
 

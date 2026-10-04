@@ -26,6 +26,13 @@ namespace Render::Resolution
 	/// the render rectangle itself.
 	[[nodiscard]] std::array<float, 2> RenderToTexture(const Frame& a_frame, Extent a_texture) noexcept;
 
+	/// The top left part of a target of size a_texture that holds the
+	/// picture while the engine renders below display size: the texture
+	/// scaled by render over display, rounded down. What a pass writing into
+	/// that target takes as its viewport - measured on 2026-10-04, the
+	/// engine's own viewport in every phase F2 to F5 use is exactly this.
+	[[nodiscard]] Extent RenderPart(const Frame& a_frame, Extent a_texture) noexcept;
+
 	/// This frame. Without DLSS both sizes are those of RT_004 and nothing
 	/// is swapped.
 	[[nodiscard]] Frame Current() noexcept;

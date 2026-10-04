@@ -32,6 +32,13 @@ int main()
 	const auto proxy = Resolution::RenderToTexture(quality, Extent{ 1707, 960 });
 	Check(proxy[0] == 1.0f && proxy[1] == 1.0f, "a texture of the render size is used whole");
 
+	Check(Resolution::RenderPart(quality, Extent{ 2560, 1440 }) == Extent{ 1707, 960 },
+		"a full size target holds the picture in its render rectangle");
+	Check(Resolution::RenderPart(quality, Extent{ 1280, 720 }) == Extent{ 853, 480 },
+		"a half size target like RT_028 in half of that");
+	const Resolution::Frame native{ Extent{ 2560, 1440 }, Extent{ 2560, 1440 }, false };
+	Check(Resolution::RenderPart(native, Extent{ 1280, 720 }) == Extent{ 1280, 720 }, "without DLSS a target is used whole");
+
 	if (g_failures != 0) {
 		std::printf("%d check(s) failed\n", g_failures);
 		return 1;

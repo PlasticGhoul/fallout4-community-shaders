@@ -8,6 +8,7 @@
 #include "Render/FullscreenPass.h"
 #include "Render/Profiler.h"
 #include "Render/Renderer.h"
+#include "Render/Resolution.h"
 #include "Render/StateGuard.h"
 #include "Render/SwapChainHook.h"
 #include "Render/Targets.h"
@@ -884,16 +885,15 @@ namespace Features
 		data.cameraUp[3] = a_debugView;
 		data.params[0] = static_cast<float>(Settings::GetDouble("Skylighting/minVisibility"));
 
-		// Full resolution from the HDR target's description; the depth buffer
-		// has the same size, and the pass runs at RT_028's half of it.
-		auto* const sceneTexture = Render::Targets::RenderTargetTexture(Render::Targets::kSceneHDR);
-		if (sceneTexture == nullptr) {
+		// The pixels of the depth that hold the picture: the full resolution,
+		// or the render rectangle while DLSS upscales (the pass runs at RT_028's
+		// half of it and reads the depth at the matching pixel).
+		const auto depth = Render::Resolution::DepthExtent(Render::Resolution::Current());
+		if (depth.width == 0 || depth.height == 0) {
 			return false;
 		}
-		REX::W32::D3D11_TEXTURE2D_DESC sceneDesc{};
-		sceneTexture->GetDesc(std::addressof(sceneDesc));
-		data.params[2] = static_cast<float>(sceneDesc.width);
-		data.params[3] = static_cast<float>(sceneDesc.height);
+		data.params[2] = static_cast<float>(depth.width);
+		data.params[3] = static_cast<float>(depth.height);
 		return _constants.Update(std::addressof(data), sizeof(data));
 	}
 
@@ -963,7 +963,8 @@ namespace Features
 		}
 
 		// The viewport from the target, not from the screen: RT_028 is half
-		// resolution, the HDR target full.
+		// resolution, the HDR target full - and of either only the part that
+		// holds the picture, the render rectangle while DLSS upscales.
 		REX::W32::ID3D11Resource* resource = nullptr;
 		a_target->GetResource(std::addressof(resource));
 		if (resource == nullptr) {
@@ -972,7 +973,8 @@ namespace Features
 		REX::W32::D3D11_TEXTURE2D_DESC desc{};
 		reinterpret_cast<REX::W32::ID3D11Texture2D*>(resource)->GetDesc(std::addressof(desc));
 		resource->Release();
-		const REX::W32::D3D11_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(desc.width), static_cast<float>(desc.height), 0.0f, 1.0f };
+		const auto picture = Render::Resolution::RenderPart(Render::Resolution::Current(), Render::Extent{ desc.width, desc.height });
+		const REX::W32::D3D11_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(picture.width), static_cast<float>(picture.height), 0.0f, 1.0f };
 
 		const Render::StateGuard guard;
 		a_context.OMSetRenderTargets(0, nullptr, nullptr);

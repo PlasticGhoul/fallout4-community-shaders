@@ -6,6 +6,7 @@
 #include "Render/FullscreenPass.h"
 #include "Render/Profiler.h"
 #include "Render/Renderer.h"
+#include "Render/Resolution.h"
 #include "Render/StateGuard.h"
 #include "Render/Targets.h"
 #include "Settings/Settings.h"
@@ -374,10 +375,13 @@ namespace Features
 		data.params[1] = static_cast<float>(Settings::GetDouble("ExponentialHeightFog/height"));
 		data.params[2] = static_cast<float>(Settings::GetDouble("ExponentialHeightFog/heightFalloff"));
 		data.params[3] = static_cast<float>(Settings::GetDouble("ExponentialHeightFog/startDistance"));
-		data.screen[0] = static_cast<float>(desc.width);
-		data.screen[1] = static_cast<float>(desc.height);
-		data.screen[2] = 1.0f / static_cast<float>(desc.width);
-		data.screen[3] = 1.0f / static_cast<float>(desc.height);
+		// The picture's part of the scene target: all of it, or its top left
+		// render rectangle while DLSS upscales.
+		const auto picture = Render::Resolution::RenderPart(Render::Resolution::Current(), Render::Extent{ desc.width, desc.height });
+		data.screen[0] = static_cast<float>(picture.width);
+		data.screen[1] = static_cast<float>(picture.height);
+		data.screen[2] = 1.0f / static_cast<float>(picture.width);
+		data.screen[3] = 1.0f / static_cast<float>(picture.height);
 
 		if (_draws % kLogInterval == 0) {
 			REX::INFO(
@@ -415,6 +419,10 @@ namespace Features
 		context->PSSetConstantBuffers(1, 1, std::addressof(buffer));
 		context->PSSetShader(_shader, nullptr, 0);
 
+		// Set, not inherited: the engine's viewport is the render rectangle
+		// here, measured, but the fog's uv must span exactly the picture.
+		const REX::W32::D3D11_VIEWPORT viewport{ 0.0f, 0.0f, data.screen[0], data.screen[1], 0.0f, 1.0f };
+		context->RSSetViewports(1, std::addressof(viewport));
 		Render::DrawFullscreen();
 	}
 

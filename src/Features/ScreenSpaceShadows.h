@@ -2,6 +2,7 @@
 
 #include "Feature/Feature.h"
 #include "Features/ScreenSpaceShadows/BendDispatch.h"
+#include "Render/Extent.h"
 #include "Render/PhaseDispatcher.h"
 #include "Render/Resources.h"
 #include "Util/FileWatch.h"
@@ -65,6 +66,8 @@ namespace Features
 		/// and quantised to eights so that a wobbling resolution does not
 		/// recompile it every frame.
 		[[nodiscard]] std::uint32_t ScaledSampleCount() const;
+		/// The part of the mask that holds the picture (Render::Resolution).
+		[[nodiscard]] Render::Extent PicturePart() const noexcept;
 
 		Render::Texture _mask;
 		Render::ConstantBuffer _constants;

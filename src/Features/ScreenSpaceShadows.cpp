@@ -6,6 +6,7 @@
 #include "Render/FullscreenPass.h"
 #include "Render/Profiler.h"
 #include "Render/Renderer.h"
+#include "Render/Resolution.h"
 #include "Render/StateGuard.h"
 #include "Render/Targets.h"
 #include "Settings/Settings.h"
@@ -377,9 +378,13 @@ namespace Features
 			0.0f
 		};
 
+		// The picture's part of the mask: all of it, or the top left render
+		// rectangle while DLSS upscales - where the light's position on the
+		// screen and the dispatch waves have to be planned.
+		const auto picture = PicturePart();
 		const int viewport[2] = {
-			static_cast<int>(_mask.Width()),
-			static_cast<int>(_mask.Height())
+			static_cast<int>(picture.width),
+			static_cast<int>(picture.height)
 		};
 
 		// The direction towards the sun, not its billboard's position. The sun
@@ -474,8 +479,9 @@ namespace Features
 			data.invDepthTextureSize[0] = 1.0f / static_cast<float>(_mask.Width());
 			data.invDepthTextureSize[1] = 1.0f / static_cast<float>(_mask.Height());
 
-			// Dynamic resolution is not read yet; the mask and the depth are
-			// the same size, so one is the honest value.
+			// One even while DLSS upscales: Bend's pixels are the depth
+			// texture's own, the render rectangle is its top left corner, so
+			// pixel over texture size is already the right uv.
 			data.dynamicRes[0] = 1.0f;
 			data.dynamicRes[1] = 1.0f;
 
@@ -517,17 +523,27 @@ namespace Features
 		a_context.PSSetShaderResources(0, 1, std::addressof(mask));
 		a_context.PSSetShader(_modulate, nullptr, 0);
 
-		// The viewport is left alone: it already covers the whole picture,
-		// because the engine is about to draw into these same targets.
+		// The picture's part of the targets: the whole of them, or the render
+		// rectangle while DLSS upscales - which is what the engine's own
+		// viewport holds here, measured, but not left to chance.
+		const auto picture = PicturePart();
+		const REX::W32::D3D11_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(picture.width), static_cast<float>(picture.height), 0.0f, 1.0f };
+		a_context.RSSetViewports(1, std::addressof(viewport));
 		Render::DrawFullscreen();
+	}
+
+	Render::Extent ScreenSpaceShadows::PicturePart() const noexcept
+	{
+		return Render::Resolution::RenderPart(Render::Resolution::Current(), Render::Extent{ _mask.Width(), _mask.Height() });
 	}
 
 	std::uint32_t ScreenSpaceShadows::ScaledSampleCount() const
 	{
 		const auto multiplier = Settings::GetDouble("ScreenSpaceShadows/sampleCount");
 
-		const auto width = static_cast<double>(_mask.Width());
-		const auto height = static_cast<double>(_mask.Height());
+		const auto picture = PicturePart();
+		const auto width = static_cast<double>(picture.width);
+		const auto height = static_cast<double>(picture.height);
 		if (width <= 0.0 || height <= 0.0) {
 			return 64;
 		}
