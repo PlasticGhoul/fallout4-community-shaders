@@ -2,6 +2,7 @@
 
 #include "Feature/Feature.h"
 #include "Render/Extent.h"
+#include "Render/PhaseDispatcher.h"
 #include "Render/TexelProbe.h"
 #include "Upscale/CameraCut.h"
 #include "Upscale/EngineHooks.h"
@@ -56,6 +57,13 @@ namespace Features
 		Upscale::Passes _passes;
 		Upscale::ProxyTargets _proxies;
 		Render::TexelProbe _motionProbe;
+
+		/// Diagnostic for the second run: once a second, what each frame phase
+		/// sees while DLSS upscales - the viewport, the sizes of the targets
+		/// F2 to F5 touch, and which depth is bound.
+		void LogPhase(const char* a_name) noexcept;
+		Render::PhaseDispatcher::Token _phaseTokens[3]{ Render::PhaseDispatcher::kNoToken, Render::PhaseDispatcher::kNoToken, Render::PhaseDispatcher::kNoToken };
+		bool _phaseDue[3]{};
 
 		bool _upscaling{ false };
 		float _ratioX{ 1.0f };
