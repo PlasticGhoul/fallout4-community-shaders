@@ -39,6 +39,9 @@ namespace Render
 
 		[[nodiscard]] REX::W32::ID3D11ShaderResourceView* SRV() const noexcept { return _srv; }
 		[[nodiscard]] REX::W32::ID3D11UnorderedAccessView* UAV() const noexcept { return _uav; }
+		/// The texture itself, for copies and for APIs that take a resource
+		/// rather than a view (NGX).
+		[[nodiscard]] REX::W32::ID3D11Texture2D* Resource() const noexcept { return _texture; }
 		[[nodiscard]] std::uint32_t Width() const noexcept { return _width; }
 		[[nodiscard]] std::uint32_t Height() const noexcept { return _height; }
 		[[nodiscard]] bool Valid() const noexcept { return _texture != nullptr; }
