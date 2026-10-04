@@ -2,8 +2,9 @@
 
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
 Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay), F2 (Screen-Space Shadows),
-F3 (Exponential Height Fog), F4 (Cloud Shadows) und das dazwischengeschobene F4.5 (Menü in zwei
-Spalten) sind abgeschlossen**. Als Nächstes steht **F5** an, Skylighting. Stand 2026-09-13.
+F3 (Exponential Height Fog), F4 (Cloud Shadows), das dazwischengeschobene F4.5 (Menü in zwei
+Spalten) und F5 (Skylighting) sind abgeschlossen**. Als Nächstes steht **F6** an, Volumetric
+Lighting. Stand 2026-10-04.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -58,7 +59,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | F3   | **Exponential Height Fog** — erster Pass hinter der opaken Szene, dazu `FrameTrace` als Werkzeug für alle Anker             | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
 | F4   | **Cloud Shadows** — die Wolken der Engine ein zweites Mal gezeichnet, in eine eigene Cubemap; dazu der Draw-Hook            | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
 | F4.5 | **Menü in zwei Spalten** — Seitenliste links mit den Schaltern, eine Seite je Eintrag rechts, Performance als Seite         | Jede Seite erreichbar, Schalten aus der Liste, Zahlen der Tafel unverändert | **abgeschlossen** |
-| F5   | **Skylighting** — Sondengitter wie die Vorlage, Erfassung über die Schattenwerfer, Anbringen im SSAO-Ziel vor dem Composite | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | in Arbeit         |
+| F5   | **Skylighting** — Sondengitter wie die Vorlage, Erfassung über die Schattenwerfer, Anbringen im SSAO-Ziel vor dem Composite | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
 | F6   | **Volumetric Lighting**                                                                                                     | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
 | F7   | **Volumetric Shadows**                                                                                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
 | F8   | **Screen Space GI**                                                                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
@@ -1109,6 +1110,143 @@ Ein Feature bekommt seine Seite weiterhin allein durch `Declare`; die `Help` des
 jetzt die sichtbare Beschreibung und sollte den Effekt in ein, zwei Sätzen erklären. Kategorien
 wären eine Gruppierung der Featureseiten in `PageList`, eine Suche ein Filter darauf, eine
 Home-Seite eine weitere feste Seite — nichts davon braucht das Panel neu zu schneiden.
+
+## Aus Teilprojekt F5 bestätigt
+
+Läufe am 2026-09-13 (Sonde, Abnahme, sechs Messläufe) und 2026-10-04 (Durchsicht, drei
+Messläufe). Das zweite Feature, das Engine-Züge wiederholt, und das erste, das dafür eine
+**fremde Projektion in einen Engine-Puffer schreibt**. Neu: `Render::Phase::kComposite` (zweiter
+Anker auf `BSDFCompositeShader`, feuert bei Technik `0x0040`), `Render::DepthTarget`,
+`Render::Texture3D`, `Render::TexelProbe` (16 Texel, Staging-Ring sechs, ohne Warten), die
+Beobachterliste im Draw-Hook (bis zu vier), `Targets::DepthStencilView(slot, view)`,
+`Features::TargetView` (Engine-Ziel über das Bild, CORE, bleibt als Sonde), `SkyOcclusion`
+(rein, `double`, 27 Host-Prüfungen) und die gemeinsamen Shaderteile
+`Common/SphericalHarmonics.hlsli` und `Common/Reconstruct.hlsli` im Basisarchiv.
+
+### Der gewählte Weg
+
+Jeder `BSUtilityShader`-Zug in eine der drei Ansichten von `DS_008` wird in eine eigene
+2048²-Tiefenkarte (`D32_FLOAT`) wiederholt, mit einer Orthoprojektion aus einer Himmelsrichtung
+über einen Würfel von 10000 Einheiten um das Auge. Dafür wird der Sichtpuffer der Engine in Slot 12
+je Frame per `CopyResource` gespiegelt und darin **genau zwei Werte** ersetzt, per
+`CopySubresourceRegion` aus einem 80-Byte-Patchpuffer: die ViewProj bei Byte 128 und der
+`CameraPosAdjust` bei Byte 560, auf das Auge gesetzt. Die Werfer kommen damit augenrelativ an,
+eine Matrix dient Erfassung und Gitter. Wiederholt wird mit eigenem Tiefentest (`LESS_EQUAL`
+gegen 1) und dem Rasterizer-State der Engine **ohne dessen Tiefen-Bias**.
+
+Eine Karte wird über **sieben Frames** gefüllt: Richtung, Matrix und Auge bleiben einen Zyklus
+lang stehen, jeder Werfer wird nur in der Phase wiederholt, die `CaptureBucket` aus seinen
+Puffern und Draw-Argumenten ableitet, und erst im letzten Frame faltet ein Compute-Shader die Karte
+in ein 256×256×128-Gitter aus SH2-Sonden (laufendes Mittel, Ringpuffer um das Auge). Der Pass
+multipliziert in `kComposite` den Faktor in `RT_028`, den das Composite auf seinen Ambient-Term
+anwendet. Debug-Ansichten `visibility`, `occlusion`, `grid`.
+
+### Die Zahlen
+
+**Nicht vollständig gemessen.** Das einzige Paar Schnappschüsse stammt vom 2026-09-13, als nur die
+nahe Kaskade erfaßt wurde: `Skylighting/Probes` 0,157 ms GPU, `Skylighting/Shadow` 0,021 ms. Die
+Wiederholungen tauchen wie in F4 nur in der Differenz der Frame-Zeilen auf, und das Paar an/aus
+mit F11 wurde nach dem Umbau auf drei Kaskaden **nicht** gemacht. Was es gibt, sind die Zählungen
+und die Bildrate nach Augenmaß:
+
+| Stand                                        | Werfer je Frame gesehen | wiederholt | Bildrate (Nutzer)           |
+| -------------------------------------------- | ----------------------- | ---------- | --------------------------- |
+| nur `dsView[0]`, nahe Kaskade                | 138                     | 138        | 180                         |
+| alle drei Kaskaden, jedes Frame              | 1750–2970               | alle       | **30**                      |
+| alle drei Kaskaden, Zyklus von sieben Frames | ≈ 1900                  | ≈ 272      | 120+ mit Spitzen (Diagnose) |
+
+Die Spitzen im letzten Lauf kamen von der Diagnose, die danach entfernt wurde (rund 1600
+blockierende Rücklesungen und 16 MB Tiefenkarte je Sekunde). Ein Lauf ohne sie fehlt. Die
+Kosten liegen in den Draw-Aufrufen: je Wiederholung rund 30 D3D-Aufrufe für Sichern und
+Zurückgeben plus der Zug — bei 2500 Wiederholungen je Frame rund 25 ms.
+
+### Die Sonde und was die Läufe danach geklärt haben
+
+-   **Der Sichtpuffer der Werfer ist Skyrims `PerFrame`.** Slot 12, 752 B, ViewProj in Zeilen bei
+    Byte 128, `CameraPosAdjust` bei 560. Disassembliert aus `Shaders011.fxp` im Archiv
+    `Fallout4 - Shaders.ba2` (3939 DXBC-Blobs, Kopf `44332211 | Größe | Technik`): `clip =
+cb12[8..11] · (World aus cb2[0..3] mit Translation − cb12[35]) · pos`, danach `clip.z =
+max(z, 0)` — Pancaking, Tiefe 0 heißt „vor der Nahebene". **Alle elf Techniken der Zählung**,
+    auch die Wind- und Instanzvarianten `0x400C09B` und `0x4A0C09B` (Vertizes aus Structured
+    Buffers), lesen genau diese Register; die Matrizen bei 0, 64 und 192 liest keine.
+-   **Die Weltmatrix in Slot 2 trägt die absolute Translation** (≈ −79489 90517 7843). Der
+    `CameraPosAdjust` der Engine ist nicht das Auge, sondern die Position der Schattenkamera.
+-   **`DS_008` ist ein Texture-Array, eine Schicht je Kaskade.** `DepthStencilTarget::dsView[4]`
+    hält je Schicht eine Ansicht: `[0]` ≈ 1700 Einheiten breit (≈ 100–140 Werfer), `[1]` ≈ 6000
+    (≈ 620), `[2]` ≈ 40000 (1200–1600); `[3]` ist leer. Dieselben Puffer, jedes Frame — kein
+    seltenes Nachzeichnen. Die Spec (Abschnitt 6) nahm an, die Werfer deckten
+    `fDirShadowDistance` 20000 über eine Ansicht; drei Läufe lang sah die Erfassung deshalb nur
+    die nahe Kaskade und reichte rund 800 Einheiten.
+-   **`DS_005`, `DS_007` und `DS_009` bekommen keine Utility-Züge, auch nicht bei Regen.** Neben
+    `DS_008` gehen je Frame zwei bis sechs nach `DS_002` und drei nach `DS_010`.
+-   **Die Werfer zeichnen mit zwei Rasterizer-States** (Cull Back und Cull None), beide Bias 12,
+    Slope 6, Clamp −100. Durch unsere Ortho über 10000 Einheiten schob Slope 6 ein 45°-Dach rund
+    30 Einheiten, eine steile Wand über 100 vom Himmel weg — mehr als eine halbe Gitterzelle.
+-   **`RT_028` ist der Ambient-Faktor des Composite**, alle drei Kanäle gleich, im Freien 0,48 bis
+    1,0. Eine Multiplikation dort dunkelt das Umgebungslicht; der Rückfall auf `kAfterOpaque` war
+    nicht nötig.
+
+### Die Gabelungen der Spec
+
+-   **Das tragende Risiko ist nicht eingetreten:** die Matrix liegt in einem Puffer je Sicht, und
+    `RT_028` ist der Ambient-Faktor.
+-   **„Die Schattenwerfer der Sonne decken die Sicht von oben nicht"** — eingetreten, aber
+    anders als befürchtet: nicht wegen des schrägen Frustums, sondern weil die Erfassung nur eine
+    der drei Kaskaden sah. Mit allen dreien gelöst; ein Dach genau über der Kamera bei flacher
+    Sonne ist nicht gesondert geprüft. Der `Precipitation`-Weg bleibt unnötig.
+-   **Terrain als Schattenwerfer** — nicht geklärt. Mit der nahen Kaskade allein war die Karte zu
+    3,5 % gefüllt, genau deren Fläche; mit allen dreien zu 7 bis 13 %, weniger als die Fläche der
+    mittleren Kaskade. Das spricht dafür, daß das Gelände nur in der nahen Kaskade gezeichnet wird.
+-   **y-Achse** — nicht eingetreten. **Normalen an Kanten** — nicht sichtbar geworden.
+
+### Die Abnahme
+
+Vom Nutzer bestätigt: die Seite im Overlay mit Schalter, zwei Reglern und Debug-Ansicht;
+`occlusion` zeigt die Karte, die je Zyklus die Richtung wechselt; `visibility` und `grid` „sehen
+aus, als würden sie wirklich was machen"; im letzten Lauf „sieht alles OK aus". Im Log: keine
+`[W]`- und keine `[E]`-Zeile, die Sekundenzeile mit `0x0040` in jedem Intervall, und
+`48 918 × 7 ≈ 342 180` — jeder gesehene Werfer genau einmal je Zyklus wiederholt.
+
+**Nicht ausgeführt, vom Nutzer als OK gesetzt** („sollte alles gut sein"): das Paar
+Schnappschüsse an/aus mit F11 nach dem Umbau, ein Lauf ohne die entfernte Diagnose (die Spitzen),
+Schalter aus/an unter einem Vordach, 200 m laufen, `maxZenith` 30, `minVisibility` 0 und 1, Root
+Cellar, Pip-Boy, Alt-Tab, Feature im laufenden Spiel aus und an, Hot-Reload. Der Grid-Neuaufbau
+nach einem großen Sprung (Schnellreise) ist nur durch die Durchsicht belegt, nicht im Spiel.
+
+### Was die Läufe ergeben haben
+
+-   **D3D11 verwirft eine geboxte `CopySubresourceRegion` aus einer Depth-Stencil-Textur stumm.**
+    Zwei Läufe lang las die Sonde uninitialisierten Staging-Speicher und meldete die Karte leer.
+    Tiefen nur ganz kopieren. **Eine Diagnose, die in zwei verschiedenen Szenen bitgleich mißt,
+    mißt nichts.**
+-   **Eine Debug-Ansicht mit 1,0 im HDR-Bild ist nach dem Tonemapping weiß.** Das HDR-Bild liegt
+    im Freien bei 0,03 bis 0,06; die Ansichten werden mit 0,05 belichtet. Zahlen ins Log, nicht
+    Bilder deuten.
+-   **Ein konstanter Puffer beweist keine Kamerarelativität**, wenn das Frustum größer ist als
+    der Weg, den der Nutzer geht. Der Schluß aus der Sonde war voreilig und hat einen Lauf gekostet.
+-   **Die Vorlage rechnet die Gültigkeit des Gitters vorzeichenlos.** Ein Sprung um 256 Zellen
+    oder mehr in negativer Richtung erklärte alle alten Zellen für gültig. Bei uns signed
+    (`eb13e9d5`); der Host-Test hatte das richtige Verhalten schon verlangt.
+-   **`DepthStencilTarget` hat vier Ansichten**, und Targets gab nur die erste heraus — die
+    Ursache der fehlenden Reichweite, gefunden durch eine Zählung je Tiefenziel, nicht durch eine
+    weitere Vermutung.
+
+### Zugeständnisse
+
+Die Sichtbarkeit ist bis zu sieben Frames plus Einblendzeit alt und nach einem Ortswechsel erst
+nach rund einer Sekunde da. Die spekulare Dämpfung fehlt. Rund 72 MB GPU-Speicher für die Gitter.
+Die Kosten der Wiederholungen stehen in keiner Passzeile. Geht ein Werfer in einem Zyklus in
+einem anderen Frame ein als dem seiner Phase verloren (Culling), fehlt er in dieser einen Karte.
+Das Feature steht in Innenräumen ab (`Sky::mode` nicht `kFull`).
+
+### Was F6 aufwärts davon hat
+
+`kComposite` für alles, was Composite-Eingaben ändert; `DepthTarget` und `Texture3D` für F6
+(Volumetric Lighting); `TargetView` als Sonde jedes weiteren Features; `Reconstruct.hlsli` bis F8
+die Kodierung von `RT_020` klärt; `TexelProbe` für Zahlen statt Bilder. **F7 (Volumetric Shadows)
+liest dieselbe Schattenkarte** und erbt den Befund: drei Kaskaden in `DS_008`, Slot-12-Layout,
+`dsView[n]`. Und das Verfahren, einen Engine-Puffer zu spiegeln und darin nur die Bytes zu
+ersetzen, die der Shader nachweislich liest.
 
 ## Bekannte Lücken in CommonLibF4
 

@@ -20,7 +20,8 @@ Sichten sind Texturen der Szene (Materialien, Schattenkarten-Sampler), keine Ren
 -   Der erste `BSDFCompositeShader`-Aufruf (`BSDFCompositeBase`, `0x0088`) schreibt noch in
     `RT_058/059` — F2s Anker `kBeforeComposite` liegt also vor dem Basisanteil, nach dem
     direkten Licht (`BSDFLight 0x4000000`, der einzige DFLight-Aufruf mit den Lichtzielen).
--   `BSUtilityShader` zeichnet die Schattenkarte `DS_008` (rund 40 Aufrufe je Frame).
+-   `BSUtilityShader` zeichnet die Schattenkarte `DS_008` (rund 40 Aufrufe je Frame — so im
+    Trace; der Draw-Hook zählte später rund 1900, siehe unten).
 -   `fogState.rangeData` hält rohe Distanzen `[near far heightMid heightRange]`, hier
     `[1600 250000 64 15000]`, `highLowRangeData` die Fernvariante `[64 15000 64 10000]` — nicht
     die Rampenkoeffizienten des Shaders; die rechnet der Uploader daraus.
@@ -39,6 +40,20 @@ je Zeichenaufruf statt je `SetupTechnique`):
     die Imagespace-Shader keine der dreizehn getrackten sind.
 -   Je Frame rund 4.000–4.400 `DrawIndexed`, 730–860 `Draw`, 120–130 `DrawIndexedInstanced`, kein
     `DrawInstanced`, kein `ExecuteCommandList`: alles auf dem unmittelbaren Kontext.
+
+**Was F5 dazu ergeben hat** (Draw-Hook je Zug, 2026-09-13 und 2026-10-04):
+
+-   **`Render::Phase::kComposite`** feuert beim `BSDFCompositeShader`-Aufruf mit Technik
+    `0x0040`, unmittelbar bevor der Composite-Zug `RT_028` liest. Ein zweiter Anker auf derselben
+    Klasse wie `kBeforeComposite`; der zweite Patch desselben Slots kettet an den ersten Thunk.
+    Ob die SSAO-Pässe der Engine zwischen beiden laufen, ist nicht gemessen.
+-   **Die Schattenwerfer der Sonne gehen über drei Ansichten von `DS_008`**, eine Array-Schicht je
+    Kaskade (`dsView[0..2]`, ≈ 1700 / 6000 / 40000 Einheiten breit): je Frame zusammen rund 1900
+    Züge, ≈ 100–140 / 620 / 1200–1600, in jedem Frame. Daneben je Frame zwei bis sechs
+    Utility-Züge nach `DS_002` und drei nach `DS_010`; `DS_005`, `DS_007` und `DS_009` bekommen
+    keine, auch bei Regen nicht.
+-   Die Werfer lesen ihren Sichtpuffer aus VS-Slot 12 (Skyrims `PerFrame`, ViewProj bei Byte 128,
+    `CameraPosAdjust` bei 560) und ihre Weltmatrix mit absoluter Translation aus Slot 2.
 
 ## frame trace: frame 2490
 

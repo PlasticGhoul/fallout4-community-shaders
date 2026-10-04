@@ -16,7 +16,7 @@ Die Auflösungen gelten für 2560×1440. Vieles skaliert mit der Ausgabeauflösu
 Auflösungen (1280×720) und die Kette darunter sind davon abgeleitet, die festen Größen wie
 4096×4096 oder 512×512 dagegen nicht.
 
-## Zwei geklärte Fragen
+## Geklärte Fragen
 
 ### Die beiden Arrays sind über `renderTargetID` verbunden — rückwärts
 
@@ -37,7 +37,21 @@ bedeutungslos. Über die richtige Zeile gelesen stimmt er in allen 65 Fällen nu
 DXGI-Format überein, das die Textur selbst meldet. Das Enum der Engine ist schlicht das
 DXGI-Enum.
 
-Beide Erkenntnisse ließen sich an commonlibf4 zurückgeben.
+Diese beiden Erkenntnisse ließen sich an commonlibf4 zurückgeben.
+
+### `DS_008` ist die Schattenkarte der Sonne, drei Kaskaden
+
+Teilprojekt F5 (2026-10-04): `DepthStencilTarget` hält vier schreibbare Ansichten, `dsView[0..3]`.
+Auf `DS_008` sind die ersten drei je eine Array-Schicht (`TEXTURE2DARRAY`, Schicht 0, 1, 2, je
+eine), die vierte ist leer; die Textur hat also mindestens drei Schichten, auch wenn die Tabelle
+unten sie wie eine einfache Textur führt. Jede Schicht ist eine Kaskade der Sonne, ≈ 1700, 6000
+und 40000 Einheiten breit. `DS_007` bekam in keinem Lauf einen Utility-Zug.
+
+### `RT_028` ist der Ambient-Faktor des Composite
+
+Ebenfalls F5: `BSDFComposite` (`0x0040`) liest `RT_028` und wendet es auf seinen Ambient-Term an.
+Alle drei Kanäle tragen denselben Wert, im Freien 0,48 bis 1,0 — das Ergebnis der SSAO der
+Engine. Eine Multiplikation unmittelbar vor dem Composite dunkelt das Umgebungslicht.
 
 ## Vermutungen zur Bedeutung
 
@@ -48,7 +62,7 @@ davon ist durch Beobachtung des Renderings bestätigt.
 | ---------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RT_064` bis `RT_070`        | Belichtungsanpassung             | Eine Reduktionskette 640×360 → 160×90 → 40×23 → 10×6 → 3×2 → 1×1 → 1×1, durchgehend `R11G11B10_FLOAT` mit UAV. Das Lehrbuchmuster einer Herunterrechnung auf einen einzigen Helligkeitswert |
 | `RT_039`                     | Hierarchische Tiefe (Hi-Z)       | Volle Auflösung, `R32_FLOAT`, **12 Mip-Stufen**, UAV. Ein Tiefenformat mit vollständiger Mip-Kette hat kaum eine andere Verwendung                                                          |
-| `DS_007`, `DS_008`           | Schattenkarten                   | 4096×4096 `R16_TYPELESS`, unabhängig von der Bildschirmauflösung. Zwei davon deutet auf Kaskaden oder getrennte Licht-Typen                                                                 |
+| `DS_007`, `DS_008`           | Schattenkarten                   | 4096×4096 `R16_TYPELESS`, unabhängig von der Bildschirmauflösung. Zwei davon deutet auf Kaskaden oder getrennte Licht-Typen. `DS_008` seit F5 bestätigt, siehe oben                         |
 | `RT_001` bis `RT_006`        | HDR-Hauptziele                   | Volle Auflösung, `R11G11B10_FLOAT` und `R16G16B16A16_FLOAT` — Formate, die man für Farbe mit hohem Dynamikumfang wählt                                                                      |
 | `RT_020`, `RT_021`           | Kodierte Normalen                | Volle Auflösung, `R16G16_UNORM`. Zwei Kanäle bei voller Präzision ist die übliche Kodierung für Normalenvektoren im G-Buffer                                                                |
 | `RT_029`                     | Bewegungsvektoren                | Volle Auflösung, `R16G16_FLOAT`. Zwei vorzeichenbehaftete Kanäle in Bildschirmauflösung                                                                                                     |
