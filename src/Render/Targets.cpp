@@ -8,6 +8,8 @@
 
 namespace Render::Targets
 {
+	static_assert(sizeof(RE::BSGraphics::DepthStencilTarget::dsView) / sizeof(RE::BSGraphics::DepthStencilTarget::dsView[0]) == kDepthStencilViews);
+
 	namespace
 	{
 		const RE::BSGraphics::RenderTarget* ColourSlot(std::size_t a_slot) noexcept
@@ -60,14 +62,14 @@ namespace Render::Targets
 		return data->depthStencilTargets[a_slot].srViewDepth;
 	}
 
-	REX::W32::ID3D11DepthStencilView* DepthStencilView(std::size_t a_slot) noexcept
+	REX::W32::ID3D11DepthStencilView* DepthStencilView(std::size_t a_slot, std::size_t a_view) noexcept
 	{
 		const auto* const data = RE::BSGraphics::GetRendererData();
-		if (data == nullptr || a_slot >= std::size(data->depthStencilTargets)) {
+		if (data == nullptr || a_slot >= std::size(data->depthStencilTargets) || a_view >= kDepthStencilViews) {
 			return nullptr;
 		}
 
-		return data->depthStencilTargets[a_slot].dsView[0];
+		return data->depthStencilTargets[a_slot].dsView[a_view];
 	}
 
 	void LogSlots() noexcept

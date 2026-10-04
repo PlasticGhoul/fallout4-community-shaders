@@ -55,10 +55,15 @@ namespace Render::Targets
 	/// The depth as a shader resource: DepthStencilTarget::srViewDepth, which
 	/// hands R24G8_TYPELESS over as R24_UNORM_X8_TYPELESS.
 	[[nodiscard]] REX::W32::ID3D11ShaderResourceView* DepthSRV(std::size_t a_slot) noexcept;
-	/// The depth as a target: DepthStencilTarget::dsView[0]. What a draw into
-	/// this slot has bound, which is how an observer recognises the shadow
-	/// casters.
-	[[nodiscard]] REX::W32::ID3D11DepthStencilView* DepthStencilView(std::size_t a_slot) noexcept;
+	/// DepthStencilTarget carries four writable views. On the shadow maps
+	/// they are what the cascades are drawn through, one each; the first
+	/// skylighting tally found every other utility draw outside view 0.
+	inline constexpr std::size_t kDepthStencilViews = 4;
+
+	/// The depth as a target: DepthStencilTarget::dsView[a_view]. What a draw
+	/// into this slot has bound, which is how an observer recognises the
+	/// shadow casters.
+	[[nodiscard]] REX::W32::ID3D11DepthStencilView* DepthStencilView(std::size_t a_slot, std::size_t a_view = 0) noexcept;
 
 	/// Logs the debug name behind each named slot.
 	///
