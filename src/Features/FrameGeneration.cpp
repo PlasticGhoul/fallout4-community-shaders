@@ -41,10 +41,11 @@ namespace Features
 		/// vectors (F5.5a); DLSS forces it on while it runs.
 		constexpr std::uint64_t kEnableTAA = 2704658;
 
+		/// Field for field the cbuffer CopyDepth of CopyDepth.hlsl.
 		struct CopyDepthConstants
 		{
-			std::uint32_t size[2];
-			std::uint32_t padding[2];
+			std::uint32_t outputSize[2];
+			std::uint32_t inputSize[2];
 		};
 		static_assert(sizeof(CopyDepthConstants) == 16);
 
@@ -192,10 +193,12 @@ namespace Features
 			REX::INFO(
 				"frame generation: rendered {:.0f}/s, shown {:.0f}/s, {}, DLSS-G status 0x{:X}, vsync support {}, captures {} "
 				"depth+motion / {} hud-less, refused {} depth+motion / {} camera / {} hud-less, viewport calls {} off / {} on, "
-				"RT_000 none {} / back buffer {} / other {}, matrix lean [{:.6f} {:.6f}], projection residue {:.5f}, frame start: {}",
+				"RT_000 none {} / back buffer {} / other {}, matrix lean [{:.6f} {:.6f}], projection residue {:.5f}, depth source {}x{} "
+				"to {}x{} with motion {}x{}, frame start: {}",
 				status.renderedPerSecond, status.shownPerSecond, status.generating ? "generating" : "not generating", status.dlssgStatus,
 				status.vsyncSupported, _captures, _hudless, _refusedDepthMotion, _refusedCamera, _refusedHudless, _viewportCalls[0],
-				_viewportCalls[1], _rt0Null, _rt0IsBackBuffer, _rt0Other, _matrixLean[0], _matrixLean[1], _residue,
+				_viewportCalls[1], _rt0Null, _rt0IsBackBuffer, _rt0Other, _matrixLean[0], _matrixLean[1], _residue, _depthSource.width,
+				_depthSource.height, _motionSize.width, _motionSize.height, _motionSize.width, _motionSize.height,
 				Bridge::TakeSimulationReport());
 			_captures = 0;
 			_hudless = 0;
@@ -248,7 +251,11 @@ namespace Features
 		const REX::W32::D3D11_BOX box{ 0, 0, 0, motionExtent.width, motionExtent.height, 1 };
 		context->CopySubresourceRegion(static_cast<REX::W32::ID3D11Resource*>(slot.motion), 0, 0, 0, 0, motion, 0, std::addressof(box));
 
-		const CopyDepthConstants constants{ { depthExtent.width, depthExtent.height }, { 0, 0 } };
+		// Depth goes out at the motion vectors' size: DLSS-G takes the two as
+		// one pair, and while DLSS upscales, the depth bound here is DLSS's
+		// display-size one (DLSS::AfterEffectRange runs first).
+		_depthSource = depthExtent;
+		const CopyDepthConstants constants{ { motionExtent.width, motionExtent.height }, { depthExtent.width, depthExtent.height } };
 		static_cast<void>(_constants.Update(std::addressof(constants), sizeof(constants)));
 		auto* const buffer = _constants.Buffer();
 		auto* uav = static_cast<REX::W32::ID3D11UnorderedAccessView*>(slot.depthUAV);
@@ -256,7 +263,7 @@ namespace Features
 		context->CSSetUnorderedAccessViews(0, 1, std::addressof(uav), nullptr);
 		context->CSSetConstantBuffers(0, 1, std::addressof(buffer));
 		context->CSSetShader(_copyDepth, nullptr, 0);
-		context->Dispatch(Groups(depthExtent.width), Groups(depthExtent.height), 1);
+		context->Dispatch(Groups(motionExtent.width), Groups(motionExtent.height), 1);
 		REX::W32::ID3D11ShaderResourceView* noView = nullptr;
 		REX::W32::ID3D11UnorderedAccessView* noUAV = nullptr;
 		REX::W32::ID3D11Buffer* noBuffer = nullptr;
@@ -266,7 +273,8 @@ namespace Features
 		context->CSSetShader(nullptr, nullptr, 0);
 
 		++_captures;
-		SubmitCamera(depthExtent.width, depthExtent.height, motionExtent.width, motionExtent.height);
+		SubmitCamera(motionExtent.width, motionExtent.height, motionExtent.width, motionExtent.height);
+		_motionSize = motionExtent;
 	}
 
 	bool FrameGeneration::TakeCameraCut(const float (&a_worldToCam)[4][4], const float (&a_position)[3]) noexcept

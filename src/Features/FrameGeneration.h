@@ -3,6 +3,7 @@
 #include "Bridge/Bridge.h"
 #include "Bridge/CameraConstants.h"
 #include "Feature/Feature.h"
+#include "Render/Extent.h"
 #include "Render/Resources.h"
 #include "Upscale/CameraCut.h"
 #include "Upscale/EngineHooks.h"
@@ -69,5 +70,7 @@ namespace Features
 		std::uint64_t _viewportCalls[2]{ 0, 0 };
 		float _matrixLean[2]{ 0.0f, 0.0f };
 		float _residue{ 0.0f };
+		Render::Extent _depthSource{};
+		Render::Extent _motionSize{};
 	};
 }
