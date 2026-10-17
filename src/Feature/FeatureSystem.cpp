@@ -5,6 +5,7 @@
 #include "Features/DLSS.h"
 #include "Features/ExponentialHeightFog.h"
 #include "Features/FrameCounter.h"
+#include "Features/FrameGeneration.h"
 #include "Features/FrameTrace.h"
 #include "Features/ImagespaceTint.h"
 #include "Features/ScreenSpaceShadows.h"
@@ -46,6 +47,10 @@ namespace Features
 			// the effects so that it starts first and stops last: they read
 			// Render::Resolution, which it publishes.
 			TheRegistry().Register(std::make_unique<DLSS>());
+
+			// After DLSS: it reads the jitter DLSS sets and the render size it
+			// publishes, and is torn down before it.
+			TheRegistry().Register(std::make_unique<FrameGeneration>());
 
 			// Watches the shadow casters through the draw hook and multiplies
 			// into RT_028 right before the composite. Ahead of the cloud

@@ -15,6 +15,11 @@ namespace Menu
 		float frameGpuMs{ 0.0f };
 		float frameCpuMs{ 0.0f };
 
+		/// Frames per second Streamline actually presented, generated ones
+		/// included; shown only while frame generation runs.
+		float shownFps{ 0.0f };
+		bool generating{ false };
+
 		bool measuring{ false };
 		bool hud{ false };
 

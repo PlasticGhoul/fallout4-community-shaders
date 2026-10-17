@@ -1,5 +1,7 @@
 #include "Menu/MenuSystem.h"
 
+#include "Bridge/Bridge.h"
+
 #include "I18n/I18n.h"
 #include "Menu/Hotkeys.h"
 #include "Menu/InputLayer.h"
@@ -249,6 +251,9 @@ namespace Menu
 		performance.passes = profiler.Results();
 		performance.frameGpuMs = profiler.FrameGpuMs();
 		performance.frameCpuMs = profiler.FrameCpuMs();
+		const auto bridge = Bridge::CurrentStatus();
+		performance.generating = bridge.generating;
+		performance.shownFps = static_cast<float>(bridge.shownPerSecond);
 		performance.measuring = profiler.IsMeasuring();
 		performance.hud = Settings::GetBool(kHudPath);
 		performance.corner = CornerFromSetting(Settings::GetString(kCornerPath));
@@ -259,5 +264,10 @@ namespace Menu
 			// layer and all.
 			TheGate().RequestToggle();
 		}
+	}
+
+	bool IsOverlayOpen() noexcept
+	{
+		return TheGate().IsOpen();
 	}
 }

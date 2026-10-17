@@ -8,4 +8,9 @@ namespace Menu
 
 	/// The one entry per frame, from Present, on the render thread.
 	void TickSystem() noexcept;
+
+	/// Whether the overlay is open, as of the last tick. Frame generation
+	/// switches itself off while it is: generated frames of a menu are input
+	/// latency and nothing else.
+	[[nodiscard]] bool IsOverlayOpen() noexcept;
 }

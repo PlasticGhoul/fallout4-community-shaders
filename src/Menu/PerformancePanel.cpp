@@ -200,6 +200,9 @@ namespace Menu
 				ImGui::Text("cpu %.2f   gpu %.2f",
 					static_cast<double>(g_shown.cpuMs),
 					static_cast<double>(g_shown.frameMs));
+				if (a_context.generating) {
+					ImGui::Text("%s %.0f fps", T("performance.shown", "shown"), static_cast<double>(a_context.shownFps));
+				}
 			}
 
 			ImGui::PopStyleColor();
