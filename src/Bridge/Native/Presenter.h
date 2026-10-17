@@ -7,6 +7,7 @@
 #include "Bridge/SlotRing.h"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <string>
 
@@ -41,8 +42,19 @@ namespace Bridge::Native
 		SharedTexture motion;
 	};
 
+	/// A fence both devices see. Each one has a single writer, so its value
+	/// only ever grows: two queues signalling one counter would let the
+	/// later signal undo the earlier one.
+	struct SharedFence
+	{
+		ComPtr<ID3D12Fence> fence12;
+		ComPtr<ID3D11Fence> fence11;
+		std::uint64_t value{ 0 };
+	};
+
 	/// The D3D12 side of one swap chain of the game's. Every call arrives on
-	/// the thread that presents, which in Fallout 4 is the main thread.
+	/// the thread that presents, except OnSimulationStart: in loading screens
+	/// the game polls its input on another thread.
 	class Presenter
 	{
 	public:
@@ -79,9 +91,10 @@ namespace Bridge::Native
 		bool CreateSwapChain(UINT a_width, UINT a_height) noexcept;
 		bool CreateTextures(UINT a_width, UINT a_height) noexcept;
 		bool CreateShared(const D3D11_TEXTURE2D_DESC& a_desc, SharedTexture& a_texture) noexcept;
+		bool CreateSharedFence(SharedFence& a_fence) noexcept;
 		bool AcquireBuffers() noexcept;
 		void ReleaseBuffers() noexcept;
-		void WaitForQueueIdle() noexcept;
+		[[nodiscard]] bool WaitForQueueIdle() noexcept;
 		void WaitSlotOnD3D11() noexcept;
 		void ApplyOptions(bool a_wanted) noexcept;
 		void Tag(const sl::FrameToken& a_token, bool a_generate) noexcept;
@@ -100,10 +113,13 @@ namespace Bridge::Native
 
 		ComPtr<ID3D11Device5> _device11;
 		ComPtr<ID3D11DeviceContext4> _context11;
-		ComPtr<ID3D11Fence> _fence11;
-		ComPtr<ID3D12Fence> _fence12;
+		/// D3D11 signals it once a frame is in its slot; D3D12 waits for it.
+		SharedFence _ready;
+		/// D3D12 signals it once it is done with a slot; D3D11 waits for it
+		/// before writing the slot again, and the CPU before resetting the
+		/// slot's command allocator.
+		SharedFence _release;
 		HANDLE _event{ nullptr };
-		std::uint64_t _fenceValue{ 0 };
 		std::uint64_t _waitedFor{ 0 };
 
 		std::array<ComPtr<ID3D12CommandAllocator>, SlotRing::kSlots> _allocators;
@@ -114,6 +130,9 @@ namespace Bridge::Native
 
 		ComPtr<ID3D11Texture2D> _backBuffer;
 		std::array<Slot, SlotRing::kSlots> _slots;
+		/// False once a resize left buffers or slots missing; Present then
+		/// refuses instead of copying through null, and the next resize retries.
+		bool _usable{ false };
 		SlotRing _ring;
 
 		FrameTokenQueue _tokens;
@@ -138,7 +157,7 @@ namespace Bridge::Native
 		std::uint64_t _cpuWaits{ 0 };
 		std::uint64_t _blockingWaits{ 0 };
 		std::uint64_t _framesWithoutToken{ 0 };
-		DWORD _simulationThread{ 0 };
+		std::atomic<DWORD> _simulationThread{ 0 };
 		std::uint32_t _loggedStatus{ UINT32_MAX };
 	};
 }

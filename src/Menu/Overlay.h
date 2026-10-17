@@ -47,9 +47,8 @@ namespace Menu
 		// its own. The two type worlds meet in Overlay.cpp and nowhere else.
 		void* _window{ nullptr };
 		void* _renderTarget{ nullptr };
-
-		std::uint32_t _width{ 0 };
-		std::uint32_t _height{ 0 };
+		/// The texture _renderTarget views; compared, never dereferenced.
+		void* _boundBuffer{ nullptr };
 
 		// Zero until the first frame, so the theme is applied once even if the
 		// setting already holds the reference size.

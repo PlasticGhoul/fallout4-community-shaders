@@ -97,43 +97,32 @@ namespace Menu
 			return false;
 		}
 
-		REX::W32::DXGI_SWAP_CHAIN_DESC desc{};
-		if (swapChain->GetDesc(std::addressof(desc)) < 0) {
+		REX::W32::ID3D11Texture2D* backBuffer = nullptr;
+		if (swapChain->GetBuffer(0, REX::W32::IID_ID3D11Texture2D, reinterpret_cast<void**>(std::addressof(backBuffer))) < 0 ||
+			backBuffer == nullptr) {
 			return false;
 		}
 
-		// Held across frames, but thrown away when the buffer changed size: a
-		// resolution change or a switch to fullscreen leaves the old view
-		// pointing at a buffer that no longer exists.
-		const auto width = desc.bufferDesc.width;
-		const auto height = desc.bufferDesc.height;
-		if (_renderTarget != nullptr && (width != _width || height != _height)) {
+		// Held across frames, but thrown away when the buffer is another one:
+		// a resize - of size or only of format - replaces it, and the old view
+		// would keep drawing into a texture nobody presents. The view holds
+		// the old buffer alive, so a new one cannot share its address.
+		if (_renderTarget != nullptr && static_cast<void*>(backBuffer) != _boundBuffer) {
 			Reinterpret<REX::W32::ID3D11RenderTargetView>(_renderTarget)->Release();
 			_renderTarget = nullptr;
 		}
 
 		if (_renderTarget == nullptr) {
-			REX::W32::ID3D11Texture2D* backBuffer = nullptr;
-			if (swapChain->GetBuffer(
-					0,
-					REX::W32::IID_ID3D11Texture2D,
-					reinterpret_cast<void**>(std::addressof(backBuffer))) < 0 ||
-				backBuffer == nullptr) {
-				return false;
-			}
-
 			REX::W32::ID3D11RenderTargetView* view = nullptr;
 			const auto hr = device->CreateRenderTargetView(backBuffer, nullptr, std::addressof(view));
-			backBuffer->Release();
-
 			if (hr < 0 || view == nullptr) {
+				backBuffer->Release();
 				return false;
 			}
-
 			_renderTarget = view;
-			_width = width;
-			_height = height;
+			_boundBuffer = backBuffer;
 		}
+		backBuffer->Release();
 
 		auto* view = Reinterpret<REX::W32::ID3D11RenderTargetView>(_renderTarget);
 

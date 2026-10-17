@@ -7,14 +7,14 @@ namespace Bridge
 {
 	/// Which of three shared slots a frame writes, and which fence value
 	/// frees it. D3D11 writes slot k, D3D12 reads it; D3D11 may write k again only
-	/// once D3D12 has signalled the value it was given when it took k. Every
-	/// one of those waits is on the GPU. The one exception is the CPU's: the
-	/// D3D12 command allocator of k may be reset only once that value has
-	/// completed, which with three slots means D3D12 is three frames behind.
+	/// once D3D12 has signalled the value it was given when it took k, on a
+	/// fence only D3D12 signals. Every one of those waits is on the GPU. The
+	/// one exception is the CPU's: the D3D12 command allocator of k may be
+	/// reset only once that value has completed, which with three slots means
+	/// D3D12 is three frames behind.
 	///
-	/// Three, not two: with two, the D3D11 queue stalled 2.6 to 3.9 ms a
-	/// frame waiting for D3D12, which Streamline paces to the display
-	/// (run of 2026-10-17, the Present pass of two snapshots).
+	/// Three, not two: Streamline paces D3D12 to the display, and a third slot
+	/// lets D3D11 render one frame further ahead before it has to wait.
 	class SlotRing
 	{
 	public:

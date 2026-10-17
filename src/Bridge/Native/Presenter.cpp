@@ -97,19 +97,8 @@ namespace Bridge::Native
 		}
 		auto& backend = TheBackend();
 
-		HRESULT result = backend.device->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&_fence12));
-		if (FAILED(result)) {
-			return Fail("CreateFence", result);
-		}
-		HANDLE handle = nullptr;
-		result = backend.device->CreateSharedHandle(_fence12.Get(), nullptr, GENERIC_ALL, nullptr, &handle);
-		if (FAILED(result)) {
-			return Fail("CreateSharedHandle for the fence", result);
-		}
-		result = _device11->OpenSharedFence(handle, IID_PPV_ARGS(&_fence11));
-		CloseHandle(handle);
-		if (FAILED(result)) {
-			return Fail("OpenSharedFence", result);
+		if (!CreateSharedFence(_ready) || !CreateSharedFence(_release)) {
+			return false;
 		}
 		_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
 		if (_event == nullptr) {
@@ -117,7 +106,7 @@ namespace Bridge::Native
 		}
 
 		for (std::size_t i = 0; i < SlotRing::kSlots; ++i) {
-			result = backend.device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_allocators[i]));
+			HRESULT result = backend.device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_allocators[i]));
 			if (FAILED(result)) {
 				return Fail("CreateCommandAllocator", result);
 			}
@@ -139,7 +128,28 @@ namespace Bridge::Native
 		if (!CreateSwapChain(width, height) || !CreateTextures(width, height)) {
 			return false;
 		}
+		_usable = true;
 		SetReflexMode(1);
+		return true;
+	}
+
+	bool Presenter::CreateSharedFence(SharedFence& a_fence) noexcept
+	{
+		HRESULT result = TheBackend().device->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&a_fence.fence12));
+		if (FAILED(result)) {
+			return Fail("CreateFence", result);
+		}
+		HANDLE handle = nullptr;
+		result = TheBackend().device->CreateSharedHandle(a_fence.fence12.Get(), nullptr, GENERIC_ALL, nullptr, &handle);
+		if (FAILED(result)) {
+			return Fail("CreateSharedHandle for a fence", result);
+		}
+		result = _device11->OpenSharedFence(handle, IID_PPV_ARGS(&a_fence.fence11));
+		CloseHandle(handle);
+		if (FAILED(result)) {
+			return Fail("OpenSharedFence", result);
+		}
+		a_fence.value = 0;
 		return true;
 	}
 
@@ -148,6 +158,10 @@ namespace Bridge::Native
 		auto& backend = TheBackend();
 		DXGI_ADAPTER_DESC description{};
 		a_adapter->GetDesc(&description);
+		if (backend.device && !backend.queue) {
+			// Streamline is bound to that device and cannot be bound again.
+			return Fail("an earlier attempt bound Streamline to a device and failed after it");
+		}
 		if (backend.device) {
 			if (backend.adapter.LowPart != description.AdapterLuid.LowPart || backend.adapter.HighPart != description.AdapterLuid.HighPart) {
 				return Fail("the game created its device again, on another adapter");
@@ -164,6 +178,9 @@ namespace Bridge::Native
 		if (!streamline.BindDevice(device.Get())) {
 			return Fail(streamline.Refusal());
 		}
+		// Kept from here on, whatever fails below: Streamline now holds it.
+		backend.device = device;
+		backend.adapter = description.AdapterLuid;
 
 		// Through the proxy only to create the queue - the one device call
 		// Streamline intercepts (sl_hooks.h, eID3D12Device_CreateCommandQueue).
@@ -197,12 +214,11 @@ namespace Bridge::Native
 			return Fail("slUpgradeInterface on the DXGI factory");
 		}
 
-		backend.device = device;
-		backend.queue = queue;
 		backend.nativeFactory = nativeFactory;
 		backend.factory = proxyFactory;
-		backend.adapter = description.AdapterLuid;
 		backend.tearing = tearing != FALSE;
+		// Last: a queue is what marks the backend complete.
+		backend.queue = queue;
 		Log::Info(std::format("bridge: D3D12 device on {}, tearing {}", Narrow(description.Description), backend.tearing));
 		return true;
 	}
@@ -343,18 +359,25 @@ namespace Bridge::Native
 		return desc;
 	}
 
-	void Presenter::WaitForQueueIdle() noexcept
+	bool Presenter::WaitForQueueIdle() noexcept
 	{
 		auto& backend = TheBackend();
-		if (!backend.queue || !_fence12) {
-			return;
+		if (!backend.queue || !_release.fence12) {
+			return true;
 		}
-		const auto value = ++_fenceValue;
-		backend.queue->Signal(_fence12.Get(), value);
-		if (_fence12->GetCompletedValue() < value) {
-			_fence12->SetEventOnCompletion(value, _event);
-			WaitForSingleObject(_event, 5000);
+		const auto value = ++_release.value;
+		backend.queue->Signal(_release.fence12.Get(), value);
+		if (_release.fence12->GetCompletedValue() >= value) {
+			return true;
 		}
+		_release.fence12->SetEventOnCompletion(value, _event);
+		if (WaitForSingleObject(_event, 5000) == WAIT_OBJECT_0) {
+			return true;
+		}
+		Log::Error(std::format(
+			"bridge: the D3D12 queue did not drain within 5 s (release fence at {} of {}, ready fence at {} of {})",
+			_release.fence12->GetCompletedValue(), value, _ready.fence12->GetCompletedValue(), _ready.value));
+		return false;
 	}
 
 	void Presenter::WaitSlotOnD3D11() noexcept
@@ -363,10 +386,10 @@ namespace Bridge::Native
 		if (value != 0 && value != _waitedFor) {
 			// Counted when D3D12 has not got there yet: only then does the
 			// D3D11 queue actually stand still on this wait.
-			if (_fence12->GetCompletedValue() < value) {
+			if (_release.fence12->GetCompletedValue() < value) {
 				++_blockingWaits;
 			}
-			_context11->Wait(_fence11.Get(), value);
+			_context11->Wait(_release.fence11.Get(), value);
 			_waitedFor = value;
 		}
 	}
@@ -388,7 +411,7 @@ namespace Bridge::Native
 		streamline.reflexSleep(*token);
 		Mark(sl::PCLMarker::eSimulationStart, *token);
 		_tokens.Push(static_cast<std::uint32_t>(*token));
-		_simulationThread = GetCurrentThreadId();
+		_simulationThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
 	}
 
 	sl::FrameToken* Presenter::TakeRenderToken() noexcept
@@ -422,7 +445,7 @@ namespace Bridge::Native
 	bool Presenter::CurrentSlot(InputSlot& a_slot) noexcept
 	{
 		auto& slot = _slots[_ring.Current()];
-		if (!slot.hudless.texture11 || !slot.depth.uav11 || !slot.motion.texture11) {
+		if (!_usable || !slot.hudless.texture11 || !slot.depth.uav11 || !slot.motion.texture11) {
 			return false;
 		}
 		WaitSlotOnD3D11();
@@ -525,6 +548,13 @@ namespace Bridge::Native
 	HRESULT Presenter::Present(UINT a_syncInterval, UINT a_flags) noexcept
 	{
 		auto& backend = TheBackend();
+		if (!_usable) {
+			// ResizeBuffers logged why; nothing here to copy into or from.
+			_inputsThisFrame = false;
+			_hudlessThisFrame = false;
+			_renderToken = nullptr;
+			return E_FAIL;
+		}
 		auto* const token = TakeRenderToken();
 		if (token == nullptr) {
 			++_framesWithoutToken;
@@ -534,8 +564,8 @@ namespace Bridge::Native
 		// D3D11: the finished picture into the slot, then the handover.
 		WaitSlotOnD3D11();
 		_context11->CopyResource(slot.final.texture11.Get(), _backBuffer.Get());
-		const auto ready = ++_fenceValue;
-		_context11->Signal(_fence11.Get(), ready);
+		const auto ready = ++_ready.value;
+		_context11->Signal(_ready.fence11.Get(), ready);
 		// Without the game's own Present nothing flushes D3D11's queue any
 		// more, and D3D12 would wait for a signal still sitting in it.
 		_context11->Flush();
@@ -543,10 +573,10 @@ namespace Bridge::Native
 			Mark(sl::PCLMarker::eRenderSubmitEnd, *token);
 		}
 
-		backend.queue->Wait(_fence12.Get(), ready);
-		if (!_ring.Reusable(_fence12->GetCompletedValue())) {
-			// D3D12 is two frames behind: the allocator is still in use.
-			_fence12->SetEventOnCompletion(_ring.ReleaseValue(), _event);
+		backend.queue->Wait(_ready.fence12.Get(), ready);
+		if (!_ring.Reusable(_release.fence12->GetCompletedValue())) {
+			// D3D12 is three frames behind: the allocator is still in use.
+			_release.fence12->SetEventOnCompletion(_ring.ReleaseValue(), _event);
 			WaitForSingleObject(_event, INFINITE);
 			++_cpuWaits;
 		}
@@ -592,8 +622,8 @@ namespace Bridge::Native
 			Mark(sl::PCLMarker::ePresentEnd, *token);
 		}
 
-		const auto done = ++_fenceValue;
-		backend.queue->Signal(_fence12.Get(), done);
+		const auto done = ++_release.value;
+		backend.queue->Signal(_release.fence12.Get(), done);
 		_ring.Submit(done);
 
 		PollState();
@@ -632,7 +662,7 @@ namespace Bridge::Native
 			"bridge: rendered {:.0f}/s, shown {:.0f}/s, generation {}, cpu waits {}, d3d11 waits that blocked {} in the last {} "
 			"frames, frames without token {}, tokens dropped {}, simulation thread {}, present thread {}",
 			rates.rendered, rates.shown, _generationApplied ? "on" : "off", _cpuWaits, _blockingWaits, kLogInterval,
-			_framesWithoutToken, _tokens.Dropped(), _simulationThread, GetCurrentThreadId()));
+			_framesWithoutToken, _tokens.Dropped(), _simulationThread.load(std::memory_order_relaxed), GetCurrentThreadId()));
 		_blockingWaits = 0;
 	}
 
@@ -660,20 +690,26 @@ namespace Bridge::Native
 		if (width == 0 || height == 0) {
 			return S_OK;
 		}
-		if (width == _width && height == _height && format == _desc.BufferDesc.Format) {
+		if (_usable && width == _width && height == _height && format == _desc.BufferDesc.Format) {
 			return S_OK;
 		}
 
 		// Off before the resize, or Streamline's pacer may deadlock on it
 		// (ProgrammingGuideDLSS_G.md).
-		const bool wanted = _generationWanted;
 		ApplyOptions(false);
-		WaitForQueueIdle();
+		if (!WaitForQueueIdle()) {
+			// Its buffers may still be in flight; resizing now would free them
+			// under the queue.
+			return DXGI_ERROR_WAS_STILL_DRAWING;
+		}
 		ReleaseBuffers();
 		const auto result = _swapChain->ResizeBuffers(2, width, height, StripSrgb(format), _swapFlags);
 		if (FAILED(result)) {
 			Log::Error(std::format("bridge: ResizeBuffers to {}x{} failed (0x{:08X})", width, height, static_cast<std::uint32_t>(result)));
-			static_cast<void>(AcquireBuffers());
+			if (!AcquireBuffers()) {
+				_usable = false;
+				Log::Error(std::format("bridge: presenting stops until the next resize: {}", _failure));
+			}
 			return result;
 		}
 		_desc.BufferDesc.Format = format;
@@ -681,10 +717,11 @@ namespace Bridge::Native
 		_height = height;
 		_swapFormat = StripSrgb(format);
 		if (!AcquireBuffers() || !CreateTextures(width, height)) {
-			Log::Error(std::format("bridge: after the resize: {}", _failure));
+			_usable = false;
+			Log::Error(std::format("bridge: after the resize to {}x{}, presenting stops until the next resize: {}", width, height, _failure));
 			return E_FAIL;
 		}
-		_generationWanted = wanted;
+		_usable = true;
 		Log::Info(std::format("bridge: resized to {}x{}", width, height));
 		return S_OK;
 	}
@@ -694,7 +731,10 @@ namespace Bridge::Native
 		if (_optionsSet) {
 			ApplyOptions(false);
 		}
-		WaitForQueueIdle();
+		// At the end of the process there is nobody to refuse to; the timeout
+		// is logged, and what follows is all that is left to do.
+		static_cast<void>(WaitForQueueIdle());
+		_usable = false;
 		ReleaseBuffers();
 		_swapChain.Reset();
 		_native = nullptr;
@@ -708,8 +748,8 @@ namespace Bridge::Native
 		for (auto& allocator : _allocators) {
 			allocator.Reset();
 		}
-		_fence11.Reset();
-		_fence12.Reset();
+		_ready = SharedFence{};
+		_release = SharedFence{};
 		if (_event != nullptr) {
 			CloseHandle(_event);
 			_event = nullptr;

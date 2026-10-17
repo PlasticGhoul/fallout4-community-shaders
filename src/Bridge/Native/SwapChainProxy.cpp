@@ -93,7 +93,12 @@ namespace Bridge::Native
 		if (a_buffer != 0) {
 			return DXGI_ERROR_INVALID_CALL;
 		}
-		return _presenter->BackBuffer()->QueryInterface(a_iid, a_surface);
+		auto* const backBuffer = _presenter->BackBuffer();
+		if (backBuffer == nullptr) {
+			// A failed resize; the presenter logged it.
+			return DXGI_ERROR_INVALID_CALL;
+		}
+		return backBuffer->QueryInterface(a_iid, a_surface);
 	}
 
 	HRESULT SwapChainProxy::SetFullscreenState(BOOL a_fullscreen, IDXGIOutput*)
