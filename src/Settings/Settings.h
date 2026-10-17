@@ -140,6 +140,12 @@ namespace Settings
 	void Init(const std::filesystem::path& a_file);
 	void Init();
 
+	/// <Documents>/My Games/<save folder>/F4SE/<plugin>.json, or empty when the
+	/// documents folder cannot be resolved. What Init without an argument
+	/// loads; public because the frame generation bridge has to read one switch
+	/// from it when the game creates its device, long before Init runs.
+	[[nodiscard]] std::filesystem::path DefaultFile();
+
 	/// Writes every declared setting, then rebases the watch so that our own
 	/// write does not come back as somebody else's change.
 	void Save() noexcept;

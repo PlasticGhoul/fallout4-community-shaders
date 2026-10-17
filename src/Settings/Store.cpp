@@ -467,9 +467,14 @@ namespace Settings
 		REX::INFO("settings loaded from {}", a_file.generic_string());
 	}
 
+	std::filesystem::path DefaultFile()
+	{
+		return ResolveDefaultFile();
+	}
+
 	void Init()
 	{
-		const auto file = ResolveDefaultFile();
+		const auto file = DefaultFile();
 		if (file.empty()) {
 			return;
 		}

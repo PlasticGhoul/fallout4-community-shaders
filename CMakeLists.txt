@@ -974,4 +974,30 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME Camera COMMAND CameraTests)
+
+    add_executable(
+        StartupSwitchTests
+        "${CMAKE_SOURCE_DIR}/tests/StartupSwitchTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Bridge/StartupSwitch.cpp"
+    )
+
+    target_include_directories(
+        StartupSwitchTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(StartupSwitchTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        StartupSwitchTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(StartupSwitchTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            StartupSwitchTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME StartupSwitch COMMAND StartupSwitchTests)
 endif()
