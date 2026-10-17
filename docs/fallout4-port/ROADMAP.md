@@ -3,8 +3,8 @@
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
 Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay), F2 (Screen-Space Shadows),
 F3 (Exponential Height Fog), F4 (Cloud Shadows), das dazwischengeschobene F4.5 (Menü in zwei
-Spalten), F5 (Skylighting) und das vorgezogene F5.5a (DLSS Super Resolution) sind
-abgeschlossen**. Als Nächstes steht **F5.5b** an, DLSS Frame Generation. Stand 2026-10-04.
+Spalten), F5 (Skylighting) und die vorgezogenen F5.5a (DLSS Super Resolution) und F5.5b (DLSS
+Frame Generation) sind abgeschlossen**. Als Nächstes steht **F6** an. Stand 2026-10-17.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -61,7 +61,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | F4.5  | **Menü in zwei Spalten** — Seitenliste links mit den Schaltern, eine Seite je Eintrag rechts, Performance als Seite         | Jede Seite erreichbar, Schalten aus der Liste, Zahlen der Tafel unverändert | **abgeschlossen** |
 | F5    | **Skylighting** — Sondengitter wie die Vorlage, Erfassung über die Schattenwerfer, Anbringen im SSAO-Ziel vor dem Composite | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
 | F5.5a | **DLSS Super Resolution** — NGX auf D3D11, DLAA und vier Hochskalier-Modi über die dynamische Auflösung der Engine          | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
-| F5.5b | **DLSS Frame Generation** — D3D12-Brücke mit Streamline, DLSS-G/MFG und Reflex; Andockpunkt für DLSS 5                      | Mehr Bilder je Sekunde, gemessen, bei stehendem Overlay                     | offen             |
+| F5.5b | **DLSS Frame Generation** — D3D12-Brücke mit Streamline, DLSS-G/MFG und Reflex; Andockpunkt für DLSS 5                      | Mehr Bilder je Sekunde, gemessen, bei stehendem Overlay                     | **abgeschlossen** |
 | F6    | **Volumetric Lighting**                                                                                                     | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
 | F7    | **Volumetric Shadows**                                                                                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
 | F8    | **Screen Space GI**                                                                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
@@ -1348,6 +1348,88 @@ eine Restunsicherheit zu Abschnitt 4.e der SDK-Lizenz bleibt. Das Feature ist st
 Jitter, Bewegungsvektoren in UV, Tiefe und die Reset-Erkennung, belegt; `Render::Resolution`;
 die Einhängestelle nach `RenderEffectRange`, vor der das HUD-lose Bild für DLSS-G liegt; der
 Befund, daß ein Bildratengewinn auf dieser Maschine nur aus Frame Generation kommen kann.
+
+## Aus Teilprojekt F5.5b bestätigt
+
+Spec `docs/superpowers/specs/2026-10-17-fallout4-f5-5b-dlss-fg-design.md`, Plan
+`docs/superpowers/plans/2026-10-17-fallout4-f5-5b-dlss-fg.md` (dort oben die Abweichungen von der
+Spec, die schon beim Planen feststanden). Fünf Spielstarts am 2026-10-17, RTX 5080, 2560×1440,
+180 Hz, Treiber 610.88, randloses Fenster über High FPS Physics Fix.
+
+### Die Brücke
+
+Fallout 4 rendert auf D3D11 und präsentiert über eine eigene D3D12-Swapchain aus Streamlines
+Fabrik (manuelles Hooking, v2.14.16, per CMake-Download mit SHA256). Ein IAT-Hook auf
+`D3D11CreateDeviceAndSwapChain` gibt dem Spiel ein eigenes D3D11-Gerät und einen
+`SwapChainProxy`, der nur `IDXGISwapChain` beantwortet; dahinter ein Ring aus drei Slots
+geteilter Texturen (Endbild, HUD-los, Tiefe, Bewegung) und ein geteilter Fence. Der D3D12-Teil ist
+eine native Insel ohne PCH unter `src/Bridge/Native/`, die mit dem Rest nur über
+`src/Bridge/Bridge.h` spricht. Streamline und das D3D12-Gerät leben bis zum Prozessende. Der
+Schalter wirkt nur beim Start, weil die Brücke beim Anlegen des Geräts entsteht.
+
+### Was die Läufe ergeben haben
+
+-   **Niemand hakt sich vor uns in die Geräteerzeugung ein**: der Import führt direkt in die
+    System-`d3d11.dll`, auch mit High FPS Physics Fix.
+-   **Die Eingabeabfrage `PollInputDevices` (`2268382`) hat je nach Ort einen anderen Aufrufer**:
+    draußen `2228927+0x13`, in Gebäuden `Main::OnIdle+0x8E5`, im Ladebildschirm
+    `2227631+0x21E` — immer einer je Frame. Der Plan hatte nur die OnIdle-Stelle eingehängt, die
+    draußen nie läuft: im ersten Lauf bekam kein Frame ein Streamline-Token. Seither ein
+    Prolog-Detour auf die Funktion selbst, wie bei doodlum.
+-   **`FO4_RT_000` hat keine Textur** (in 180 von 180 Frames null). doodlums Abgriff über
+    `renderTargets[0]` greift bei uns ins Leere; das HUD-lose Bild kommt direkt aus dem
+    Backbuffer des Stellvertreters, an `SetUseDynamicResolutionViewportAsDefaultViewport(false)`
+    (`2318322+0xC5`). Die Debug-Ansicht `split` hat belegt, dass es dort noch ohne HUD ist.
+-   **Tiefe und Bewegungsvektoren müssen dieselbe Auflösung haben.** Beim Hochskalieren bindet
+    `DLSS::AfterEffectRange` die Tiefe in Anzeigegröße, bevor unser Abgriff läuft; DLSS-G bekam
+    2560×1440 gegen 1707×960, und der rechte Rand schlierte beim Rechtsdrehen. Die Tiefe wird
+    seither auf die Größe der Bewegungsvektoren abgetastet.
+-   **Mit zwei Slots stand die D3D11-Queue still**, bis D3D12 einen Slot freigab. Mit drei Slots
+    danach 0 blockierende Waits. Die GPU-Zeit im Present (2,4 ms mit FG aus, 3,7 ms mit FG an)
+    bleibt trotzdem: sie ist Konkurrenz mit der D3D12-Arbeit auf derselben GPU, kein Warten.
+-   **Die Kamera passt**: `worldToCam` trägt keinen Jitter (Neigung der Zeilen 0), der Restwert
+    der abgeleiteten Projektion liegt unter 0,02.
+-   **Hauptschleife und Present laufen auf einem Thread**, im Ladebildschirm auf einem anderen;
+    die Frame-Indizes kommen über eine Warteschlange an.
+
+### Die Zahlen
+
+An derselben Stelle, je ein F11-Schnappschuss über 300 Frames, DLSS Quality an:
+
+| Zustand              | gerendert | angezeigt | Frame GPU | Present GPU | `DLSS/Evaluate` |
+| -------------------- | --------- | --------- | --------- | ----------- | --------------- |
+| FG aus, Brücke steht | 98,5      | 98,5      | 9,946     | 2,421       | 1,335           |
+| FG an                | 81,4      | 158       | 12,682    | 3,708       | 2,079           |
+
+**+60 % angezeigte Bilder.** Gerendert wird 2,7 ms langsamer, im Rahmen dessen, was NVIDIA für
+DLSS-G angibt (1,35–2,8 ms auf einer 4090). Die GPU-Zeiten der D3D11-Pässe wachsen mit FG an,
+weil die D3D12-Arbeit gleichzeitig dieselbe GPU belegt. Die Ausgabe lag konstant bei 158, unter
+der 180-Hz-Grenze: die GPU ist ausgelastet.
+
+### Die Abnahme
+
+Vom Nutzer gemeldet: flüssiger, kein Schlieren mehr, HUD ruhig (UI-Meßgate bestanden, der
+UI-Puffer aus Task 15 entfällt). Menüs, Pip-Boy, Ladebildschirm und das offene Overlay schalten
+FG ab und wieder an; Streamline meldet durchgehend den DLSS-G-Status `0x0`.
+
+**Nicht belegt:** Reflex boost wurde nie geschaltet. Was die Brücke allein gegenüber keiner
+Brücke kostet, ist an dieser Stelle nicht gemessen; der Nutzer hat ohne diesen Lauf
+abgeschlossen. Die 2,4 ms Present-GPU mit FG aus sind der Anlass, das nachzuholen. Alt-Tab und
+Minimieren sind vom Nutzer als gut gemeldet, im Log aber nicht erkennbar. Exklusives Vollbild,
+ENB und eine zweite Geräteerzeugung sind nur durch den Code abgedeckt.
+
+### Zugeständnisse
+
+Kein exklusives Vollbild, kein ENB, kein MFG über 2×, kein HDR. FG aus in Menüs und bei offenem
+Overlay. Die Streamline- und NGX-Dateien stehen unter NVIDIAs Lizenz und liegen unverändert im
+eigenen Addon `FrameGeneration`. Das Feature ist standardmäßig aus.
+
+### Was F5.5b hinterlässt
+
+Die D3D12-Präsentation hinter einer sauberen D3D11-Swapchain als Andockpunkt für DLSS 5
+(DLSS-NR verlangt Farbe und Bewegungsvektoren auf D3D12, beides liegt in der Brücke);
+`Upscale::Hooks::Tap` als zweiter Hörer an den F5.5a-Stellen; den Frame-Beginn am
+`PollInputDevices`-Prolog; `Bridge::PresentStats` und die Zeile „shown" in der Ecke.
 
 ## Bekannte Lücken in CommonLibF4
 

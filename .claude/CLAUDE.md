@@ -136,6 +136,26 @@ Three rules that are not obvious from the headers:
     proved it on `ImagespaceTint`, which hands a pointer back into engine memory and joins a
     thread.
 
+## Bridge
+
+`src/Bridge/` carries DLSS Frame Generation (F5.5b): Fallout 4 renders on D3D11 and presents through
+our own D3D12 swap chain from Streamline's factory. Five things to know:
+
+-   **The D3D12 half is a native island.** `src/Bridge/Native/` is compiled without the PCH and is
+    the only place besides `src/Upscale/LensFlareDetour.cpp` that sees `<Windows.h>`, D3D12 and
+    Streamline. It talks to the rest through `src/Bridge/Bridge.h` (plain types) and logs through
+    `Bridge::Log`, never REX. Inside it, `near` and `far` are macros from `windef.h`.
+-   **Streamline is fetched, not vendored.** `cmake/Streamline.cmake` downloads the 2.14.16 release
+    archive once, checks its SHA256 and extracts headers, six DLLs and licences into
+    `extern/Streamline` (ignored). The `FrameGeneration` addon ships them through its `EXTERNAL`.
+-   **The bridge exists only if `FrameGeneration/enabled` was true when the game started.** The
+    device is created long before `Settings::Init`, so `Bridge::ReadStartupSwitch` reads the file
+    itself. Streamline and the D3D12 device then live until the process ends.
+-   **The frame start is the prolog of `PollInputDevices` (`2268382`).** Its caller changes with the
+    place (outdoors, indoors, loading screen); hooking one call site gave no frame a token.
+-   **Depth and motion vectors go to DLSS-G at one resolution.** While DLSS upscales, the depth
+    bound at the capture point is DLSS's display-size one; the copy resamples it.
+
 ## Settings
 
 `src/Settings/` is a system of its own, used by features, the menu and i18n alike. It is split in
