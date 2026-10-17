@@ -32,6 +32,25 @@ namespace Upscale::Hooks
 		virtual void AfterReflectionsSetup() noexcept {}
 	};
 
+	/// A second listener on three of the same sites, for frame generation:
+	/// independent of the handler so that either feature runs without the
+	/// other. Called after the handler at every site.
+	class Tap
+	{
+	public:
+		virtual ~Tap() = default;
+
+		/// After UpdateTemporalData: the frame's rendering begins.
+		virtual void AfterTemporalData() noexcept {}
+		/// After RenderEffectRange: depth and motion vectors are still the
+		/// frame's own - DLSS reads them here.
+		virtual void AfterEffectRange() noexcept {}
+		/// After SetUseDynamicResolutionViewportAsDefaultViewport: post-
+		/// processing is done and the HUD not yet drawn (doodlum takes his
+		/// HUD-less picture here, after the original call).
+		virtual void AfterDynamicViewportDefault(bool a_enabled) noexcept { static_cast<void>(a_enabled); }
+	};
+
 	/// Verifies and installs every hook; called once from F4SEPlugin_Load,
 	/// after the runtime check. All or nothing.
 	[[nodiscard]] bool Install() noexcept;
@@ -41,6 +60,9 @@ namespace Upscale::Hooks
 
 	/// nullptr passes everything through.
 	void SetHandler(Handler* a_handler) noexcept;
+
+	/// nullptr silences it.
+	void SetTap(Tap* a_tap) noexcept;
 
 	/// The engine's own SetUseDynamicResolutionViewportAsDefaultViewport, for
 	/// the handler to call.

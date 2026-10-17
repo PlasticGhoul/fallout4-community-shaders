@@ -68,6 +68,13 @@ namespace Upscale::Hooks
 			return g_handler.load(std::memory_order_acquire);
 		}
 
+		std::atomic<Tap*> g_tap{ nullptr };
+
+		Tap* CurrentTap() noexcept
+		{
+			return g_tap.load(std::memory_order_acquire);
+		}
+
 		bool Verify(const Site& a_site) noexcept
 		{
 			const auto address = REL::ID(a_site.function).address() + a_site.offset;
@@ -88,6 +95,9 @@ namespace Upscale::Hooks
 			if (auto* const handler = Current()) {
 				handler->AfterTemporalData();
 			}
+			if (auto* const tap = CurrentTap()) {
+				tap->AfterTemporalData();
+			}
 		}
 
 		void EffectRange(void* a_self, std::uint32_t a_1, std::uint32_t a_2, std::uint32_t a_3, std::uint32_t a_4)
@@ -95,6 +105,9 @@ namespace Upscale::Hooks
 			(*g_effectRange)(a_self, a_1, a_2, a_3, a_4);
 			if (auto* const handler = Current()) {
 				handler->AfterEffectRange();
+			}
+			if (auto* const tap = CurrentTap()) {
+				tap->AfterEffectRange();
 			}
 		}
 
@@ -104,6 +117,9 @@ namespace Upscale::Hooks
 				handler->BeforeDynamicViewportDefault();
 			}
 			(*g_viewportDefault)(a_self, a_enabled);
+			if (auto* const tap = CurrentTap()) {
+				tap->AfterDynamicViewportDefault(a_enabled);
+			}
 		}
 
 		void PrePass(void* a_drawWorld)
@@ -242,6 +258,11 @@ namespace Upscale::Hooks
 	void SetHandler(Handler* a_handler) noexcept
 	{
 		g_handler.store(a_handler, std::memory_order_release);
+	}
+
+	void SetTap(Tap* a_tap) noexcept
+	{
+		g_tap.store(a_tap, std::memory_order_release);
 	}
 
 	void SetDynamicResolutionViewport(bool a_enabled) noexcept

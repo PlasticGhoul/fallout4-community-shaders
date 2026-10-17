@@ -1,4 +1,5 @@
 #include "Bridge/Bridge.h"
+#include "Bridge/SimulationHook.h"
 #include "Bridge/StartupSwitch.h"
 #include "Feature/FeatureSystem.h"
 #include "Menu/MenuSystem.h"
@@ -83,8 +84,8 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Query(
 extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f4se)
 {
 	F4SE::InitInfo initInfo{};
-	// Eight call hooks of F5.5a, fourteen bytes of branch each; the rest is
-	// headroom. hook stays false: our hooks are made after the runtime check,
+	// Nine call hooks of F5.5a and F5.5b, fourteen bytes of branch each; the
+	// rest is headroom. hook stays false: our hooks are made after the runtime check,
 	// not registered statically, because a REL::THook reads its site the
 	// moment it is constructed.
 	initInfo.trampoline = true;
@@ -132,6 +133,9 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadIn
 	// comes only with kGameDataReady.
 	const auto startupSwitch = Bridge::ReadStartupSwitch(Settings::DefaultFile());
 	static_cast<void>(Bridge::InstallDeviceHook({ startupSwitch.on, startupSwitch.reason, Util::PluginDataDirectory() }));
+	if (!Bridge::InstallSimulationHook()) {
+		REX::ERROR("frame generation will refuse: no frame start for Reflex");
+	}
 
 	REX::INFO("loaded");
 	return true;
