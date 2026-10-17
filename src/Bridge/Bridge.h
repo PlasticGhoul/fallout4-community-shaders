@@ -61,8 +61,9 @@ namespace Bridge
 	void SetReflexMode(std::uint32_t a_mode) noexcept;
 	void SetSplitView(bool a_on) noexcept;
 
-	/// From Main::OnIdle, once per game frame: frame token, Reflex sleep,
-	/// simulation start.
+	/// From the prolog of PollInputDevices, once per game frame: frame token,
+	/// Reflex sleep, simulation start. In loading screens on another thread
+	/// than Present.
 	void OnSimulationStart() noexcept;
 	/// From UpdateTemporalData: the frame's rendering begins.
 	void OnRenderStart() noexcept;

@@ -40,11 +40,6 @@ namespace Bridge
 		float cameraFOV{ 0.0f };
 		float cameraAspectRatio{ 0.0f };
 		bool reset{ false };
-		/// Largest translation left in the derived projection; near zero when
-		/// the position and the matrix describe the same camera. Logged, never
-		/// sent: the first run shows whether NiCamera's translation is the one
-		/// the matrix was built from.
-		float diagnosticResidue{ 0.0f };
 	};
 
 	[[nodiscard]] std::optional<Matrix> Invert(const Matrix& a_matrix) noexcept;

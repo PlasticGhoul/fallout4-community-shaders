@@ -85,9 +85,10 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadIn
 {
 	F4SE::InitInfo initInfo{};
 	// Eight call hooks of F5.5a, fourteen bytes of branch each; the rest is
-	// headroom. The two prolog hooks go through Detours, not the trampoline. hook stays false: our hooks are made after the runtime check,
-	// not registered statically, because a REL::THook reads its site the
-	// moment it is constructed.
+	// headroom. The two prolog hooks go through Detours, not the trampoline.
+	// hook stays false: our hooks are made after the runtime check, not
+	// registered statically, because a REL::THook reads its site the moment
+	// it is constructed.
 	initInfo.trampoline = true;
 	initInfo.trampolineSize = 256;
 	initInfo.hook = false;
@@ -133,7 +134,9 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadIn
 	// comes only with kGameDataReady.
 	const auto startupSwitch = Bridge::ReadStartupSwitch(Settings::DefaultFile());
 	static_cast<void>(Bridge::InstallDeviceHook({ startupSwitch.on, startupSwitch.reason, Util::PluginDataDirectory() }));
-	if (!Bridge::InstallSimulationHook()) {
+	// Only with the switch on: without a bridge the detour would do nothing
+	// but sit in front of anyone else's hook on that function.
+	if (startupSwitch.on && !Bridge::InstallSimulationHook()) {
 		REX::ERROR("frame generation will refuse: no frame start for Reflex");
 	}
 

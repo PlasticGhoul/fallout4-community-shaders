@@ -7,11 +7,12 @@
 
 namespace Bridge
 {
-	/// Streamline frame indices from the start of the game's frame (input
-	/// polling in Main::OnIdle) to where that frame is rendered and presented.
-	/// The log of 2026-10-04 shows both on one thread, but not their order
-	/// within one loop iteration: a queue serves either order, a single
-	/// variable only one. The index, not the token pointer, travels:
+	/// Streamline frame indices from the start of the game's frame (the
+	/// prolog of PollInputDevices) to where that frame is rendered and
+	/// presented. Both usually run on one thread, in loading screens not, and
+	/// their order within one loop iteration is not known: a locked queue
+	/// serves either order and either thread, a single variable neither. The
+	/// index, not the token pointer, travels:
 	/// slGetNewFrameToken gives the same frame's token back for its index
 	/// (ProgrammingGuide.md 2.10).
 	class FrameTokenQueue

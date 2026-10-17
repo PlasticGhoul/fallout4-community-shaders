@@ -30,9 +30,6 @@ namespace Features
 
 		/// FO4_RT_029, R16G16_FLOAT: the engine's motion vectors, in uv units.
 		constexpr std::size_t kMotionVectors = 29;
-		/// FO4_RT_000: whatever the game got from GetBuffer(0) - with the bridge,
-		/// the proxy's private back buffer (the first run counts it).
-		constexpr std::size_t kFrameBuffer = 0;
 
 		/// The engine's camera planes; DLSS reads the same two floats.
 		constexpr std::uint64_t kCameraNear = 2712882;
@@ -105,14 +102,9 @@ namespace Features
 		_frames = 0;
 		_captures = 0;
 		_hudless = 0;
-		_rt0Null = 0;
-		_rt0IsBackBuffer = 0;
-		_rt0Other = 0;
 		_refusedDepthMotion = 0;
 		_refusedCamera = 0;
 		_refusedHudless = 0;
-		_viewportCalls[0] = 0;
-		_viewportCalls[1] = 0;
 		_generating = false;
 		_blocker = "<start>";
 		_reset = true;
@@ -191,25 +183,15 @@ namespace Features
 		if (_frames % kLogInterval == 0) {
 			const auto status = Bridge::CurrentStatus();
 			REX::INFO(
-				"frame generation: rendered {:.0f}/s, shown {:.0f}/s, {}, DLSS-G status 0x{:X}, vsync support {}, captures {} "
-				"depth+motion / {} hud-less, refused {} depth+motion / {} camera / {} hud-less, viewport calls {} off / {} on, "
-				"RT_000 none {} / back buffer {} / other {}, matrix lean [{:.6f} {:.6f}], projection residue {:.5f}, depth source {}x{} "
-				"to {}x{} with motion {}x{}, frame start: {}",
+				"frame generation: rendered {:.0f}/s, shown {:.0f}/s, {}, DLSS-G status 0x{:X}, captures {} depth+motion / {} "
+				"hud-less, refused {} depth+motion / {} camera / {} hud-less",
 				status.renderedPerSecond, status.shownPerSecond, status.generating ? "generating" : "not generating", status.dlssgStatus,
-				status.vsyncSupported, _captures, _hudless, _refusedDepthMotion, _refusedCamera, _refusedHudless, _viewportCalls[0],
-				_viewportCalls[1], _rt0Null, _rt0IsBackBuffer, _rt0Other, _matrixLean[0], _matrixLean[1], _residue, _depthSource.width,
-				_depthSource.height, _motionSize.width, _motionSize.height, _motionSize.width, _motionSize.height,
-				Bridge::TakeSimulationReport());
+				_captures, _hudless, _refusedDepthMotion, _refusedCamera, _refusedHudless);
 			_captures = 0;
 			_hudless = 0;
-			_rt0Null = 0;
-			_rt0IsBackBuffer = 0;
-			_rt0Other = 0;
 			_refusedDepthMotion = 0;
 			_refusedCamera = 0;
 			_refusedHudless = 0;
-			_viewportCalls[0] = 0;
-			_viewportCalls[1] = 0;
 		}
 	}
 
@@ -254,7 +236,6 @@ namespace Features
 		// Depth goes out at the motion vectors' size: DLSS-G takes the two as
 		// one pair, and while DLSS upscales, the depth bound here is DLSS's
 		// display-size one (DLSS::AfterEffectRange runs first).
-		_depthSource = depthExtent;
 		const CopyDepthConstants constants{ { motionExtent.width, motionExtent.height }, { depthExtent.width, depthExtent.height } };
 		static_cast<void>(_constants.Update(std::addressof(constants), sizeof(constants)));
 		auto* const buffer = _constants.Buffer();
@@ -274,7 +255,6 @@ namespace Features
 
 		++_captures;
 		SubmitCamera(motionExtent.width, motionExtent.height, motionExtent.width, motionExtent.height);
-		_motionSize = motionExtent;
 	}
 
 	bool FrameGeneration::TakeCameraCut(const float (&a_worldToCam)[4][4], const float (&a_position)[3]) noexcept
@@ -314,23 +294,19 @@ namespace Features
 		if (TakeCameraCut(world->worldToCam, position)) {
 			_reset = true;
 		}
-		// How far rows zero and one lean towards forward: if the engine folds
-		// the jitter into worldToCam, these follow the jitter frame by frame.
-		const float* const forward = world->worldToCam[3];
-		_matrixLean[0] = world->worldToCam[0][0] * forward[0] + world->worldToCam[0][1] * forward[1] + world->worldToCam[0][2] * forward[2];
-		_matrixLean[1] = world->worldToCam[1][0] * forward[0] + world->worldToCam[1][1] * forward[1] + world->worldToCam[1][2] * forward[2];
 
 		const auto nearPlane = *reinterpret_cast<const float*>(REL::ID(kCameraNear).address());
 		const auto farPlane = *reinterpret_cast<const float*>(REL::ID(kCameraFar).address());
 		const auto jitter = Bridge::JitterFromEngineOffset(state->offsetX, state->offsetY, state->screenWidth, state->screenHeight);
-		const auto built = Bridge::BuildConstants(current, _havePrevious ? &_previous : nullptr, nearPlane, farPlane, jitter, _reset);
+		// After a reset the frame before is not this one's history.
+		const auto* const previous = _havePrevious && !_reset ? &_previous : nullptr;
+		const auto built = Bridge::BuildConstants(current, previous, nearPlane, farPlane, jitter, _reset);
 		_previous = current;
 		_havePrevious = true;
 		if (!built) {
 			++_refusedCamera;
 			return;
 		}
-		_residue = built->diagnosticResidue;
 		Bridge::FrameInputs inputs{};
 		inputs.constants = *built;
 		inputs.depthWidth = a_depthWidth;
@@ -343,7 +319,6 @@ namespace Features
 
 	void FrameGeneration::AfterDynamicViewportDefault(bool a_enabled) noexcept
 	{
-		++_viewportCalls[a_enabled ? 1 : 0];
 		// doodlum takes the picture at the call that switches the dynamic
 		// viewport off; the other calls of this site are not the end of
 		// post-processing.
@@ -352,18 +327,9 @@ namespace Features
 		}
 		const Render::PassScope pass{ "FrameGeneration/Hudless"sv };
 		// Straight from the proxy's back buffer: that is what the game got
-		// from GetBuffer(0), and what doodlum reads as renderTargets[0]. The
-		// first run refused this copy in every frame through RT_000; what
-		// RT_000 holds is counted, not trusted.
+		// from GetBuffer(0), and what doodlum reads as renderTargets[0]. In
+		// Fallout 4 RT_000's texture is null at this point (run of 2026-10-17).
 		auto* const backBuffer = static_cast<REX::W32::ID3D11Texture2D*>(Bridge::BackBuffer());
-		auto* const frameBuffer = Render::Targets::RenderTargetTexture(kFrameBuffer);
-		if (frameBuffer == nullptr) {
-			++_rt0Null;
-		} else if (static_cast<void*>(frameBuffer) == static_cast<void*>(backBuffer)) {
-			++_rt0IsBackBuffer;
-		} else {
-			++_rt0Other;
-		}
 		Bridge::InputSlot slot{};
 		auto* const context = Render::GetContext();
 		if (!Bridge::CurrentSlot(slot) || context == nullptr || backBuffer == nullptr) {
@@ -380,6 +346,8 @@ namespace Features
 	{
 		Bridge::SetGeneration(false);
 		Bridge::SetSplitView(false);
+		// Boost keeps the GPU clock up; that must not outlive the switch.
+		Bridge::SetReflexMode(1);
 		if (_tapSet) {
 			Upscale::Hooks::SetTap(nullptr);
 			_tapSet = false;

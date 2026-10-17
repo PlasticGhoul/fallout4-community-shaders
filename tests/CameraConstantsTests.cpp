@@ -114,7 +114,6 @@ int main()
 		Check(Near(built->clipToPrevClip, identity) && Near(built->prevClipToClip, identity), "without a previous frame there is no motion");
 		Check(Near(built->jitterOffset[0], 0.25f) && Near(built->jitterOffset[1], -0.125f), "the jitter is passed through");
 		Check(built->reset && Near(built->cameraNear, 10.0f) && Near(built->cameraFar, 353840.0f), "reset and the planes");
-		Check(Near(built->diagnosticResidue, 0.0f), "a consistent camera leaves no translation in the projection");
 	}
 
 	const Vec3 moved{ 100, -45, 20 };

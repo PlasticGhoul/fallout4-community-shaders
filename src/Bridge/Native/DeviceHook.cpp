@@ -222,7 +222,17 @@ namespace Bridge
 	bool InstallDeviceHook(const StartupConfig& a_config) noexcept
 	{
 		g_config = a_config;
-		SetRefusal(std::format("the game has not created its device yet (switch {})", a_config.switchOn ? "on" : "off"));
+		if (!a_config.switchOn) {
+			// Nothing to decide at device creation, so the game's import stays
+			// as it is and no other hook there has us in front of it.
+			DecisionFacts facts{};
+			facts.switchReason = a_config.switchReason;
+			auto reason = Decide(facts).reason;
+			Log::Info(std::format("bridge: import not patched - {}", reason));
+			SetRefusal(std::move(reason));
+			return true;
+		}
+		SetRefusal("the game has not created its device yet");
 		void** const slot = FindImport(GetModuleHandleW(nullptr), "d3d11.dll", "D3D11CreateDeviceAndSwapChain");
 		if (slot == nullptr) {
 			SetRefusal("Fallout4.exe imports no D3D11CreateDeviceAndSwapChain");
@@ -232,8 +242,7 @@ namespace Bridge
 		g_original = reinterpret_cast<Create_t>(*slot);
 		// Names who was there first: another plugin's hook here would now sit
 		// below ours, and is passed by when the bridge is built.
-		Log::Info(std::format("bridge: D3D11CreateDeviceAndSwapChain leads into {}; patching the import (switch {}{}{})",
-			ModuleOf(*slot), a_config.switchOn ? "on" : "off", a_config.switchOn ? "" : ": ", a_config.switchReason));
+		Log::Info(std::format("bridge: D3D11CreateDeviceAndSwapChain leads into {}; patching the import", ModuleOf(*slot)));
 		DWORD previous = 0;
 		if (VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &previous) == 0) {
 			SetRefusal("the import table could not be made writable");

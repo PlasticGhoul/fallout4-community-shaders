@@ -1,6 +1,5 @@
 #include "Bridge/CameraConstants.h"
 
-#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -193,7 +192,6 @@ namespace Bridge
 		out.cameraFOV = 2.0f * std::atan(1.0f / scaleY);
 		out.cameraAspectRatio = scaleY / scaleX;
 		out.reset = a_reset;
-		out.diagnosticResidue = std::max({ std::abs(viewToClip[0][3]), std::abs(viewToClip[1][3]), std::abs(viewToClip[3][3]) });
 		return out;
 	}
 }
