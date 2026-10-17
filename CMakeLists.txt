@@ -63,6 +63,8 @@ if(NOT EXISTS "${DLSS_SDK_DIR}/include/nvsdk_ngx.h")
     )
 endif()
 
+include("${CMAKE_SOURCE_DIR}/cmake/Streamline.cmake")
+
 # One prolog hook (BSImagespaceShaderLensFlare) has no call site to bend:
 # REL::THook handles calls and jumps only.
 find_path(DETOURS_INCLUDE_DIRS "detours/detours.h" REQUIRED)
@@ -84,6 +86,20 @@ target_sources(${PROJECT_NAME} PRIVATE ${PLUGIN_SOURCES})
 # file is compiled without the precompiled header that brings REX in.
 set_source_files_properties(
     "${CMAKE_SOURCE_DIR}/src/Upscale/LensFlareDetour.cpp"
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+)
+
+# The bridge's D3D12 half needs the Windows SDK's own D3D12, DXGI and D3D11
+# headers and Streamline's, none of which the rest of the plugin may see. These
+# files are compiled without the precompiled header that brings REX in, and
+# talk to the rest only through src/Bridge/Bridge.h.
+file(
+    GLOB BRIDGE_NATIVE_SOURCES
+    CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/src/Bridge/Native/*.cpp"
+)
+set_source_files_properties(
+    ${BRIDGE_NATIVE_SOURCES}
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
 
@@ -134,6 +150,7 @@ target_include_directories(
         "${CMAKE_CURRENT_BINARY_DIR}/cmake"
         "${DLSS_SDK_DIR}/include"
         "${DETOURS_INCLUDE_DIRS}"
+        "${STREAMLINE_DIR}/include"
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
@@ -148,6 +165,9 @@ target_link_libraries(
         imgui::imgui
         "${DLSS_SDK_DIR}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib"
         "${DETOURS_LIBRARY}"
+        d3d12
+        dxgi
+        d3d11
 )
 
 if(MSVC)

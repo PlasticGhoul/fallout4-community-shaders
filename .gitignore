@@ -12,3 +12,5 @@ shadertoolsconfig.json
 .claude/settings.local.json
 
 tools/__pycache__/
+extern/Streamline/
+extern/.downloads/
