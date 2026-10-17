@@ -136,6 +136,7 @@ namespace Bridge::Native
 
 		std::uint64_t _presents{ 0 };
 		std::uint64_t _cpuWaits{ 0 };
+		std::uint64_t _blockingWaits{ 0 };
 		std::uint64_t _framesWithoutToken{ 0 };
 		DWORD _simulationThread{ 0 };
 		std::uint32_t _loggedStatus{ UINT32_MAX };

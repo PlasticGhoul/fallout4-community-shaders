@@ -361,6 +361,11 @@ namespace Bridge::Native
 	{
 		const auto value = _ring.ReleaseValue();
 		if (value != 0 && value != _waitedFor) {
+			// Counted when D3D12 has not got there yet: only then does the
+			// D3D11 queue actually stand still on this wait.
+			if (_fence12->GetCompletedValue() < value) {
+				++_blockingWaits;
+			}
 			_context11->Wait(_fence11.Get(), value);
 			_waitedFor = value;
 		}
@@ -624,10 +629,11 @@ namespace Bridge::Native
 	{
 		const auto rates = _stats.Last();
 		Log::Info(std::format(
-			"bridge: rendered {:.0f}/s, shown {:.0f}/s, generation {}, cpu waits {}, frames without token {}, tokens dropped {}, "
-			"simulation thread {}, present thread {}",
-			rates.rendered, rates.shown, _generationApplied ? "on" : "off", _cpuWaits, _framesWithoutToken, _tokens.Dropped(),
-			_simulationThread, GetCurrentThreadId()));
+			"bridge: rendered {:.0f}/s, shown {:.0f}/s, generation {}, cpu waits {}, d3d11 waits that blocked {} in the last {} "
+			"frames, frames without token {}, tokens dropped {}, simulation thread {}, present thread {}",
+			rates.rendered, rates.shown, _generationApplied ? "on" : "off", _cpuWaits, _blockingWaits, kLogInterval,
+			_framesWithoutToken, _tokens.Dropped(), _simulationThread, GetCurrentThreadId()));
+		_blockingWaits = 0;
 	}
 
 	Status Presenter::CurrentStatus() const noexcept

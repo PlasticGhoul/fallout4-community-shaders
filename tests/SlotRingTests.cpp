@@ -18,18 +18,21 @@ namespace
 int main()
 {
 	Bridge::SlotRing ring;
+	Check(Bridge::SlotRing::kSlots == 3, "three slots, so D3D11 waits only when D3D12 is three frames behind");
 	Check(ring.Current() == 0 && ring.ReleaseValue() == 0, "a fresh ring starts at slot 0 with nothing to wait for");
 	Check(ring.Reusable(0), "and its allocator may be reset at once");
 
 	ring.Submit(5);
-	Check(ring.Current() == 1 && ring.ReleaseValue() == 0, "the second slot was never handed over either");
-
+	Check(ring.Current() == 1 && ring.ReleaseValue() == 0, "the second slot was never handed over");
 	ring.Submit(9);
+	Check(ring.Current() == 2 && ring.ReleaseValue() == 0, "nor the third");
+
+	ring.Submit(12);
 	Check(ring.Current() == 0 && ring.ReleaseValue() == 5, "back at slot 0, D3D11 waits for what D3D12 signals after reading it");
 	Check(!ring.Reusable(4), "before that value completes the allocator is still in use");
 	Check(ring.Reusable(5), "once it has, it is free");
 
-	ring.Submit(12);
+	ring.Submit(15);
 	Check(ring.Current() == 1 && ring.ReleaseValue() == 9, "slot 1 waits for its own value, not for slot 0's");
 
 	ring.Reset();
