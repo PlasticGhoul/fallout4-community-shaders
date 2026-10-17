@@ -1100,4 +1100,30 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME CameraConstants COMMAND CameraConstantsTests)
+
+    add_executable(
+        PresentStatsTests
+        "${CMAKE_SOURCE_DIR}/tests/PresentStatsTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Bridge/PresentStats.cpp"
+    )
+
+    target_include_directories(
+        PresentStatsTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(PresentStatsTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        PresentStatsTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(PresentStatsTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            PresentStatsTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME PresentStats COMMAND PresentStatsTests)
 endif()
