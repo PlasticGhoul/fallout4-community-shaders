@@ -1048,4 +1048,30 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME SlotRing COMMAND SlotRingTests)
+
+    add_executable(
+        FrameTokenQueueTests
+        "${CMAKE_SOURCE_DIR}/tests/FrameTokenQueueTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Bridge/FrameTokenQueue.cpp"
+    )
+
+    target_include_directories(
+        FrameTokenQueueTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(FrameTokenQueueTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        FrameTokenQueueTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(FrameTokenQueueTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            FrameTokenQueueTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME FrameTokenQueue COMMAND FrameTokenQueueTests)
 endif()
