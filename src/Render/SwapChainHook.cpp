@@ -74,6 +74,9 @@ namespace Render
 			// Deliberately the remembered pointer, not IDXGISwapChain::Present.
 			// If ENB, an overlay or an upscaler sits below us, calling through
 			// DXGI directly would skip it.
+			// Measured on its own: with the frame generation bridge underneath,
+			// this call is where Streamline paces the frame.
+			const PassScope present{ "Present"sv };
 			return g_originalPresent(a_swapChain, a_syncInterval, a_flags);
 		}
 	}

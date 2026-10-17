@@ -4,6 +4,7 @@
 #include "Menu/MenuSystem.h"
 #include "Render/Camera.h"
 #include "Render/DebugName.h"
+#include "Render/Profiler.h"
 #include "Render/Renderer.h"
 #include "Render/Resolution.h"
 #include "Render/Targets.h"
@@ -103,8 +104,14 @@ namespace Features
 		_frames = 0;
 		_captures = 0;
 		_hudless = 0;
+		_rt0Null = 0;
 		_rt0IsBackBuffer = 0;
-		_refusedCaptures = 0;
+		_rt0Other = 0;
+		_refusedDepthMotion = 0;
+		_refusedCamera = 0;
+		_refusedHudless = 0;
+		_viewportCalls[0] = 0;
+		_viewportCalls[1] = 0;
 		_generating = false;
 		_blocker = "<start>";
 		_reset = true;
@@ -120,7 +127,7 @@ namespace Features
 			return false;
 		}
 		if (!Bridge::SimulationHookInstalled()) {
-			REX::ERROR("FrameGeneration: no frame start for Reflex (Main::OnIdle hook missing)");
+			REX::ERROR("FrameGeneration: no frame start for Reflex (PollInputDevices detour missing)");
 			return false;
 		}
 		if (!CompileShader()) {
@@ -184,14 +191,22 @@ namespace Features
 			const auto status = Bridge::CurrentStatus();
 			REX::INFO(
 				"frame generation: rendered {:.0f}/s, shown {:.0f}/s, {}, DLSS-G status 0x{:X}, vsync support {}, captures {} "
-				"depth+motion / {} hud-less / {} refused, RT_000 is the proxy back buffer in {} of them, matrix lean [{:.6f} {:.6f}], "
-				"projection residue {:.5f}",
+				"depth+motion / {} hud-less, refused {} depth+motion / {} camera / {} hud-less, viewport calls {} off / {} on, "
+				"RT_000 none {} / back buffer {} / other {}, matrix lean [{:.6f} {:.6f}], projection residue {:.5f}, frame start: {}",
 				status.renderedPerSecond, status.shownPerSecond, status.generating ? "generating" : "not generating", status.dlssgStatus,
-				status.vsyncSupported, _captures, _hudless, _refusedCaptures, _rt0IsBackBuffer, _matrixLean[0], _matrixLean[1], _residue);
+				status.vsyncSupported, _captures, _hudless, _refusedDepthMotion, _refusedCamera, _refusedHudless, _viewportCalls[0],
+				_viewportCalls[1], _rt0Null, _rt0IsBackBuffer, _rt0Other, _matrixLean[0], _matrixLean[1], _residue,
+				Bridge::TakeSimulationReport());
 			_captures = 0;
 			_hudless = 0;
+			_rt0Null = 0;
 			_rt0IsBackBuffer = 0;
-			_refusedCaptures = 0;
+			_rt0Other = 0;
+			_refusedDepthMotion = 0;
+			_refusedCamera = 0;
+			_refusedHudless = 0;
+			_viewportCalls[0] = 0;
+			_viewportCalls[1] = 0;
 		}
 	}
 
@@ -203,6 +218,7 @@ namespace Features
 	void FrameGeneration::AfterEffectRange() noexcept
 	{
 		if (_generating) {
+			const Render::PassScope pass{ "FrameGeneration/Capture"sv };
 			CaptureDepthAndMotion();
 		}
 	}
@@ -214,7 +230,7 @@ namespace Features
 		auto* const motion = Render::Targets::RenderTargetTexture(kMotionVectors);
 		auto* const depth = Render::Targets::DepthSRV(Render::Targets::kSceneDepth);
 		if (!Bridge::CurrentSlot(slot) || context == nullptr || motion == nullptr || depth == nullptr || _copyDepth == nullptr) {
-			++_refusedCaptures;
+			++_refusedDepthMotion;
 			return;
 		}
 		const auto frame = Render::Resolution::Current();
@@ -225,7 +241,7 @@ namespace Features
 		motion->GetDesc(std::addressof(motionDesc));
 		if (motionDesc.format != REX::W32::DXGI_FORMAT_R16G16_FLOAT || motionExtent.width > slot.width || motionExtent.height > slot.height ||
 			depthExtent.width > slot.width || depthExtent.height > slot.height) {
-			++_refusedCaptures;
+			++_refusedDepthMotion;
 			return;
 		}
 
@@ -303,7 +319,7 @@ namespace Features
 		_previous = current;
 		_havePrevious = true;
 		if (!built) {
-			++_refusedCaptures;
+			++_refusedCamera;
 			return;
 		}
 		_residue = built->diagnosticResidue;
@@ -319,32 +335,35 @@ namespace Features
 
 	void FrameGeneration::AfterDynamicViewportDefault(bool a_enabled) noexcept
 	{
+		++_viewportCalls[a_enabled ? 1 : 0];
 		// doodlum takes the picture at the call that switches the dynamic
 		// viewport off; the other calls of this site are not the end of
 		// post-processing.
 		if (a_enabled || !_generating) {
 			return;
 		}
+		const Render::PassScope pass{ "FrameGeneration/Hudless"sv };
+		// Straight from the proxy's back buffer: that is what the game got
+		// from GetBuffer(0), and what doodlum reads as renderTargets[0]. The
+		// first run refused this copy in every frame through RT_000; what
+		// RT_000 holds is counted, not trusted.
+		auto* const backBuffer = static_cast<REX::W32::ID3D11Texture2D*>(Bridge::BackBuffer());
+		auto* const frameBuffer = Render::Targets::RenderTargetTexture(kFrameBuffer);
+		if (frameBuffer == nullptr) {
+			++_rt0Null;
+		} else if (static_cast<void*>(frameBuffer) == static_cast<void*>(backBuffer)) {
+			++_rt0IsBackBuffer;
+		} else {
+			++_rt0Other;
+		}
 		Bridge::InputSlot slot{};
 		auto* const context = Render::GetContext();
-		auto* const frameBuffer = Render::Targets::RenderTargetTexture(kFrameBuffer);
-		if (!Bridge::CurrentSlot(slot) || context == nullptr || frameBuffer == nullptr) {
-			++_refusedCaptures;
+		if (!Bridge::CurrentSlot(slot) || context == nullptr || backBuffer == nullptr) {
+			++_refusedHudless;
 			return;
-		}
-		if (static_cast<void*>(frameBuffer) == Bridge::BackBuffer()) {
-			++_rt0IsBackBuffer;
 		}
 		auto* const hudless = static_cast<REX::W32::ID3D11Texture2D*>(slot.hudless);
-		REX::W32::D3D11_TEXTURE2D_DESC source{};
-		REX::W32::D3D11_TEXTURE2D_DESC target{};
-		frameBuffer->GetDesc(std::addressof(source));
-		hudless->GetDesc(std::addressof(target));
-		if (source.width != target.width || source.height != target.height || source.format != target.format) {
-			++_refusedCaptures;
-			return;
-		}
-		context->CopyResource(hudless, frameBuffer);
+		context->CopyResource(hudless, backBuffer);
 		Bridge::SubmitHudless();
 		++_hudless;
 	}

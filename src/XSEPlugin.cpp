@@ -84,8 +84,8 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Query(
 extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f4se)
 {
 	F4SE::InitInfo initInfo{};
-	// Nine call hooks of F5.5a and F5.5b, fourteen bytes of branch each; the
-	// rest is headroom. hook stays false: our hooks are made after the runtime check,
+	// Eight call hooks of F5.5a, fourteen bytes of branch each; the rest is
+	// headroom. The two prolog hooks go through Detours, not the trampoline. hook stays false: our hooks are made after the runtime check,
 	// not registered statically, because a REL::THook reads its site the
 	// moment it is constructed.
 	initInfo.trampoline = true;

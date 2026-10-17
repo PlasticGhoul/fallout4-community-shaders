@@ -57,8 +57,16 @@ namespace Features
 		std::uint64_t _frames{ 0 };
 		std::uint64_t _captures{ 0 };
 		std::uint64_t _hudless{ 0 };
+		/// What FO4_RT_000's texture was at the HUD-less point: none, the
+		/// proxy's back buffer, or something else.
+		std::uint64_t _rt0Null{ 0 };
 		std::uint64_t _rt0IsBackBuffer{ 0 };
-		std::uint64_t _refusedCaptures{ 0 };
+		std::uint64_t _rt0Other{ 0 };
+		/// Each refusal by its own reason.
+		std::uint64_t _refusedDepthMotion{ 0 };
+		std::uint64_t _refusedCamera{ 0 };
+		std::uint64_t _refusedHudless{ 0 };
+		std::uint64_t _viewportCalls[2]{ 0, 0 };
 		float _matrixLean[2]{ 0.0f, 0.0f };
 		float _residue{ 0.0f };
 	};
