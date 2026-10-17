@@ -1,3 +1,5 @@
+#include "Bridge/Bridge.h"
+#include "Bridge/StartupSwitch.h"
 #include "Feature/FeatureSystem.h"
 #include "Menu/MenuSystem.h"
 #include "Plugin.h"
@@ -5,7 +7,9 @@
 #include "Render/SwapChainHook.h"
 #include "Render/TechniqueTracker.h"
 #include "Runtime.h"
+#include "Settings/Settings.h"
 #include "Upscale/EngineHooks.h"
+#include "Util/GamePaths.h"
 
 namespace
 {
@@ -122,6 +126,12 @@ extern "C" __declspec(dllexport) bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadIn
 	if (!Upscale::Hooks::Install()) {
 		REX::ERROR("upscale hooks not installed ({}); DLSS will refuse", Upscale::Hooks::FailedSite());
 	}
+
+	// Long before the game creates its device, which is where the bridge is
+	// decided - from the switch as the file holds it now, since Settings::Init
+	// comes only with kGameDataReady.
+	const auto startupSwitch = Bridge::ReadStartupSwitch(Settings::DefaultFile());
+	static_cast<void>(Bridge::InstallDeviceHook({ startupSwitch.on, startupSwitch.reason, Util::PluginDataDirectory() }));
 
 	REX::INFO("loaded");
 	return true;
