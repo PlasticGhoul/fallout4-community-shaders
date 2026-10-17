@@ -1000,4 +1000,30 @@ if(FO4CS_BUILD_TESTS)
     endif()
 
     add_test(NAME StartupSwitch COMMAND StartupSwitchTests)
+
+    add_executable(
+        BridgeDecisionTests
+        "${CMAKE_SOURCE_DIR}/tests/BridgeDecisionTests.cpp"
+        "${CMAKE_SOURCE_DIR}/src/Bridge/Decision.cpp"
+    )
+
+    target_include_directories(
+        BridgeDecisionTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(BridgeDecisionTests PRIVATE cxx_std_23)
+    target_precompile_headers(
+        BridgeDecisionTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/include/PCH.h"
+    )
+    target_link_libraries(BridgeDecisionTests PRIVATE CommonLibF4::CommonLibF4)
+
+    if(MSVC)
+        target_compile_options(
+            BridgeDecisionTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME BridgeDecision COMMAND BridgeDecisionTests)
 endif()
