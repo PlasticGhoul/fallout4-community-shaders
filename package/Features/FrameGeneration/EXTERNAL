@@ -1,0 +1,9 @@
+extern/Streamline/bin/x64/sl.interposer.dll => F4SE/Plugins/CommunityShadersFO4/Streamline/sl.interposer.dll
+extern/Streamline/bin/x64/sl.common.dll => F4SE/Plugins/CommunityShadersFO4/Streamline/sl.common.dll
+extern/Streamline/bin/x64/sl.dlss_g.dll => F4SE/Plugins/CommunityShadersFO4/Streamline/sl.dlss_g.dll
+extern/Streamline/bin/x64/sl.reflex.dll => F4SE/Plugins/CommunityShadersFO4/Streamline/sl.reflex.dll
+extern/Streamline/bin/x64/sl.pcl.dll => F4SE/Plugins/CommunityShadersFO4/Streamline/sl.pcl.dll
+extern/Streamline/bin/x64/nvngx_dlssg.dll => F4SE/Plugins/CommunityShadersFO4/Streamline/nvngx_dlssg.dll
+extern/Streamline/bin/x64/nvngx_dlss.license.txt => F4SE/Plugins/CommunityShadersFO4/Streamline/nvngx_dlss.license.txt
+extern/Streamline/bin/x64/reflex.license.txt => F4SE/Plugins/CommunityShadersFO4/Streamline/reflex.license.txt
+extern/Streamline/license.txt => F4SE/Plugins/CommunityShadersFO4/Streamline/streamline.license.txt

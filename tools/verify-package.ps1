@@ -83,6 +83,23 @@ Check (-not ($staged | Where-Object { $_ -match '(^|/)CORE$' })) "and no CORE ma
 Check (-not ($staged | Where-Object { $_ -match '(^|/)EXTERNAL$' })) "and no EXTERNAL marker"
 # Brought in through package/Features/DLSS/EXTERNAL from the SDK submodule.
 Check ($staged -contains "F4SE/Plugins/CommunityShadersFO4/nvngx_dlss.dll") "and the DLSS runtime from the SDK"
+# Brought in through package/Features/FrameGeneration/EXTERNAL from the
+# Streamline release archive (cmake/Streamline.cmake).
+$streamlineFiles = @(
+    "F4SE/Plugins/CommunityShadersFO4/Streamline/sl.interposer.dll",
+    "F4SE/Plugins/CommunityShadersFO4/Streamline/sl.common.dll",
+    "F4SE/Plugins/CommunityShadersFO4/Streamline/sl.dlss_g.dll",
+    "F4SE/Plugins/CommunityShadersFO4/Streamline/sl.reflex.dll",
+    "F4SE/Plugins/CommunityShadersFO4/Streamline/sl.pcl.dll",
+    "F4SE/Plugins/CommunityShadersFO4/Streamline/nvngx_dlssg.dll",
+    "F4SE/Plugins/CommunityShadersFO4/Streamline/nvngx_dlss.license.txt",
+    "F4SE/Plugins/CommunityShadersFO4/Streamline/reflex.license.txt",
+    "F4SE/Plugins/CommunityShadersFO4/Streamline/streamline.license.txt"
+)
+foreach ($file in $streamlineFiles) {
+    Check ($staged -contains $file) "and $file"
+}
+Check ($staged -contains "Shaders/FO4/FrameGeneration/CopyDepth.hlsl") "and the frame generation shader"
 Check (-not ($staged | Where-Object { $_ -like "SKSE/*" })) "no SKSE leftovers"
 Check (-not ($staged | Where-Object { $_ -like "Interface/*" })) "no Interface leftovers"
 Check (-not ($staged | Where-Object { $_ -match '^Shaders/[^/]+\.hlsl$' })) "no Skyrim shaders"
@@ -123,6 +140,7 @@ $fog = @($archives | Where-Object { $_.Name -like "ExponentialHeightFog-*" })
 $clouds = @($archives | Where-Object { $_.Name -like "CloudShadows-*" })
 $sky = @($archives | Where-Object { $_.Name -like "Skylighting-*" })
 $dlss = @($archives | Where-Object { $_.Name -like "DLSS-*" })
+$framegen = @($archives | Where-Object { $_.Name -like "FrameGeneration-*" })
 
 # A stale archive would let a broken rule pass here: the tree half is rebuilt
 # on every run, the archives are only ever whatever was packed last. Both the
@@ -143,9 +161,10 @@ Check ($fog.Count -eq 1) "exactly one ExponentialHeightFog archive"
 Check ($clouds.Count -eq 1) "exactly one CloudShadows archive"
 Check ($sky.Count -eq 1) "exactly one Skylighting archive"
 Check ($dlss.Count -eq 1) "exactly one DLSS archive"
+Check ($framegen.Count -eq 1) "exactly one FrameGeneration archive"
 Check ($aio.Count -eq 1) "exactly one all-in-one archive"
 
-if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fog.Count -eq 1 -and $clouds.Count -eq 1 -and $sky.Count -eq 1 -and $dlss.Count -eq 1 -and $aio.Count -eq 1) {
+if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fog.Count -eq 1 -and $clouds.Count -eq 1 -and $sky.Count -eq 1 -and $dlss.Count -eq 1 -and $framegen.Count -eq 1 -and $aio.Count -eq 1) {
     # Wrapped at the call site as well: PowerShell unrolls a single element
     # array on assignment, and a lone entry would arrive as a bare string
     # whose .Count is empty.
@@ -156,6 +175,7 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
     $cloudsEntries = @(Get-Entries $clouds[0].FullName)
     $skyEntries = @(Get-Entries $sky[0].FullName | Sort-Object)
     $dlssEntries = @(Get-Entries $dlss[0].FullName)
+    $framegenEntries = @(Get-Entries $framegen[0].FullName)
     $aioEntries = @(Get-Entries $aio[0].FullName)
 
     Check ($baseEntries -contains "F4SE/Plugins/CommunityShadersFO4.dll") "the base carries the plugin"
@@ -242,7 +262,21 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
     }
     Check ($aioEntries -contains $dll) "the all-in-one does"
 
-    $union = @($baseEntries + $addonEntries + $shadowsEntries + $fogEntries + $cloudsEntries + $skyEntries + $dlssEntries | Sort-Object -Unique)
+    # Streamline's files travel in the FrameGeneration addon and the
+    # all-in-one only, and the addon carries nothing else but its shader.
+    $framegenExpected = @($streamlineFiles + "Shaders/FO4/FrameGeneration/CopyDepth.hlsl" | Sort-Object)
+    Check (
+        $null -eq (Compare-Object $framegenExpected (@($framegenEntries) | Sort-Object -Unique))
+    ) "the FrameGeneration addon carries the Streamline runtime and its shader, nothing else"
+    foreach ($pair in @(
+            @{ Name = "base"; Entries = $baseEntries },
+            @{ Name = "DLSS addon"; Entries = $dlssEntries },
+            @{ Name = "skylighting addon"; Entries = $skyEntries })) {
+        Check (-not ($pair.Entries | Where-Object { $_ -like "F4SE/Plugins/CommunityShadersFO4/Streamline/*" })) "the $($pair.Name) does not carry Streamline"
+    }
+    Check ($aioEntries -contains "F4SE/Plugins/CommunityShadersFO4/Streamline/sl.interposer.dll") "the all-in-one carries Streamline"
+
+    $union = @($baseEntries + $addonEntries + $shadowsEntries + $fogEntries + $cloudsEntries + $skyEntries + $dlssEntries + $framegenEntries | Sort-Object -Unique)
     Check (
         $null -eq (Compare-Object $union (@($aioEntries) | Sort-Object -Unique))
     ) "the all-in-one is the union of base and addons"
@@ -255,6 +289,7 @@ if ($base.Count -eq 1 -and $addon.Count -eq 1 -and $shadows.Count -eq 1 -and $fo
             @{ Name = "cloud addon"; Entries = $cloudsEntries },
             @{ Name = "skylighting addon"; Entries = $skyEntries },
             @{ Name = "DLSS addon"; Entries = $dlssEntries },
+            @{ Name = "FrameGeneration addon"; Entries = $framegenEntries },
             @{ Name = "all-in-one"; Entries = $aioEntries })) {
         $e = $pair.Entries
         Check (-not ($e | Where-Object { $_ -match '(^|/)CORE$' })) "no CORE marker in the $($pair.Name)"
