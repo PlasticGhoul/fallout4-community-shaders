@@ -1353,7 +1353,7 @@ Befund, daß ein Bildratengewinn auf dieser Maschine nur aus Frame Generation ko
 
 Spec `docs/superpowers/specs/2026-10-17-fallout4-f5-5b-dlss-fg-design.md`, Plan
 `docs/superpowers/plans/2026-10-17-fallout4-f5-5b-dlss-fg.md` (dort oben die Abweichungen von der
-Spec, die schon beim Planen feststanden). Fünf Spielstarts am 2026-10-17, RTX 5080, 2560×1440,
+Spec, die schon beim Planen feststanden). Sechs Spielstarts am 2026-10-17, RTX 5080, 2560×1440,
 180 Hz, Treiber 610.88, randloses Fenster über High FPS Physics Fix.
 
 ### Die Brücke
@@ -1362,7 +1362,8 @@ Fallout 4 rendert auf D3D11 und präsentiert über eine eigene D3D12-Swapchain a
 Fabrik (manuelles Hooking, v2.14.16, per CMake-Download mit SHA256). Ein IAT-Hook auf
 `D3D11CreateDeviceAndSwapChain` gibt dem Spiel ein eigenes D3D11-Gerät und einen
 `SwapChainProxy`, der nur `IDXGISwapChain` beantwortet; dahinter ein Ring aus drei Slots
-geteilter Texturen (Endbild, HUD-los, Tiefe, Bewegung) und ein geteilter Fence. Der D3D12-Teil ist
+geteilter Texturen (Endbild, HUD-los, Tiefe, Bewegung) und zwei geteilte Fences, je einer pro
+Richtung und mit genau einem Schreiber (siehe unten, Abschlussreview). Der D3D12-Teil ist
 eine native Insel ohne PCH unter `src/Bridge/Native/`, die mit dem Rest nur über
 `src/Bridge/Bridge.h` spricht. Streamline und das D3D12-Gerät leben bis zum Prozessende. Der
 Schalter wirkt nur beim Start, weil die Brücke beim Anlegen des Geräts entsteht.
@@ -1384,13 +1385,20 @@ Schalter wirkt nur beim Start, weil die Brücke beim Anlegen des Geräts entsteh
     `DLSS::AfterEffectRange` die Tiefe in Anzeigegröße, bevor unser Abgriff läuft; DLSS-G bekam
     2560×1440 gegen 1707×960, und der rechte Rand schlierte beim Rechtsdrehen. Die Tiefe wird
     seither auf die Größe der Bewegungsvektoren abgetastet.
--   **Mit zwei Slots stand die D3D11-Queue still**, bis D3D12 einen Slot freigab. Mit drei Slots
-    danach 0 blockierende Waits. Die GPU-Zeit im Present (2,4 ms mit FG aus, 3,7 ms mit FG an)
-    bleibt trotzdem: sie ist Konkurrenz mit der D3D12-Arbeit auf derselben GPU, kein Warten.
+-   **Die GPU-Zeit im Present ist kein Warten auf D3D12.** Der Verdacht, die D3D11-Queue stehe
+    mit zwei Slots still, führte zum dritten Slot. Die Messung dazu war aber wertlos: beide
+    Queues signalisierten **einen** Fence aus einem Zähler, sodass D3D11s Wait auf einen Slot von
+    seinem eigenen früheren Signal erfüllt wurde und nie wartete (Abschlussreview, behoben in
+    `b409ee06`). Mit getrennten Fences zeigt der Kontroll-Lauf 0 blockierende Waits bei 79
+    gerendert / 158 angezeigt — jetzt ein echter Befund: D3D12 liegt nie drei Frames zurück. Die
+    2,4 ms (FG aus) und 3,7 ms (FG an) im Present sind Konkurrenz mit der D3D12-Arbeit auf
+    derselben GPU. Ob zwei Slots ebenfalls reichten, ist nicht gemessen; drei bleiben, weil sie
+    D3D11 einen Frame Vorlauf geben und nur Speicher kosten.
 -   **Die Kamera passt**: `worldToCam` trägt keinen Jitter (Neigung der Zeilen 0), der Restwert
     der abgeleiteten Projektion liegt unter 0,02.
--   **Hauptschleife und Present laufen auf einem Thread**, im Ladebildschirm auf einem anderen;
-    die Frame-Indizes kommen über eine Warteschlange an.
+-   **Hauptschleife und Present laufen auf einem Thread**, im Ladebildschirm auf einem anderen —
+    dort wechselt auch der präsentierende Thread selbst, beide nacheinander, nie gleichzeitig.
+    Die Frame-Indizes kommen über eine gesperrte Warteschlange an.
 
 ### Die Zahlen
 
@@ -1412,11 +1420,32 @@ Vom Nutzer gemeldet: flüssiger, kein Schlieren mehr, HUD ruhig (UI-Meßgate bes
 UI-Puffer aus Task 15 entfällt). Menüs, Pip-Boy, Ladebildschirm und das offene Overlay schalten
 FG ab und wieder an; Streamline meldet durchgehend den DLSS-G-Status `0x0`.
 
-**Nicht belegt:** Reflex boost wurde nie geschaltet. Was die Brücke allein gegenüber keiner
-Brücke kostet, ist an dieser Stelle nicht gemessen; der Nutzer hat ohne diesen Lauf
-abgeschlossen. Die 2,4 ms Present-GPU mit FG aus sind der Anlass, das nachzuholen. Alt-Tab und
-Minimieren sind vom Nutzer als gut gemeldet, im Log aber nicht erkennbar. Exklusives Vollbild,
-ENB und eine zweite Geräteerzeugung sind nur durch den Code abgedeckt.
+**Nicht belegt:** Was die Brücke allein gegenüber keiner Brücke kostet, ist an dieser Stelle nicht
+gemessen; der Nutzer hat ohne diesen Lauf abgeschlossen. Die 2,4 ms Present-GPU mit FG aus sind
+der Anlass, das nachzuholen. Alt-Tab und Minimieren sind vom Nutzer als gut gemeldet, lösen im
+randlosen Fenster aber keinen `ResizeBuffers` aus — der Resize-Pfad samt seiner Fehlerbehandlung
+ist im Spiel nie gelaufen. Exklusives Vollbild, ENB und eine zweite Geräteerzeugung sind nur durch
+den Code abgedeckt.
+
+### Abschlussreview
+
+Eine Review über den ganzen Zweig fand einen kritischen Fehler: **ein gemeinsamer Fence mit zwei
+Schreibern**. D3D11 signalisierte „Slot beschrieben", D3D12 „Slot frei", beide aus einem Zähler.
+Damit war D3D11s Wait auf einen freien Slot immer schon von seinem eigenen letzten Signal erfüllt,
+die CPU-Prüfung vor dem Zurücksetzen eines Command Allocators ebenso, und ein spätes D3D12-Signal
+konnte den Wert zurücksetzen — mit dauerhaft einem Frame Verzug und möglichem Hänger beim Resize
+oder Beenden als Folge. Behoben in `b409ee06`, mit drei weiteren Punkten: ein nach dem Resize
+gescheitertes Anlegen der Puffer ließ Null-Zeiger zurück, die `Present` und `GetBuffer`
+dereferenziert hätten; ein Timeout beim Leeren der D3D12-Queue blieb stumm; das Overlay band nach
+einem reinen Formatwechsel den alten Backbuffer weiter. `7acdd67a` nimmt die Diagnosezähler der
+Läufe heraus, hakt bei aus geschaltetem Startschalter weder den Import noch `PollInputDevices`, und
+setzt Reflex beim Abschalten des Features von boost zurück.
+
+Kontroll-Lauf danach (18:06, gleiche Umgebung): FG an 79 gerendert / 158 angezeigt, FG aus 97,
+DLSS-G-Status durchgehend `0x0`, 0 blockierende Waits, keine Timeout-Zeile. Reflex boost wurde
+an- und wieder abgeschaltet (Streamline: Ergebnis 0), FG im Overlay aus- und eingeschaltet,
+Pip-Boy, Ladebildschirm, Alt-Tab, Minimieren und Beenden — vom Nutzer ohne Auffälligkeiten
+gemeldet.
 
 ### Zugeständnisse
 
