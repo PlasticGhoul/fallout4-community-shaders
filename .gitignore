@@ -13,4 +13,5 @@ shadertoolsconfig.json
 
 tools/__pycache__/
 extern/Streamline/
+extern/DlssNr/
 extern/.downloads/

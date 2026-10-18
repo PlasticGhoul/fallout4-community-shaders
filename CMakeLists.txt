@@ -64,6 +64,7 @@ if(NOT EXISTS "${DLSS_SDK_DIR}/include/nvsdk_ngx.h")
 endif()
 
 include("${CMAKE_SOURCE_DIR}/cmake/Streamline.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/DlssNr.cmake")
 
 # One prolog hook (BSImagespaceShaderLensFlare) has no call site to bend:
 # REL::THook handles calls and jumps only.
@@ -151,6 +152,7 @@ target_include_directories(
         "${DLSS_SDK_DIR}/include"
         "${DETOURS_INCLUDE_DIRS}"
         "${STREAMLINE_DIR}/include"
+        "${DLSSNR_DIR}/include"
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)

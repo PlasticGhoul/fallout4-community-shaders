@@ -1,0 +1,2 @@
+extern/DlssNr/lib/Windows_x86_64/rel/nvngx_dlssnr.dll => F4SE/Plugins/CommunityShadersFO4/NeuralRendering/nvngx_dlssnr.dll
+extern/DlssNr/LICENSE.txt => F4SE/Plugins/CommunityShadersFO4/NeuralRendering/nvngx_dlssnr.license.txt
