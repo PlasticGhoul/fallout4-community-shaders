@@ -2,6 +2,7 @@
 
 #include "Bridge/Bridge.h"
 #include "Bridge/CameraConstants.h"
+#include "Bridge/CaptureDemand.h"
 #include "Render/Resources.h"
 #include "Upscale/CameraCut.h"
 #include "Upscale/EngineHooks.h"
@@ -53,9 +54,7 @@ namespace Bridge
 		REX::W32::ID3D11ComputeShader* _copyDepth{ nullptr };
 		Render::ConstantBuffer _constants;
 		std::uint32_t _acquired{ 0 };
-		std::uint32_t _wanted{ 0 };
-
-		bool _active{ false };
+		CaptureDemand _demand;
 		bool _reset{ true };
 		bool _havePrevious{ false };
 		CameraFrame _previous{};

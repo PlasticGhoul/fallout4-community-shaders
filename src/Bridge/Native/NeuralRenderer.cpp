@@ -256,6 +256,13 @@ namespace Bridge::Native
 		if (_feature != nullptr && _width == a_frame.width && _height == a_frame.height && _preset == a_preset && _format == format) {
 			return true;
 		}
+		// A failed creation is not retried every frame (it stalls the CPU on
+		// the queue each time), and after a timeout the create allocator stays
+		// untouched until its list has run.
+		const NeuralFeatureKey key{ a_frame.width, a_frame.height, a_preset, static_cast<std::uint32_t>(format) };
+		if (!_gate.MayCreate(key, _createFence->GetCompletedValue())) {
+			return false;
+		}
 		Retire(a_doneValue);
 
 		auto& backend = TheBackend();
@@ -266,6 +273,7 @@ namespace Bridge::Native
 			Log::Error(std::format("neural rendering: the {}x{} textures could not be created", a_frame.width, a_frame.height));
 			_output.Reset();
 			_composed.Reset();
+			_gate.Failed(key);
 			return false;
 		}
 		_outputState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -283,6 +291,7 @@ namespace Bridge::Native
 		backend.queue->ExecuteCommandLists(1, lists);
 		const auto value = ++_createValue;
 		backend.queue->Signal(_createFence.Get(), value);
+		_gate.Submitted(value);
 		if (_createFence->GetCompletedValue() < value) {
 			_createFence->SetEventOnCompletion(value, _createEvent);
 			if (WaitForSingleObject(_createEvent, 5000) != WAIT_OBJECT_0) {
@@ -292,6 +301,7 @@ namespace Bridge::Native
 				}
 				_output.Reset();
 				_composed.Reset();
+				_gate.Failed(key);
 				return false;
 			}
 		}
@@ -299,8 +309,10 @@ namespace Bridge::Native
 			Log::Error(std::format("neural rendering: the feature for {}x{}, preset {} could not be created ({})", a_frame.width, a_frame.height, a_preset, Code(created)));
 			_output.Reset();
 			_composed.Reset();
+			_gate.Failed(key);
 			return false;
 		}
+		_gate.Succeeded();
 		_feature = feature;
 		_width = a_frame.width;
 		_height = a_frame.height;
@@ -454,6 +466,9 @@ namespace Bridge::Native
 	{
 		if (_feature == nullptr && !_output && !_composed) {
 			return;
+		}
+		if (_feature != nullptr) {
+			Log::Info(std::format("neural rendering: feature for {}x{}, preset {} released", _width, _height, _preset));
 		}
 		_retired.push_back(Retired{ a_doneValue, _feature, std::move(_output), std::move(_composed) });
 		_feature = nullptr;

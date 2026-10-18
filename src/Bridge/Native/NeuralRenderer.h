@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Bridge/Native/NativeSdk.h"
+#include "Bridge/NeuralCreation.h"
 #include "Bridge/NeuralDecision.h"
 #include "Bridge/SlotRing.h"
 
@@ -69,6 +70,14 @@ namespace Bridge::Native
 		void Retire(std::uint64_t a_doneValue) noexcept;
 		/// Frees what the GPU is past. Every Present.
 		void Collect(std::uint64_t a_completedValue) noexcept;
+		/// After a resize: a creation that failed may be tried again.
+		void ForgetFailures() noexcept { _gate.Forget(); }
+
+		/// From the feature's Shutdown: the next Present retires feature and
+		/// textures. Not tied to Wanted(): that is false on every menu frame,
+		/// and recreating costs about 0.4 s.
+		void RequestRelease() noexcept { _releaseRequested.store(true, std::memory_order_release); }
+		[[nodiscard]] bool TakeReleaseRequest() noexcept { return _releaseRequested.exchange(false, std::memory_order_acq_rel); }
 
 		/// Mean GPU time of evaluate plus composite over the last 180 Records.
 		[[nodiscard]] double GpuMilliseconds() const noexcept { return _meanMs.load(std::memory_order_relaxed); }
@@ -107,6 +116,8 @@ namespace Bridge::Native
 		D3D12_RESOURCE_STATES _outputState{ D3D12_RESOURCE_STATE_UNORDERED_ACCESS };
 		D3D12_RESOURCE_STATES _composedState{ D3D12_RESOURCE_STATE_UNORDERED_ACCESS };
 		std::vector<Retired> _retired;
+		NeuralCreationGate _gate;
+		std::atomic<bool> _releaseRequested{ false };
 		std::uint32_t _lastFailure{ 0 };
 
 		// Feature creation runs on a list of its own, fenced before first use:

@@ -591,6 +591,9 @@ namespace Bridge::Native
 
 		auto& neural = TheNeuralRenderer();
 		neural.Collect(_release.fence12->GetCompletedValue());
+		if (neural.TakeReleaseRequest()) {
+			neural.Retire(_release.value + 1);
+		}
 		_neuralApplied = false;
 		// Only with this frame's own hud-less picture and inputs: an older
 		// one in the slot belongs to another frame.
@@ -738,6 +741,7 @@ namespace Bridge::Native
 		// back at the new size with the next Record.
 		TheNeuralRenderer().Retire(0);
 		TheNeuralRenderer().Collect(UINT64_MAX);
+		TheNeuralRenderer().ForgetFailures();
 		_neuralApplied = false;
 		ReleaseBuffers();
 		const auto result = _swapChain->ResizeBuffers(2, width, height, StripSrgb(format), _swapFlags);

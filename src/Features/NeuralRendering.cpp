@@ -164,7 +164,7 @@ namespace Features
 
 	void NeuralRendering::Shutdown()
 	{
-		Bridge::SetNeuralRendering({}, false);
+		Bridge::StopNeuralRendering();
 		if (_captureAcquired) {
 			Bridge::TheCapture().Release(Bridge::Consumer::kNeuralRendering);
 			_captureAcquired = false;

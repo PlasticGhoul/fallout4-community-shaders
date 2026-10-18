@@ -325,6 +325,12 @@ namespace Bridge
 		Native::TheNeuralRenderer().SetOptions(a_options, a_wanted);
 	}
 
+	void StopNeuralRendering() noexcept
+	{
+		Native::TheNeuralRenderer().SetOptions({}, false);
+		Native::TheNeuralRenderer().RequestRelease();
+	}
+
 	void OnSimulationStart() noexcept
 	{
 		if (auto* const presenter = Native::ActivePresenter()) {

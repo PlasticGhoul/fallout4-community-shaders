@@ -69,6 +69,9 @@ namespace Bridge
 	[[nodiscard]] std::string StartNeuralRendering(const std::filesystem::path& a_dllDirectory, std::span<const std::uint8_t> a_composite) noexcept;
 	/// Applied at the next Present. a_wanted false: present as without NR.
 	void SetNeuralRendering(const NeuralOptions& a_options, bool a_wanted) noexcept;
+	/// From the feature's Shutdown: NR off, and feature and textures freed at
+	/// the next Present once the queue is past them.
+	void StopNeuralRendering() noexcept;
 
 	/// From the prolog of PollInputDevices, once per game frame: frame token,
 	/// Reflex sleep, simulation start. In loading screens on another thread

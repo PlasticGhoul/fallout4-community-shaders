@@ -1050,6 +1050,46 @@ if(FO4CS_BUILD_TESTS)
     add_test(NAME NeuralDecision COMMAND NeuralDecisionTests)
 
     add_executable(
+        CaptureDemandTests
+        "${CMAKE_SOURCE_DIR}/tests/CaptureDemandTests.cpp"
+    )
+
+    target_include_directories(
+        CaptureDemandTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(CaptureDemandTests PRIVATE cxx_std_23)
+
+    if(MSVC)
+        target_compile_options(
+            CaptureDemandTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME CaptureDemand COMMAND CaptureDemandTests)
+
+    add_executable(
+        NeuralCreationTests
+        "${CMAKE_SOURCE_DIR}/tests/NeuralCreationTests.cpp"
+    )
+
+    target_include_directories(
+        NeuralCreationTests
+        PRIVATE "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include"
+    )
+    target_compile_features(NeuralCreationTests PRIVATE cxx_std_23)
+
+    if(MSVC)
+        target_compile_options(
+            NeuralCreationTests
+            PRIVATE /W4 /WX /permissive- /utf-8 /Zc:preprocessor
+        )
+    endif()
+
+    add_test(NAME NeuralCreation COMMAND NeuralCreationTests)
+
+    add_executable(
         BridgeDecisionTests
         "${CMAKE_SOURCE_DIR}/tests/BridgeDecisionTests.cpp"
         "${CMAKE_SOURCE_DIR}/src/Bridge/Decision.cpp"

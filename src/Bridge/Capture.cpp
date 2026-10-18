@@ -94,23 +94,16 @@ namespace Bridge
 
 	void Capture::Want(Consumer a_consumer, bool a_want) noexcept
 	{
-		if (a_want && (_acquired & Bit(a_consumer)) != 0) {
-			_wanted |= Bit(a_consumer);
-		} else {
-			_wanted &= ~Bit(a_consumer);
-		}
-		const bool active = _wanted != 0;
-		if (active && !_active) {
-			// History from before an off stretch is not this frame's.
+		// History from before a consumer's own off stretch is not this
+		// frame's, even if the other consumer kept the capture running.
+		if (_demand.Want(Bit(a_consumer), a_want && (_acquired & Bit(a_consumer)) != 0)) {
 			_reset = true;
 		}
-		_active = active;
 	}
 
 	void Capture::Reset() noexcept
 	{
-		_wanted = 0;
-		_active = false;
+		_demand.Clear();
 		_reset = true;
 		_havePrevious = false;
 		_haveCamera = false;
@@ -171,7 +164,7 @@ namespace Bridge
 
 	void Capture::AfterEffectRange() noexcept
 	{
-		if (_active) {
+		if (_demand.Active()) {
 			const Render::PassScope pass{ "Capture/DepthMotion"sv };
 			CaptureDepthAndMotion();
 		}
@@ -291,7 +284,7 @@ namespace Bridge
 		// doodlum takes the picture at the call that switches the dynamic
 		// viewport off; the other calls of this site are not the end of
 		// post-processing.
-		if (a_enabled || !_active) {
+		if (a_enabled || !_demand.Active()) {
 			return;
 		}
 		const Render::PassScope pass{ "Capture/Hudless"sv };
