@@ -1,9 +1,11 @@
 #pragma once
 
 #include "Bridge/CameraConstants.h"
+#include "Bridge/NeuralDecision.h"
 
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <string>
 
 namespace Bridge
@@ -61,6 +63,13 @@ namespace Bridge
 	void SetReflexMode(std::uint32_t a_mode) noexcept;
 	void SetSplitView(bool a_on) noexcept;
 
+	/// NGX on the bridge's D3D12 device and the composite pipeline built from
+	/// a_composite (cs_5_0 bytecode); empty on success, else why not. Once per
+	/// process - a second call returns the first answer.
+	[[nodiscard]] std::string StartNeuralRendering(const std::filesystem::path& a_dllDirectory, std::span<const std::uint8_t> a_composite) noexcept;
+	/// Applied at the next Present. a_wanted false: present as without NR.
+	void SetNeuralRendering(const NeuralOptions& a_options, bool a_wanted) noexcept;
+
 	/// From the prolog of PollInputDevices, once per game frame: frame token,
 	/// Reflex sleep, simulation start. In loading screens on another thread
 	/// than Present.
@@ -78,6 +87,10 @@ namespace Bridge
 		std::uint32_t width{ 0 };
 		std::uint32_t height{ 0 };
 		bool vsyncSupported{ false };
+		/// NR went into the last presented frame.
+		bool neural{ false };
+		/// Mean GPU time of NR evaluate plus composite.
+		double neuralGpuMs{ 0.0 };
 	};
 	[[nodiscard]] Status CurrentStatus() noexcept;
 }

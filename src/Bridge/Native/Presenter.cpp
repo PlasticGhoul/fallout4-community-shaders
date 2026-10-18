@@ -1,6 +1,7 @@
 #include "Bridge/Native/Presenter.h"
 
 #include "Bridge/Log.h"
+#include "Bridge/Native/NeuralRenderer.h"
 #include "Bridge/Native/Streamline.h"
 
 #include <format>
@@ -503,7 +504,9 @@ namespace Bridge::Native
 		// states Streamline needs.
 		sl::Resource depth{ sl::ResourceType::eTex2d, slot.depth.resource12.Get(), static_cast<std::uint32_t>(D3D12_RESOURCE_STATE_COMMON) };
 		sl::Resource motion{ sl::ResourceType::eTex2d, slot.motion.resource12.Get(), static_cast<std::uint32_t>(D3D12_RESOURCE_STATE_COMMON) };
-		sl::Resource hudless{ sl::ResourceType::eTex2d, slot.hudless.resource12.Get(), static_cast<std::uint32_t>(D3D12_RESOURCE_STATE_COMMON) };
+		// With NR in the frame, DLSS-G interpolates between neural pictures and
+		// takes the HUD from the finished one; Record leaves the picture readable.
+		sl::Resource hudless = _neuralApplied ? sl::Resource{ sl::ResourceType::eTex2d, TheNeuralRenderer().Output(), static_cast<std::uint32_t>(D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE) } : sl::Resource{ sl::ResourceType::eTex2d, slot.hudless.resource12.Get(), static_cast<std::uint32_t>(D3D12_RESOURCE_STATE_COMMON) };
 		const sl::Extent depthExtent{ 0, 0, _inputs.depthWidth, _inputs.depthHeight };
 		const sl::Extent motionExtent{ 0, 0, _inputs.motionWidth, _inputs.motionHeight };
 		const sl::Extent full{ 0, 0, _width, _height };
@@ -586,11 +589,36 @@ namespace Bridge::Native
 		allocator->Reset();
 		list->Reset(allocator, nullptr);
 
+		auto& neural = TheNeuralRenderer();
+		neural.Collect(_release.fence12->GetCompletedValue());
+		_neuralApplied = false;
+		// Only with this frame's own hud-less picture and inputs: an older
+		// one in the slot belongs to another frame.
+		if (neural.Wanted() && _inputsThisFrame && _hudlessThisFrame) {
+			const NeuralFrame frame{
+				slot.final.resource12.Get(),
+				slot.hudless.resource12.Get(),
+				slot.depth.resource12.Get(),
+				slot.motion.resource12.Get(),
+				_width,
+				_height,
+				_inputs.motionWidth,
+				_inputs.motionHeight,
+				_inputs.constants.reset,
+				k,
+			};
+			_neuralApplied = neural.Record(list, frame, _release.value + 1);
+		}
+
 		const auto index = _swapChain->GetCurrentBackBufferIndex();
 		auto* const target = _buffers[index].Get();
 		Barrier(list, target, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
-		list->CopyResource(target, slot.final.resource12.Get());
-		if (_splitView && _hudlessThisFrame) {
+		if (_neuralApplied) {
+			list->CopyResource(target, neural.Composed());
+		} else {
+			list->CopyResource(target, slot.final.resource12.Get());
+		}
+		if (!_neuralApplied && _splitView && _hudlessThisFrame) {
 			D3D12_TEXTURE_COPY_LOCATION destination{};
 			destination.pResource = target;
 			destination.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
@@ -660,16 +688,20 @@ namespace Bridge::Native
 		const auto rates = _stats.Last();
 		Log::Info(std::format(
 			"bridge: rendered {:.0f}/s, shown {:.0f}/s, generation {}, cpu waits {}, d3d11 waits that blocked {} in the last {} "
-			"frames, frames without token {}, tokens dropped {}, simulation thread {}, present thread {}",
+			"frames, frames without token {}, tokens dropped {}, simulation thread {}, present thread {}, neural {} {:.2f} ms",
 			rates.rendered, rates.shown, _generationApplied ? "on" : "off", _cpuWaits, _blockingWaits, kLogInterval,
-			_framesWithoutToken, _tokens.Dropped(), _simulationThread.load(std::memory_order_relaxed), GetCurrentThreadId()));
+			_framesWithoutToken, _tokens.Dropped(), _simulationThread.load(std::memory_order_relaxed), GetCurrentThreadId(),
+			_neuralApplied ? "on" : "off", TheNeuralRenderer().GpuMilliseconds()));
 		_blockingWaits = 0;
 	}
 
 	Status Presenter::CurrentStatus() const noexcept
 	{
 		const auto rates = _stats.Last();
-		return Status{ _generationApplied, rates.rendered, rates.shown, _dlssgStatus, _minWidthOrHeight, _width, _height, _vsyncSupported };
+		return Status{
+			_generationApplied, rates.rendered, rates.shown, _dlssgStatus, _minWidthOrHeight, _width, _height, _vsyncSupported,
+			_neuralApplied, TheNeuralRenderer().GpuMilliseconds()
+		};
 	}
 
 	HRESULT Presenter::ResizeBuffers(UINT a_count, UINT a_width, UINT a_height, DXGI_FORMAT a_format, UINT a_flags) noexcept
@@ -702,6 +734,11 @@ namespace Bridge::Native
 			// under the queue.
 			return DXGI_ERROR_WAS_STILL_DRAWING;
 		}
+		// The queue is idle: NR's feature and textures can go now and come
+		// back at the new size with the next Record.
+		TheNeuralRenderer().Retire(0);
+		TheNeuralRenderer().Collect(UINT64_MAX);
+		_neuralApplied = false;
 		ReleaseBuffers();
 		const auto result = _swapChain->ResizeBuffers(2, width, height, StripSrgb(format), _swapFlags);
 		if (FAILED(result)) {
@@ -733,7 +770,11 @@ namespace Bridge::Native
 		}
 		// At the end of the process there is nobody to refuse to; the timeout
 		// is logged, and what follows is all that is left to do.
-		static_cast<void>(WaitForQueueIdle());
+		if (WaitForQueueIdle()) {
+			TheNeuralRenderer().Retire(0);
+			TheNeuralRenderer().Collect(UINT64_MAX);
+		}
+		_neuralApplied = false;
 		_usable = false;
 		ReleaseBuffers();
 		_swapChain.Reset();

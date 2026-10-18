@@ -3,6 +3,7 @@
 #include "Bridge/Decision.h"
 #include "Bridge/Log.h"
 #include "Bridge/Native/NativeSdk.h"
+#include "Bridge/Native/NeuralRenderer.h"
 #include "Bridge/Native/Presenter.h"
 #include "Bridge/Native/Streamline.h"
 #include "Bridge/Native/SwapChainProxy.h"
@@ -309,6 +310,19 @@ namespace Bridge
 		if (auto* const presenter = Native::ActivePresenter()) {
 			presenter->SetSplitView(a_on);
 		}
+	}
+
+	std::string StartNeuralRendering(const std::filesystem::path& a_dllDirectory, std::span<const std::uint8_t> a_composite) noexcept
+	{
+		if (Native::ActivePresenter() == nullptr) {
+			return "the bridge is not in place";
+		}
+		return Native::TheNeuralRenderer().Start(a_dllDirectory, a_composite);
+	}
+
+	void SetNeuralRendering(const NeuralOptions& a_options, bool a_wanted) noexcept
+	{
+		Native::TheNeuralRenderer().SetOptions(a_options, a_wanted);
 	}
 
 	void OnSimulationStart() noexcept

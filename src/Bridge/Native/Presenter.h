@@ -146,6 +146,8 @@ namespace Bridge::Native
 		bool _generationApplied{ false };
 		bool _optionsSet{ false };
 		bool _splitView{ false };
+		/// NR went into this frame; the hud-less tag then points at its picture.
+		bool _neuralApplied{ false };
 		std::uint32_t _reflexMode{ 0 };
 
 		PresentStats _stats;
