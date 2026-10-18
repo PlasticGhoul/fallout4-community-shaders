@@ -8,6 +8,7 @@
 #include "Features/FrameGeneration.h"
 #include "Features/FrameTrace.h"
 #include "Features/ImagespaceTint.h"
+#include "Features/NeuralRendering.h"
 #include "Features/ScreenSpaceShadows.h"
 #include "Features/ShaderCensus.h"
 #include "Features/Skylighting.h"
@@ -51,6 +52,10 @@ namespace Features
 			// After DLSS: it reads the jitter DLSS sets and the render size it
 			// publishes, and is torn down before it.
 			TheRegistry().Register(std::make_unique<FrameGeneration>());
+
+			// After frame generation: it shares the bridge capture and is torn
+			// down before it, so the capture outlives both consumers' teardown.
+			TheRegistry().Register(std::make_unique<NeuralRendering>());
 
 			// Watches the shadow casters through the draw hook and multiplies
 			// into RT_028 right before the composite. Ahead of the cloud
