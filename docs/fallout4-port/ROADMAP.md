@@ -3,8 +3,9 @@
 Status: Umsetzung, A bis E2 abgeschlossen — Teilprojekt E ist damit vollständig. F+ ist nach einem
 Messspike in **F1…F14 aufwärts** zerlegt; **F1 (Performance Overlay), F2 (Screen-Space Shadows),
 F3 (Exponential Height Fog), F4 (Cloud Shadows), das dazwischengeschobene F4.5 (Menü in zwei
-Spalten), F5 (Skylighting) und die vorgezogenen F5.5a (DLSS Super Resolution) und F5.5b (DLSS
-Frame Generation) sind abgeschlossen**. Als Nächstes steht **F6** an. Stand 2026-10-17.
+Spalten), F5 (Skylighting) und die vorgezogenen F5.5a (DLSS Super Resolution), F5.5b (DLSS
+Frame Generation) und F5.5c (DLSS 5 Neural Rendering) sind abgeschlossen**. Als Nächstes steht
+**F6** an. Stand 2026-10-18.
 
 Dieses Dokument ist die Übersicht über die Portierung von Community Shaders auf Fallout 4.
 Es hält den Zuschnitt der Arbeit fest, nicht deren Details — jedes Teilprojekt bekommt eine
@@ -62,6 +63,7 @@ vorherigen auf. Der Zuschnitt existiert, damit keine Spec mehr als ein Subsystem
 | F5    | **Skylighting** — Sondengitter wie die Vorlage, Erfassung über die Schattenwerfer, Anbringen im SSAO-Ziel vor dem Composite | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
 | F5.5a | **DLSS Super Resolution** — NGX auf D3D11, DLAA und vier Hochskalier-Modi über die dynamische Auflösung der Engine          | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | **abgeschlossen** |
 | F5.5b | **DLSS Frame Generation** — D3D12-Brücke mit Streamline, DLSS-G/MFG und Reflex; Andockpunkt für DLSS 5                      | Mehr Bilder je Sekunde, gemessen, bei stehendem Overlay                     | **abgeschlossen** |
+| F5.5c | **DLSS 5 Neural Rendering** — NGX-Feature 18 auf der Brücke über dem HUD-losen Bild, HUD per Vergleich ausgespart           | Sichtbarer Effekt, Kosten gemessen, HUD unberührt                           | **abgeschlossen** |
 | F6    | **Volumetric Lighting**                                                                                                     | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
 | F7    | **Volumetric Shadows**                                                                                                      | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
 | F8    | **Screen Space GI**                                                                                                         | Sichtbarer Effekt plus CPU-/GPU-Zahlen                                      | offen             |
@@ -1459,6 +1461,93 @@ Die D3D12-Präsentation hinter einer sauberen D3D11-Swapchain als Andockpunkt f�
 (DLSS-NR verlangt Farbe und Bewegungsvektoren auf D3D12, beides liegt in der Brücke);
 `Upscale::Hooks::Tap` als zweiter Hörer an den F5.5a-Stellen; den Frame-Beginn am
 `PollInputDevices`-Prolog; `Bridge::PresentStats` und die Zeile „shown" in der Ecke.
+
+## Aus Teilprojekt F5.5c bestätigt
+
+Spec `docs/superpowers/specs/2026-10-18-fallout4-f5-5c-neural-rendering-design.md`, Plan
+`docs/superpowers/plans/2026-10-18-fallout4-f5-5c-neural-rendering.md`. Zwei Spielstarts am
+2026-10-18, RTX 5080, Treiber 617.42, 2560×1440, DLSS Quality.
+
+### Woher NR kommt
+
+„DLSS 5" ist genau ein Feature: DLSS Neural Rendering (NGX-Feature 18, `nvngx_dlssnr.dll`). Kein
+öffentliches SDK hat es; NVIDIAs RTX Remix lädt ein Paket mit der signierten DLL 310.9.16.0, dem
+Parameter-Header und der RTX-SDK-Lizenz, und `cmake/DlssNr.cmake` holt genau dieses (SHA256
+geprüft, nur Header, DLL und Lizenz). Eine Probe außerhalb des Repos hat vor dem Entwurf belegt:
+keine Freigabeliste nach App-ID, der Treiber-NGX-Kern lädt die DLL selbst (Aufruferprüfung
+erfüllt), Anlegen und Auswerten über die generische D3D12-API, alle Regler wirken je Auswertung,
+und NGX auf D3D11 (SR) und D3D12 (NR) vertragen sich in einer Instanz. **Preset A kostet 5,4 ms,
+Preset B 3,05 ms** bei 1440p; C bis G liefern byte-identisch B. `ScalingRatio` ist kein
+Tempo-Regler. `Style` 0–2 sind drei Look-Varianten.
+
+### Der Entwurf
+
+NR rechnet in `Presenter::Present` über dem HUD-losen Slot-Bild (nach Tonemap und SR, in
+Anzeigegröße), mit Tiefe und Bewegung in Vektorgröße und `MVecScale` wie DLSS SR. Ein
+Compute-Pass setzt zusammen: wo Endbild und HUD-loses Bild gleich sind, das NR-Bild, sonst das
+Endbild — so bleiben HUD, Fader und Overlay unberührt. DLSS-G bekommt das NR-Bild als HUD-loses.
+Der Abgriff ist aus `FrameGeneration` in `Bridge::Capture` gewandert, den einzigen Hook-Tap, den
+FG und NR teilen; jeder Abnehmer bekommt beim Wiedereinsetzen sein eigenes Reset. Die Brücke
+entsteht, wenn FG **oder** NR beim Start an ist. NR setzt das FrameGeneration-Addon voraus
+(Streamline).
+
+### Was die Läufe ergeben haben
+
+-   **NGX hat einen Kontext je Gerät.** Lauf 1a: NR „refused", `FeatureInitResult 0xBAD00004`
+    (FeatureNotFound). Streamline legt den Kontext auf dem Brückengerät zuerst an, mit unserer
+    Projekt-ID; unser NR-Init tritt bei und durchsucht nur Streamlines Plugin-Pfade. In der Probe
+    mit vorgeschaltetem Streamline nachgestellt und behoben: der Ordner `NeuralRendering/` ist
+    zweiter Plugin-Pfad von Streamline (`8ba53262`). Die Logs des NGX-Kerns laufen über
+    Streamlines Callback in unser Log — dort fehlten für den NR-Init jede Suchzeile, das war der
+    Hinweis.
+-   **Abläufe wie entworfen**: aus in Ladebildschirm, Pip-Boy und Spielmenüs, an bei offenem
+    Overlay; Modellwechsel legt genau einmal neu an (~0,15 s); Ausschalten gibt Feature und
+    Texturen frei (Logzeile „released", danach wieder 482 MB beim Anlegen).
+-   **Ohne FG wird die D3D12-Seite zum Engpass**: gerendert ~86 statt ~97 Bilder je Sekunde, die
+    Zähler „cpu waits" und „d3d11 waits that blocked" steigen. Mit FG verdeckt die Taktung bei
+    79 gerendert die Kosten fast ganz.
+-   **Die gemessene NR-Zeit hängt von der Konkurrenz ab**: Preset B 3,3 ms bei FG an (gedrosselt)
+    oder offenem Overlay, 5,5 ms bei FG aus (D3D11 läuft voll daneben). Die Zeitstempel messen
+    Wanduhrzeit auf der GPU.
+
+### Die Zahlen
+
+Je ein F11-Schnappschuss über 300 Frames an derselben Stelle, FG an, DLSS Quality:
+
+| Zustand           | gerendert/angezeigt | Frame GPU | Present GPU | NR-Zeit (D3D12) |
+| ----------------- | ------------------- | --------- | ----------- | --------------- |
+| NR aus            | 79/158              | 11,918    | 3,567       | –               |
+| NR an, `fast` (B) | 79/158              | 12,265    | 4,300       | ≈3,3            |
+| NR an, `original` | 79/158              | 13,477    | 2,109       | ≈5,0–5,5        |
+
+Abnahmekriterium (Frame-Zeit steigt höchstens um 1,5 × NR-Zeit): +0,35 ms gegen 4,9 ms erlaubt —
+bestanden. Grafikspeicher: 482 MB (B) bzw. 547 MB (A) zusätzlich.
+
+### Die Abnahme
+
+Vom Nutzer nach Lauf 1b gemeldet: „Alles erledigt, sieht gut aus" — die zehn Prüfschritte
+(Vergleichs- und Maskenansicht, Drehen, Regler bei offenem Overlay, Menüs, F11, FG dazu) ohne
+Beanstandung. Log ohne `[E]`. **Lauf 2 entfiel**: die Schnappschüsse von Lauf 1b liefen bereits
+mit NR, FG und DLSS Quality zusammen und decken die Kriterien ab; eine eigens „schwere Stelle"
+wurde nicht gesucht. Einzelbeobachtungen zu Maske und Bewegung hat der Nutzer nicht getrennt
+berichtet; sie gelten als ohne Befund, nicht als einzeln belegt.
+
+### Abschlussreview
+
+Vor dem ersten Spielstart vorgezogen. Kein kritischer Fehler; behoben (`b0f7d24b`): FG bekam
+nach dem Overlay kein Reset, während NR den Abgriff hielt; ein gescheitertes Anlegen wäre jeden
+Frame mit CPU-Stillstand wiederholt worden, und nach einem Timeout hätte der Allocator unter einer
+laufenden Liste zurückgesetzt werden können; `Shutdown` gab den Speicher nicht frei. Zwei
+Kleinigkeiten offen: das Ereignis der Anlege-Liste wird nie geschlossen (lebt bis Prozessende),
+und der Vergleich im Zusammensetzen schließt Alpha ein.
+
+### Zugeständnisse
+
+Nur RTX 50, nur mit FrameGeneration-Addon und Brücke (randloses Fenster), kein ENB, kein HDR. NR
+aus in Menüs, Pip-Boy und Ladebildschirm. Erstes Einschalten wirkt erst nach Neustart, wenn die
+Brücke noch nicht läuft. Die DLL stammt aus Remix' Paket statt aus einem öffentlichen SDK
+(R4: die URL kann verschwinden) und steht unter NVIDIAs Lizenz; vor einer Veröffentlichung ist die
+Anfrage an NVIDIA offen. Das Feature ist standardmäßig aus.
 
 ## Bekannte Lücken in CommonLibF4
 

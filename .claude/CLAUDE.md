@@ -138,8 +138,9 @@ Three rules that are not obvious from the headers:
 
 ## Bridge
 
-`src/Bridge/` carries DLSS Frame Generation (F5.5b): Fallout 4 renders on D3D11 and presents through
-our own D3D12 swap chain from Streamline's factory. Five things to know:
+`src/Bridge/` carries DLSS Frame Generation (F5.5b) and DLSS 5 Neural Rendering (F5.5c): Fallout 4
+renders on D3D11 and presents through our own D3D12 swap chain from Streamline's factory. Eight
+things to know:
 
 -   **The D3D12 half is a native island.** `src/Bridge/Native/` is compiled without the PCH and is
     the only place besides `src/Upscale/LensFlareDetour.cpp` that sees `<Windows.h>`, D3D12 and
@@ -148,13 +149,29 @@ our own D3D12 swap chain from Streamline's factory. Five things to know:
 -   **Streamline is fetched, not vendored.** `cmake/Streamline.cmake` downloads the 2.14.16 release
     archive once, checks its SHA256 and extracts headers, six DLLs and licences into
     `extern/Streamline` (ignored). The `FrameGeneration` addon ships them through its `EXTERNAL`.
--   **The bridge exists only if `FrameGeneration/enabled` was true when the game started.** The
+    `cmake/DlssNr.cmake` does the same for Neural Rendering from the package RTX Remix uses — no
+    public SDK carries it — and extracts only `nvsdk_ngx_defs_dlssnr.h`, so the package's own
+    `nvsdk_ngx.h` never shadows the DLSS SDK's.
+-   **The bridge exists only if `FrameGeneration/enabled` or `NeuralRendering/enabled` was true
+    when the game started.** The
     device is created long before `Settings::Init`, so `Bridge::ReadStartupSwitch` reads the file
     itself. Streamline and the D3D12 device then live until the process ends.
 -   **The frame start is the prolog of `PollInputDevices` (`2268382`).** Its caller changes with the
     place (outdoors, indoors, loading screen); hooking one call site gave no frame a token.
 -   **Depth and motion vectors go to DLSS-G at one resolution.** While DLSS upscales, the depth
     bound at the capture point is DLSS's display-size one; the copy resamples it.
+-   **`Bridge::Capture` is the only engine-hook tap.** Depth, motion, camera and the hud-less
+    picture are captured in every frame Frame Generation or Neural Rendering wants them; each
+    consumer that starts again gets its own reset.
+-   **NGX keeps one context per device.** Streamline creates it on the bridge device first, and
+    Neural Rendering's own `NVSDK_NGX_D3D12_Init_with_ProjectID` joins it and searches only
+    Streamline's plugin paths — which is why `NeuralRendering/` is passed to `slInit` as a second
+    path. Without it `DLSSNR.FeatureInitResult` is `FeatureNotFound`. NGX core logs reach our log
+    through Streamline's callback.
+-   **Neural Rendering runs in `Presenter::Present`** over the hud-less slot picture; a compute
+    pass composites it under HUD and overlay by comparing the final and hud-less pictures, and
+    DLSS-G is handed the neural picture as hud-less colour. With NR off the present path is the
+    F5.5b one, unchanged. The feature needs the FrameGeneration addon (Streamline), not FG itself.
 
 ## Settings
 
