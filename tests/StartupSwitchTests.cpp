@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <string>
+#include <string_view>
 
 namespace
 {
@@ -23,17 +25,34 @@ int main()
 
 	Check(ParseStartupSwitch(R"({"FrameGeneration":{"enabled":true}})").on, "true switches the bridge on");
 
+	constexpr std::string_view noNeural = "; the settings file has no NeuralRendering block";
 	const auto off = ParseStartupSwitch(R"({"FrameGeneration":{"enabled":false}})");
-	Check(!off.on && off.reason == "FrameGeneration/enabled is false", "false keeps it off and says so");
+	Check(!off.on && off.reason == std::string{ "FrameGeneration/enabled is false" } + std::string{ noNeural },
+		"false keeps it off and says so; a file from before F5.5c");
 
-	Check(ParseStartupSwitch(R"({"DLSS":{"enabled":true}})").reason == "the settings file has no FrameGeneration block",
+	Check(ParseStartupSwitch(R"({"DLSS":{"enabled":true}})").reason ==
+			  std::string{ "the settings file has no FrameGeneration block" } + std::string{ noNeural },
 		"a file written before F5.5b has no block");
-	Check(ParseStartupSwitch(R"({"FrameGeneration":{"reflex":"on"}})").reason == "FrameGeneration/enabled is missing",
+	Check(ParseStartupSwitch(R"({"FrameGeneration":{"reflex":"on"}})").reason ==
+			  std::string{ "FrameGeneration/enabled is missing" } + std::string{ noNeural },
 		"a block without the switch");
-	Check(ParseStartupSwitch(R"({"FrameGeneration":true})").reason == "FrameGeneration/enabled is missing",
+	Check(ParseStartupSwitch(R"({"FrameGeneration":true})").reason ==
+			  std::string{ "FrameGeneration/enabled is missing" } + std::string{ noNeural },
 		"a block that is not an object");
-	Check(ParseStartupSwitch(R"({"FrameGeneration":{"enabled":1.0}})").reason == "FrameGeneration/enabled is not true or false",
+	Check(ParseStartupSwitch(R"({"FrameGeneration":{"enabled":1.0}})").reason ==
+			  std::string{ "FrameGeneration/enabled is not true or false" } + std::string{ noNeural },
 		"a number is not a switch");
+
+	Check(ParseStartupSwitch(R"({"NeuralRendering":{"enabled":true}})").on, "NR alone switches the bridge on");
+	Check(ParseStartupSwitch(R"({"FrameGeneration":{"enabled":false},"NeuralRendering":{"enabled":true}})").on, "either is enough");
+	Check(ParseStartupSwitch(R"({"FrameGeneration":{"enabled":true},"NeuralRendering":{"enabled":1.0}})").on,
+		"a broken NR value does not stop FG");
+	const auto bothOff = ParseStartupSwitch(R"({"FrameGeneration":{"enabled":false},"NeuralRendering":{"enabled":false}})");
+	Check(!bothOff.on && bothOff.reason == "FrameGeneration/enabled is false; NeuralRendering/enabled is false", "both off, both named");
+	Check(ParseStartupSwitch(R"({"FrameGeneration":{"enabled":false},"NeuralRendering":{"enabled":"yes"}})").reason ==
+			  "FrameGeneration/enabled is false; NeuralRendering/enabled is not true or false",
+		"NR value not a boolean");
+	Check(ParseStartupSwitch(R"({"NeuralRendering":{"enabled":true}})").reason.empty(), "on means no reason");
 	Check(ParseStartupSwitch("{ not json").reason == "the settings file is not valid JSON", "broken JSON");
 	Check(ParseStartupSwitch("[]").reason == "the settings file is not valid JSON", "an array at the root");
 	Check(ParseStartupSwitch(R"({"Menu":{"key":45.0},"FrameGeneration":{"reflex":"boost","enabled":true}})").on,

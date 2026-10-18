@@ -79,7 +79,7 @@ namespace Bridge::Native
 		}
 		const auto interposer = a_directory / L"sl.interposer.dll";
 		if (!std::filesystem::exists(interposer)) {
-			return Fail(std::format("{} is missing - is the FrameGeneration archive installed?", Narrow(interposer.wstring())));
+			return Fail(std::format("{} is missing - is the FrameGeneration archive installed? Frame Generation and Neural Rendering both need it", Narrow(interposer.wstring())));
 		}
 		// Full path, as sl_security.h insists: a relative one would verify
 		// whatever the search order finds first.

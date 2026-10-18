@@ -6,11 +6,12 @@
 
 namespace Bridge
 {
-	/// FrameGeneration/enabled as the settings file says it at load time. The
-	/// game creates its device long before kGameDataReady, and whether the
-	/// bridge exists is decided then - before Settings::Init has run and
-	/// before any feature has declared anything. So this reads the one key
-	/// itself instead of going through the store.
+	/// FrameGeneration/enabled or NeuralRendering/enabled as the settings file
+	/// says it at load time - either feature needs the bridge. The game
+	/// creates its device long before kGameDataReady, and whether the bridge
+	/// exists is decided then - before Settings::Init has run and before any
+	/// feature has declared anything. So this reads the two keys itself
+	/// instead of going through the store.
 	struct StartupSwitch
 	{
 		bool on{ false };
