@@ -173,7 +173,7 @@ namespace Bridge
 			}
 
 			auto& streamline = Native::TheStreamline();
-			if (!streamline.Load(g_config.pluginDirectory / L"Streamline")) {
+			if (!streamline.Load(g_config.pluginDirectory / L"Streamline", g_config.pluginDirectory / L"NeuralRendering")) {
 				return refuse(streamline.Refusal());
 			}
 			if (!streamline.SupportsFrameGeneration(adapter.Get())) {

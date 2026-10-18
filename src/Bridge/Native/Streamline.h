@@ -17,7 +17,10 @@ namespace Bridge::Native
 	public:
 		/// Verifies NVIDIA's signature, loads the interposer, runs slInit with
 		/// manual hooking on D3D12. Idempotent.
-		[[nodiscard]] bool Load(const std::filesystem::path& a_directory) noexcept;
+		/// a_neuralDirectory joins the plugin paths when it exists: Streamline's
+		/// NGX context on the bridge device is the one neural rendering's NGX
+		/// init joins, and only its paths are searched for nvngx_dlssnr.dll.
+		[[nodiscard]] bool Load(const std::filesystem::path& a_directory, const std::filesystem::path& a_neuralDirectory) noexcept;
 		[[nodiscard]] bool SupportsFrameGeneration(IDXGIAdapter* a_adapter) noexcept;
 		/// slSetD3DDevice, then the feature functions, which exist only after it.
 		[[nodiscard]] bool BindDevice(ID3D12Device* a_device) noexcept;
@@ -41,6 +44,7 @@ namespace Bridge::Native
 		HMODULE _module{ nullptr };
 		bool _initialised{ false };
 		std::wstring _pluginPath;
+		std::wstring _neuralPath;
 		std::string _refusal;
 		PFun_slInit* _init{};
 		PFun_slIsFeatureSupported* _isFeatureSupported{};

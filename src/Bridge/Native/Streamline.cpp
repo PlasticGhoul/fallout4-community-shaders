@@ -72,7 +72,7 @@ namespace Bridge::Native
 		return false;
 	}
 
-	bool Streamline::Load(const std::filesystem::path& a_directory) noexcept
+	bool Streamline::Load(const std::filesystem::path& a_directory, const std::filesystem::path& a_neuralDirectory) noexcept
 	{
 		if (_initialised) {
 			return true;
@@ -108,14 +108,21 @@ namespace Bridge::Native
 		}
 
 		_pluginPath = a_directory.wstring();
-		const wchar_t* paths[]{ _pluginPath.c_str() };
+		// NGX keeps one context per device: neural rendering's own init on the
+		// bridge device joins this one and searches only these paths, so its
+		// snippet's folder has to be among them (measured 2026-10-18: without
+		// it DLSSNR.FeatureInitResult is FeatureNotFound).
+		std::error_code error;
+		const bool neural = std::filesystem::is_directory(a_neuralDirectory, error);
+		_neuralPath = a_neuralDirectory.wstring();
+		const wchar_t* paths[]{ _pluginPath.c_str(), _neuralPath.c_str() };
 		const sl::Feature features[]{ sl::kFeatureDLSS_G, sl::kFeatureReflex, sl::kFeaturePCL };
 
 		sl::Preferences preferences{};
 		preferences.showConsole = false;
 		preferences.logLevel = sl::LogLevel::eDefault;
 		preferences.pathsToPlugins = paths;
-		preferences.numPathsToPlugins = 1;
+		preferences.numPathsToPlugins = neural ? 2 : 1;
 		preferences.logMessageCallback = &OnStreamlineLog;
 		// Manual hooking: otherwise Streamline patches the DXGI factory class
 		// for the whole process (dxgi.cpp:318), the game's D3D11 path included.
